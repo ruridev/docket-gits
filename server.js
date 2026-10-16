@@ -15,26 +15,35 @@ const LOG_DIR = path.join(DATA_DIR, 'logs');
 const DEFAULT_CONFIG = {
   workdir: os.homedir(),
   claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(rm:*),Bash(cat:*),Bash(ls:*),Bash(yarn:*)',
+  // 空なら claude の既定。model はサブエージェントにも使わせる
+  model: '',
+  effort: '',
   pollMinutes: 5,
+  // ブラウザが /api/board を取り直す間隔
+  refreshSeconds: 5,
   // マージ済みでも自分のレビュー依頼が残っている PR を何日前まで表示するか (0 で非表示)
   mergedDays: 7,
   maxConcurrent: 2,
   // 空なら全員。指定するとこの作成者の PR だけ表示する (例: ["alice", "dependabot[bot]"])
   authors: [],
-  // { "owner/name": { skill: "be-review", args: "{number}", cwd: "" } }
+  // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
+  // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
   repos: {},
 };
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
 const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
 
-const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!) {
+const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
   viewer { login avatarUrl }
   open: search(query: $open, type: ISSUE, first: 100) { nodes { ...pr } }
   merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { nodes { ...pr } }
+  mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...pr ... on PullRequest {
+    reviewThreads(first: 100) { nodes { isResolved comments(last: 1) { nodes { author { login } } } } }
+  } } }
 }
 fragment pr on PullRequest {
-      number title url isDraft state mergedAt createdAt updatedAt
+      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName
       repository { nameWithOwner }
       author { login avatarUrl }
       labels(first: 10) { nodes { name color } }
@@ -51,7 +60,7 @@ fragment pr on PullRequest {
 function searchQueries(mergedDays, now) {
   const base = 'is:pr archived:false user-review-requested:@me';
   const since = new Date(now - mergedDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0 };
+  return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open' };
 }
 
 // GraphQL の Bot login には "[bot]" が付かないので揃えて比較する
@@ -80,6 +89,8 @@ function normalizePr(node) {
     mergedAt: node.mergedAt,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
+    base: node.baseRefName,
+    head: node.headRefName,
     author: node.author,
     labels: node.labels.nodes,
     issues: node.closingIssuesReferences.nodes.map((i) => ({ ...i, repo: i.repository.nameWithOwner })),
@@ -111,6 +122,31 @@ function mergeBoard(prs, fetched, now) {
   return next;
 }
 
+// 未解決スレッドのうち最後の発言が自分以外 = まだ自分が応答していない指摘
+// 返信すると最後の発言が自分になるので、状態を持たずに「新しい指摘」を判定できる
+function pendingThreads(node, login) {
+  return (node.reviewThreads?.nodes || []).filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login !== login).length;
+}
+
+function mineKey(pr) {
+  return `mine:${prKey(pr)}`;
+}
+
+// 自分の open PR とローカル状態を突き合わせる。クローズされた PR は実行中のものだけ残す
+function mergeMine(mine, fetched, login) {
+  const next = {};
+  for (const node of fetched) {
+    const key = mineKey(node);
+    const pending = pendingThreads(node, login);
+    // マージ可能に移した PR でも、新しい指摘が来たら指摘ありに戻す
+    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, ...(pending && { mergeReady: false }) };
+  }
+  for (const [key, entry] of Object.entries(mine)) {
+    if (!next[key] && ['queued', 'running', 'applying'].includes(entry.status)) next[key] = entry;
+  }
+  return next;
+}
+
 // claude -p の JSON 出力から 1 実行分のトークン数 (全モデル・キャッシュ込み) と費用を取り出す
 function usageOf(parsed) {
   const models = Object.values(parsed.modelUsage || {});
@@ -126,12 +162,12 @@ function addUsage(prev, u) {
 
 function fillTemplate(template, pr) {
   const [owner, name] = pr.repo.split('/');
-  return (template || '{number}')
-    .replaceAll('{number}', String(pr.number))
-    .replaceAll('{url}', pr.url)
-    .replaceAll('{repo}', name)
-    .replaceAll('{owner}', owner)
-    .replaceAll('{fullRepo}', pr.repo);
+  return (template || '{pr-number}')
+    .replaceAll('{pr-number}', String(pr.number))
+    .replaceAll('{pr-url}', pr.url)
+    .replaceAll('{repo-name}', name)
+    .replaceAll('{owner-name}', owner)
+    .replaceAll('{full-repo-name}', pr.repo);
 }
 
 function buildReviewPrompt(pr, mapping) {
@@ -142,6 +178,7 @@ function buildReviewPrompt(pr, mapping) {
 - 対象PR: ${pr.url}
 - ユーザーへの確認・質問はできません。PR への投稿・Approve はまだ行わず、プレビューまでで止めてください。
 - レビュー完了後、最終回答の末尾に、投稿予定の指摘を次の形式で必ず出力してください。指摘が 0 件なら findings は空配列にしてください。
+- 結果として読み取るのは最後のメッセージだけです。サブエージェントの完了通知などで回答が続いた場合も、最後のメッセージにこのブロックを省略せず再掲してください。
 
 <review-board-findings>
 {"summary":"全体所感(1〜3文)","findings":[{"no":1,"severity":"must / want / imo / nit など","title":"一行要約","path":"ファイルパス or null","line":行番号 or null,"body":"投稿予定のコメント本文(Markdown)"}]}
@@ -149,12 +186,6 @@ function buildReviewPrompt(pr, mapping) {
 }
 
 function buildPostPrompt(pr, findings, decisions, approve, humanRead) {
-  const lines = findings.map((f) => {
-    const d = decisions[f.no] || {};
-    const verdict = d.verdict === 'agree' ? '同意' : '非同意';
-    const reason = d.reason?.trim() ? `理由: ${d.reason.trim()}` : '理由なし';
-    return `- #${f.no} ${verdict} / ${reason}`;
-  });
   return `レビューボードでユーザーが各指摘を判断しました。以下に従って、このスキルの投稿手順 (Reviews API・インラインコメント・失敗時のフォールバック) で PR ${pr.url} に投稿してください。これがユーザーの投稿承認であり、追加の確認は不要です。
 
 ## Approve
@@ -164,7 +195,7 @@ ${approve ? 'する (event: APPROVE)' : 'しない (event: COMMENT)'}
 ${humanRead ? 'あり — レビュー本文に「人間のレビュアーもコードを読みました ✅」という一文を入れる。' : 'なし — コードを読んだ旨は書かない。'}
 
 ## 判断
-${lines.join('\n')}
+${decisionLines(findings, decisions)}
 
 ## 投稿ルール
 - 同意: 指摘を投稿する。理由が書かれていれば、その内容を本文に自然に反映する。
@@ -176,6 +207,70 @@ ${lines.join('\n')}
 <review-board-posted>
 {"posted":true,"url":"投稿したレビューの URL または null","error":null}
 </review-board-posted>`;
+}
+
+function decisionLines(items, decisions) {
+  return items.map((f) => {
+    const d = decisions[f.no] || {};
+    const verdict = d.verdict === 'agree' ? '同意' : '非同意';
+    const reason = d.reason?.trim() ? `理由: ${d.reason.trim()}` : '理由なし';
+    return `- #${f.no} ${verdict} / ${reason}`;
+  }).join('\n');
+}
+
+const APPLIED_TAG = `完了後、最終回答の末尾に次を必ず出力する。push や返信に失敗した場合は done を false にし、error に理由を入れる。
+
+<review-board-applied>
+{"done":true,"error":null}
+</review-board-applied>`;
+
+// review-fix は手順 1〜3 (取得・チェックアウト・分類) で止め、対応計画だけを返させる
+function buildFixPlanPrompt(pr, mapping) {
+  return `/${mapping.fixSkill} ${fillTemplate(mapping.fixArgs, pr)}
+
+---
+(ローカルのレビューボードからの非対話実行です)
+- 対象PR: ${pr.url}
+- ユーザーへの確認・質問はできません。この実行では指摘の取得・ブランチのチェックアウト・分類までを行い、コードの修正・コミット・push・返信はまだ行わないでください。
+- 最終回答の末尾に、指摘ごとの対応計画を次の形式で必ず出力してください。未対応の指摘が 0 件なら items は空配列にしてください。
+- 結果として読み取るのは最後のメッセージだけです。サブエージェントの完了通知などで回答が続いた場合も、最後のメッセージにこのブロックを省略せず再掲してください。
+
+<review-board-fix-plan>
+{"summary":"全体の対応方針(1〜3文)","items":[{"no":1,"category":"fix / reply / defer","author":"指摘者の login","url":"元コメントの URL","path":"ファイルパス or null","line":行番号 or null,"comment":"指摘内容の要約","plan":"修正内容 (fix のみ。それ以外は null)","reply":"返信文ドラフト(Markdown)"}]}
+</review-board-fix-plan>`;
+}
+
+function buildFixApplyPrompt(pr, items, decisions) {
+  return `レビューボードでユーザーが各指摘への対応計画を判断しました。以下に従って、PR ${pr.url} についてこのスキルの修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
+
+## 判断
+${decisionLines(items, decisions)}
+
+## ルール
+- 同意: 計画どおり修正・返信する。理由が書かれていれば、その内容を反映する。
+- 非同意 (理由あり): 計画どおりには対応しない。理由に沿って対応を決め直す (修正方針の変更、または返信のみ)。返信はユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
+- 非同意 (理由なし): 修正も返信もしない。
+- 計画にない指摘には触れない。resolve はしない。force-push はしない。
+- ${APPLIED_TAG}`;
+}
+
+// セルフレビューで同意した指摘は、PR に投稿 → 修正・push → 投稿した指摘へ返信、までを行う
+function buildSelfApplyPrompt(pr, findings, decisions) {
+  return `レビューボードでユーザーがセルフレビューの各指摘を判断しました。PR ${pr.url} について次を行ってください。これがユーザーの投稿・push の承認であり、追加の確認は不要です。
+
+## 判断
+${decisionLines(findings, decisions)}
+
+## 手順
+1. 同意した指摘を、このスキルの投稿手順で PR に投稿する (Approve はしない。event: COMMENT)。理由が書かれていれば本文に反映する。
+2. AGENTS.md の規約に従い対象リポジトリの clone で PR ブランチをチェックアウトし、同意した指摘ごとに修正して 1 指摘 1 コミットにする。
+3. push する (force-push はしない)。
+4. 1 で投稿した各指摘コメントに、対応したコミット SHA を含む返信をする (例: 「修正しました ( commit abc123 )」。SHA と括弧の間の半角スペースは GitHub の自動リンクのため残す)。resolve はしない。
+
+## ルール
+- 非同意の指摘は投稿も修正もしない。
+- 同意が 0 件なら何もしない。
+- ${APPLIED_TAG}`;
 }
 
 // 最終回答から <tag>JSON</tag> を取り出す (最後の出現を優先)
@@ -195,6 +290,14 @@ function extractTagJson(text, tag) {
 // 入れ子起動として拒否されるため取り除く (CLAUDE_CONFIG_DIR はユーザー設定なので残す)
 function childEnv(env) {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR'));
+}
+
+// 未指定だとサブエージェント (Explore など) は Haiku で動くので、設定のモデルに揃える
+function modelOptions(cfg) {
+  return {
+    args: [...(cfg.model ? ['--model', cfg.model] : []), ...(cfg.effort ? ['--effort', cfg.effort] : [])],
+    env: cfg.model ? { CLAUDE_CODE_SUBAGENT_MODEL: cfg.model } : {},
+  };
 }
 
 // "--a b,c 'd e'" 形式の引数文字列を配列にする
@@ -233,10 +336,14 @@ function saveState() {
   writeJson(STATE_FILE, state);
 }
 
+// レビューする側は state.prs、レビューを受ける側 (キーが mine: で始まる) は state.mine
+const mapOf = (key) => (key.startsWith('mine:') ? state.mine : state.prs);
+
 function updateEntry(key, patch) {
+  const map = mapOf(key);
   // 実行中にカードが削除された場合は結果を捨てる
-  if (!state.prs[key]) return;
-  state.prs[key] = { ...state.prs[key], ...patch, updatedAt: Date.now() };
+  if (!map[key]) return;
+  map[key] = { ...map[key], ...patch, updatedAt: Date.now() };
   saveState();
 }
 
@@ -253,20 +360,63 @@ function gh(args) {
 
 async function refreshFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
-  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`]);
+  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`]);
   const { data } = JSON.parse(out);
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n.number);
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now());
+  // 個人リポジトリなどを混ぜないよう、設定に登録したリポジトリの PR だけ扱う (未登録なら全件)
+  const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
+  state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n.number && registered(n)), data.viewer.login);
   state.lastFetchedAt = Date.now();
   state.fetchError = null;
   saveState();
+}
+
+// 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
+function pollIntervalMs(minutes) {
+  const m = Number(minutes);
+  return (m >= 1 ? m : DEFAULT_CONFIG.pollMinutes) * 60 * 1000;
+}
+
+let pollTimer = null;
+function schedulePoll() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => refreshFromGitHub().catch((e) => {
+    state.fetchError = e.message;
+  }), pollIntervalMs(config.pollMinutes));
 }
 
 // ---------- claude 実行 ----------
 
 const queue = [];
 let running = 0;
+// 自分の PR への対応は同じ clone でブランチを切り替えるので、リポジトリごとに 1 件ずつ実行する
+const busyRepos = new Set();
+
+function parseLines(text) {
+  return text.split('\n').flatMap((line) => {
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// 実行中の stream-json 出力から、Claude の発言とツール呼び出しを直近 limit 件だけ 1 行ずつにする
+function logLines(text, limit = 50) {
+  const lines = [];
+  for (const ev of parseLines(text)) {
+    if (ev.type !== 'assistant') continue;
+    const indent = ev.parent_tool_use_id ? '  ↳ ' : '';
+    for (const c of ev.message?.content || []) {
+      if (c.type === 'text' && c.text.trim()) lines.push(`${indent}💬 ${c.text.trim()}`);
+      if (c.type === 'tool_use') lines.push(`${indent}🔧 ${c.name} ${JSON.stringify(c.input).slice(0, 200)}`);
+    }
+  }
+  return lines.slice(-limit);
+}
 
 // stdout/stderr をファイルに書き出した claude の結果を読む。合わせて .log にまとめ、元ファイルは消す
 function readRun(dir, logName, code) {
@@ -282,12 +432,9 @@ function readRun(dir, logName, code) {
   fs.writeFileSync(`${base}.log`, `exit=${code}\n--- stdout\n${stdout}\n--- stderr\n${stderr}`);
   fs.rmSync(`${base}.out`, { force: true });
   fs.rmSync(`${base}.err`, { force: true });
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    return { ok: false, error: `claude の出力を解析できません (exit=${code}): ${stderr.slice(-500)}` };
-  }
+  // stream-json は 1 行 1 イベントで、最後の result イベントに結果がまとまる
+  const parsed = parseLines(stdout).findLast((ev) => ev.type === 'result');
+  if (!parsed) return { ok: false, error: `claude の出力を解析できません (exit=${code}): ${stderr.slice(-500)}` };
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
 }
 
@@ -314,13 +461,14 @@ function waitForExit(pid) {
 // サーバーを再起動しても claude を止めず結果を回収できるよう、別プロセスグループで起動し出力をファイルに書かせる
 function runClaude(prompt, { key, cwd, resume, logName }) {
   return new Promise((resolve) => {
-    const args = ['-p', prompt, '--output-format', 'json', ...splitArgs(config.claudeArgs)];
+    const model = modelOptions(config);
+    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
     if (resume) args.push('--resume', resume);
     fs.mkdirSync(LOG_DIR, { recursive: true });
     const base = path.join(LOG_DIR, logName);
     const out = fs.openSync(`${base}.out`, 'w');
     const err = fs.openSync(`${base}.err`, 'w');
-    const child = spawn('claude', args, { cwd, env: childEnv(process.env), detached: true, stdio: ['ignore', out, err] });
+    const child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
     fs.closeSync(out);
     fs.closeSync(err);
     if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd } });
@@ -329,16 +477,38 @@ function runClaude(prompt, { key, cwd, resume, logName }) {
   });
 }
 
+// claude -p の result は最後のメッセージだけなので、サブエージェントの完了通知などで回答が続くと
+// 先に出力したタグが落ちる。その場合は同じセッションを 1 回だけ再開してタグを再出力させる
+async function runForTag(tag, prompt, opts, run = runClaude) {
+  const res = await run(prompt, opts);
+  if (!res.ok || !res.sessionId || extractTagJson(res.result, tag)) return res;
+  const retry = await run(`直前までに出力した <${tag}> ブロックを、内容を変えずにもう一度そのまま出力してください。まだ出力していなければ、指示どおりの形式で出力してください。`, {
+    ...opts,
+    resume: res.sessionId,
+    logName: `${opts.logName}-retag`,
+  });
+  const usage = addUsage(res.usage, retry.usage);
+  if (!retry.ok) return { ...res, usage };
+  return { ...res, usage, sessionId: retry.sessionId || res.sessionId, result: `${res.result}\n\n${retry.result}` };
+}
+
 function logName(key, kind) {
   return `${key.replace(/[^\w.-]+/g, '_')}-${kind}-${Date.now()}`;
 }
 
 function pump() {
-  while (running < config.maxConcurrent && queue.length > 0) {
-    const job = queue.shift();
+  for (let i = 0; i < queue.length && running < config.maxConcurrent; ) {
+    const job = queue[i];
+    if (job.repo && busyRepos.has(job.repo)) {
+      i++;
+      continue;
+    }
+    queue.splice(i, 1);
     running++;
+    if (job.repo) busyRepos.add(job.repo);
     job.run().finally(() => {
       running--;
+      busyRepos.delete(job.repo);
       pump();
     });
   }
@@ -379,20 +549,22 @@ function enqueueReview(key) {
   updateEntry(key, { status: 'queued', error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await runClaude(buildReviewPrompt(entry.pr, mapping), { key, cwd, logName: logName(key, 'review') }));
+    finishReview(key, cwd, await runForTag('review-board-findings', buildReviewPrompt(entry.pr, mapping), { key, cwd, logName: logName(key, 'review') }));
   } });
   pump();
 }
 
 // 前回のサーバープロセスで起動した claude の終了を待って結果を回収する
-function recoverRun(key, { status, run }) {
+function recoverRun(run, finish, repo) {
   running++;
+  if (repo) busyRepos.add(repo);
   waitForExit(run.pid)
-    // 終了コードは取れないが、JSON は最後にまとめて出力されるので解析できれば正常終了とみなす
+    // 終了コードは取れないが、result イベントは最後に出力されるので解析できれば正常終了とみなす
     .then(() => readRun(LOG_DIR, run.logName, 0))
-    .then((res) => (status === 'reviewing' ? finishReview(key, run.cwd, res) : finishPost(key, res)))
+    .then(finish)
     .finally(() => {
       running--;
+      busyRepos.delete(repo);
       pump();
     });
 }
@@ -419,6 +591,69 @@ function enqueuePost(key, decisions, approve, humanRead) {
     finishPost(key, res);
   } });
   pump();
+}
+
+// ---------- 自分の PR (レビューを受ける) ----------
+
+function finishMine(key, cwd, res) {
+  updateEntry(key, { run: null, usage: addUsage(state.mine[key]?.usage, res.usage) });
+  const entry = state.mine[key];
+  // キャンセル済みなら結果を捨てる
+  if (entry?.status !== 'running') return;
+  if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || '実行に失敗しました' });
+  const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan');
+  const items = entry.mode === 'self' ? parsed?.findings : parsed?.items;
+  updateEntry(key, {
+    status: 'planned',
+    sessionId: res.sessionId,
+    cwd,
+    raw: res.result,
+    summary: parsed?.summary || null,
+    findings: Array.isArray(items) ? items : null,
+    error: parsed ? null : '結果 (JSON) を取得できませんでした。原文を確認してください',
+  });
+}
+
+function finishApply(key, res) {
+  updateEntry(key, { run: null, usage: addUsage(state.mine[key]?.usage, res.usage) });
+  const applied = res.ok ? extractTagJson(res.result, 'review-board-applied') : null;
+  if (!applied?.done) {
+    return updateEntry(key, { status: 'planned', error: applied?.error || res.error || '対応結果を確認できませんでした。PR を確認してください', applyRaw: res.result });
+  }
+  updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, appliedAt: Date.now(), applyRaw: res.result });
+}
+
+// mode: 'self' (セルフレビュー) / 'fix' (指摘への対応計画)
+function enqueueMine(key, mode) {
+  const entry = state.mine[key];
+  const mapping = config.repos[entry.pr.repo];
+  const cwd = mapping.cwd || config.workdir;
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }) : buildFixPlanPrompt(entry.pr, mapping);
+  updateEntry(key, { status: 'queued', mode, error: null, findings: null, summary: null, raw: null, decisions: {} });
+  queue.push({ key, repo: entry.pr.repo, run: async () => {
+    updateEntry(key, { status: 'running', startedAt: Date.now() });
+    finishMine(key, cwd, await runForTag(mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan', prompt, { key, cwd, logName: logName(key, mode) }));
+  } });
+  pump();
+}
+
+function enqueueApply(key, decisions) {
+  const entry = state.mine[key];
+  const prompt = entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
+  updateEntry(key, { status: 'applying', error: null, decisions });
+  queue.push({ key, repo: entry.pr.repo, run: async () => {
+    finishApply(key, await runClaude(prompt, { key, cwd: entry.cwd, resume: entry.sessionId, logName: logName(key, 'apply') }));
+  } });
+  pump();
+}
+
+// 対応 (push・返信) は途中で止めると一部だけ反映された状態になり得るので、計画・セルフレビューのみ対象にする
+function cancelMine(key) {
+  const i = queue.findIndex((job) => job.key === key);
+  if (i >= 0) queue.splice(i, 1);
+  const pid = state.mine[key]?.run?.pid;
+  if (pid && isAlive(pid)) process.kill(pid, 'SIGTERM');
+  updateEntry(key, { status: 'idle', error: null });
 }
 
 // ---------- スキル候補 ----------
@@ -467,6 +702,7 @@ function boardPayload() {
     lastFetchedAt: state.lastFetchedAt,
     fetchError: state.fetchError,
     prs: Object.entries(state.prs).map(([key, e]) => ({ key, ...e })),
+    mine: Object.entries(state.mine).map(([key, e]) => ({ key, ...e })),
     config,
   };
 }
@@ -495,6 +731,15 @@ async function handle(req, res) {
     }
     return send(res, 200, boardPayload());
   }
+  if (req.method === 'GET' && url.pathname === '/api/log') {
+    const key = url.searchParams.get('key');
+    const run = (state.prs[key] || state.mine[key])?.run;
+    let text = '';
+    try {
+      if (run) text = fs.readFileSync(path.join(LOG_DIR, `${run.logName}.out`), 'utf8');
+    } catch {}
+    return send(res, 200, { running: !!run, lines: logLines(text) });
+  }
   if (req.method === 'GET' && url.pathname === '/api/skills') {
     const roots = [config.workdir, ...Object.values(config.repos).map((m) => m.cwd), ...url.searchParams.getAll('dir')];
     return send(res, 200, { skills: listSkills(roots) });
@@ -505,7 +750,38 @@ async function handle(req, res) {
     config = { ...config, ...body };
     writeJson(CONFIG_FILE, config);
     pump();
+    schedulePoll();
     return send(res, 200, { config });
+  }
+
+  if (req.method === 'POST' && url.pathname.startsWith('/api/mine/')) {
+    const mine = state.mine[body.key];
+    if (!mine) return send(res, 404, { error: 'not found' });
+    if (url.pathname === '/api/mine/run') {
+      const skill = config.repos[mine.pr.repo]?.[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
+      if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: `${mine.pr.repo} のスキルが未設定です` });
+      if (!['idle', 'planned'].includes(mine.status)) return send(res, 409, { error: '実行中です' });
+      enqueueMine(body.key, body.mode);
+      return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/mine/apply') {
+      if (mine.status !== 'planned' || !mine.findings || !mine.sessionId) return send(res, 409, { error: '対応できる状態ではありません' });
+      if (!body.confirmed) return send(res, 400, { error: '「指摘内容を確認しました」にチェックしてください' });
+      if (!canDecideAll(mine.findings, body.decisions)) return send(res, 400, { error: '未判断の指摘があります' });
+      enqueueApply(body.key, body.decisions);
+      return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/mine/merge-ready') {
+      if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: '移動できる状態ではありません' });
+      updateEntry(body.key, { mergeReady: !!body.ready });
+      return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/mine/cancel') {
+      if (!['queued', 'running'].includes(mine.status)) return send(res, 409, { error: 'キャンセルできる状態ではありません' });
+      cancelMine(body.key);
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 404, { error: 'not found' });
   }
 
   const entry = state.prs[body.key];
@@ -530,7 +806,7 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/skip') {
     // 投稿せずに Done へ移す。GitHub 上の依頼は残るので mergeBoard で requested に戻さない
-    if (entry.status !== 'requested') return send(res, 409, { error: 'スキップできる状態ではありません' });
+    if (!['requested', 'reviewed'].includes(entry.status)) return send(res, 409, { error: 'スキップできる状態ではありません' });
     updateEntry(body.key, { status: 'commented', commentedAt: Date.now(), skipped: true, error: null });
     return send(res, 200, { ok: true });
   }
@@ -544,24 +820,40 @@ async function handle(req, res) {
 
 function main() {
   config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
-  state = readJson(STATE_FILE, { prs: {} });
-  // 前回プロセスで実行中だったジョブは失われているので戻す
+  state = { mine: {}, ...readJson(STATE_FILE, { prs: {} }) };
   // claude を起動済みのジョブは別プロセスグループで動き続けているので結果を回収する
+  // 未起動のレビュー・計画は副作用がないのでキューに積み直し、投稿・対応は二重実行を避けて戻す
+  const requeue = [];
   for (const [key, e] of Object.entries(state.prs)) {
     if ((e.status === 'reviewing' || e.status === 'posting') && e.run) {
-      recoverRun(key, e);
+      recoverRun(e.run, (res) => (e.status === 'reviewing' ? finishReview(key, e.run.cwd, res) : finishPost(key, res)));
       continue;
     }
-    if (e.status === 'queued' || e.status === 'reviewing') state.prs[key] = { ...e, status: 'requested', error: 'サーバー再起動により中断されました' };
+    if (e.status === 'queued' || e.status === 'reviewing') {
+      if (config.repos[e.pr.repo]?.skill) requeue.push(() => enqueueReview(key));
+      else state.prs[key] = { ...e, status: 'requested', error: 'サーバー再起動により中断されました' };
+    }
     if (e.status === 'posting') state.prs[key] = { ...e, status: 'reviewed', error: 'サーバー再起動により投稿が中断されました。PR を確認してから再実行してください' };
   }
+  for (const [key, e] of Object.entries(state.mine)) {
+    if ((e.status === 'running' || e.status === 'applying') && e.run) {
+      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.cwd, res) : finishApply(key, res)), e.pr.repo);
+      continue;
+    }
+    if (e.status === 'queued' || e.status === 'running') {
+      if (config.repos[e.pr.repo]?.[e.mode === 'self' ? 'selfSkill' : 'fixSkill']) requeue.push(() => enqueueMine(key, e.mode));
+      else state.mine[key] = { ...e, status: 'idle', error: 'サーバー再起動により中断されました' };
+    }
+    if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: 'サーバー再起動により対応が中断されました。PR を確認してから再実行してください' };
+  }
   saveState();
+  // 回収中のジョブを running に数えてから積むので maxConcurrent を超えない
+  for (const fn of requeue) fn();
 
-  const poll = () => refreshFromGitHub().catch((e) => {
+  refreshFromGitHub().catch((e) => {
     state.fetchError = e.message;
   });
-  poll();
-  setInterval(poll, config.pollMinutes * 60 * 1000);
+  schedulePoll();
 
   http
     .createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
@@ -570,4 +862,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { readRun, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, mergeBoard, fillTemplate, buildReviewPrompt, buildPostPrompt, extractTagJson, splitArgs, canDecideAll, RE_REQUEST_GRACE_MS };
+module.exports = { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };

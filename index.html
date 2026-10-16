@@ -24,11 +24,17 @@
   button:disabled { opacity: .45; cursor: not-allowed; }
   input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
   header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 1; }
-  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .grow { flex: 1; }
   header .meta { color: var(--muted); font-size: 12px; }
+  nav.tabs { display: flex; gap: 4px; }
+  nav.tabs a { padding: 4px 12px; border-radius: 6px; color: var(--text); }
+  nav.tabs a.on { background: var(--accent); color: var(--accent-text); }
+  nav.tabs a:hover { text-decoration: none; }
+  nav.tabs a.changed::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
   .avatar { width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; }
   .banner { margin: 12px 16px 0; padding: 8px 12px; border: 1px solid var(--danger); color: var(--danger); border-radius: 6px; white-space: pre-wrap; }
-  .board { display: grid; grid-template-columns: repeat(4, minmax(260px, 1fr)); gap: 12px; padding: 16px; overflow-x: auto; }
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 16px; overflow-x: auto; }
   .lane { background: var(--lane); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-height: 60vh; }
   .lane h2 { font-size: 14px; margin: 4px 4px 8px; display: flex; gap: 8px; align-items: center; }
   .lane h2 .count { background: var(--chip); border-radius: 10px; padding: 0 8px; font-size: 12px; color: var(--muted); }
@@ -36,6 +42,8 @@
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
   .card.clickable { cursor: pointer; }
   .card[draggable] { cursor: grab; }
+  .board.editing .lane { cursor: grab; }
+  .board.editing .card { pointer-events: none; opacity: .4; }
   .lane.drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
   .card.clickable:hover { border-color: var(--accent); }
   .card .top { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
@@ -47,7 +55,12 @@
   .chip.merged { border-color: #8250df; color: #8250df; }
   .chip.err { border-color: var(--danger); color: var(--danger); }
   .chip.off { border-color: var(--warn); color: var(--warn); }
+  .chip.pending { border-color: var(--danger); color: var(--danger); }
   .issue { font-size: 12px; display: block; color: var(--muted); }
+  .branch { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; word-break: break-all; margin-bottom: 4px; }
+  .stack { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .stack a { color: var(--muted); text-decoration: underline; }
+  .card.hl { border: 3px solid var(--accent); padding: 8px; }
   .reviewers { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
   .rv { position: relative; }
   .rv .st { position: absolute; right: -4px; bottom: -4px; font-size: 10px; background: var(--panel); border-radius: 50%; line-height: 1; }
@@ -63,6 +76,7 @@
   .dlg-foot { border-bottom: 0; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--panel); }
   .dlg-head h3 { margin: 0; font-size: 16px; flex: 1; }
   .dlg-body { padding: 12px 16px; }
+  .log { margin: 0; height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
   .finding { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
   .finding.agree { border-left: 4px solid var(--ok); }
   .finding.disagree { border-left: 4px solid var(--danger); }
@@ -77,9 +91,11 @@
   table.repos th, table.repos td { border-bottom: 1px solid var(--border); padding: 6px; text-align: left; }
   table.repos input, table.repos select { width: 100%; }
   .form-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .form-row input, .form-row textarea { width: 100%; }
+  .form-row input, .form-row textarea, .form-row select { width: 100%; }
+  .tip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+  .tip summary { cursor: pointer; font-weight: 600; }
   @media (max-width: 700px) {
-    .board { grid-template-columns: repeat(4, 85vw); }
+    .board { grid-auto-columns: 85vw; }
     .form-row { grid-template-columns: 1fr; }
   }
 </style>
@@ -87,9 +103,15 @@
 <body>
 <header>
   <h1>Review Board</h1>
+  <nav class="tabs"><a href="#review" data-view="review">レビューする</a><a href="#receive" data-view="receive">レビューを受ける</a></nav>
+  <span class="grow"></span>
   <span class="meta" id="meta"></span>
   <span id="viewer"></span>
   <button id="refresh">更新</button>
+  <button id="open-tips">Tip</button>
+  <button id="edit-lanes">レーン配置</button>
+  <button id="lane-save" class="primary" hidden>配置を保存</button>
+  <button id="lane-cancel" hidden>キャンセル</button>
   <button id="open-settings">設定</button>
 </header>
 <div id="banner"></div>
@@ -97,6 +119,25 @@
 
 <dialog id="review-dlg"></dialog>
 <dialog id="settings-dlg"></dialog>
+<dialog id="log-dlg">
+  <form method="dialog" class="dlg-head"><h3>Claude の出力</h3><button>閉じる</button></form>
+  <pre class="dlg-body log"></pre>
+</dialog>
+<dialog id="tips-dlg">
+  <form method="dialog" class="dlg-head"><h3>Tip</h3><button>閉じる</button></form>
+  <div class="dlg-body">
+    <details class="tip">
+      <summary>GitHub のページを右側に固定して開く</summary>
+      <p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p>
+      <ol>
+        <li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li>
+        <li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li>
+        <li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li>
+      </ol>
+      <p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>
+    </details>
+  </div>
+</dialog>
 
 <script>
 const LANES = [
@@ -105,11 +146,33 @@ const LANES = [
   { id: 'reviewed', label: 'Reviewed', color: '#0969da', statuses: ['reviewed', 'posting'] },
   { id: 'commented', label: 'Done', color: '#8250df', statuses: ['commented'] },
 ];
+// レビューを受ける (自分の PR)
+const MINE_LANES = [
+  { id: 'mine', label: 'レビュー待ち', color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pending && !e.mergeReady },
+  { id: 'pending', label: '指摘あり', color: '#cf222e', match: (e) => e.status === 'idle' && e.pending > 0 },
+  { id: 'running', label: '実行中', color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status) },
+  { id: 'planned', label: '判断待ち', color: '#0969da', match: (e) => e.status === 'planned' },
+  { id: 'mergeable', label: 'マージ可能', color: '#8250df', match: (e) => e.status === 'idle' && e.mergeReady },
+];
+// レーンの並び順はブラウザごとに保存する。「レーン配置」モード中だけドラッグで並び替えられる
+const laneOrderKey = (v) => `rb-lane-order:${v}`;
+function lanesFor(v) {
+  const lanes = v === 'receive' ? MINE_LANES : LANES;
+  let order = laneEdit || [];
+  if (!laneEdit) try { order = JSON.parse(localStorage.getItem(laneOrderKey(v))) || []; } catch {}
+  const rank = (l) => (order.includes(l.id) ? order.indexOf(l.id) : order.length + lanes.indexOf(l));
+  return [...lanes].sort((a, b) => rank(a) - rank(b));
+}
+let laneEdit = null; // 編集中の lane id 配列
+let laneDrag = null;
+const view = () => (location.hash === '#receive' ? 'receive' : 'review');
 const REVIEW_ICON = { APPROVED: '✅', CHANGES_REQUESTED: '🔴', COMMENTED: '💬', DISMISSED: '⚪', PENDING: '⏳' };
-const POLL_LOCAL_MS = 5000;
 
-let board = { prs: [], config: { repos: {} } };
+let board = { prs: [], mine: [], config: { repos: {} } };
 let openKey = null;
+// 表示中でないタブの status 変化をタブ名の赤丸で知らせる (メモリ保持のみ)
+const seenSig = {};
+const tabSig = (v) => (v === 'receive' ? board.mine : board.prs).map((p) => `${p.key}:${p.status}`).sort().join();
 
 // 内蔵ブラウザ (Electron など) では confirm()/alert() が表示されず即 false になるため、
 // 確認は「もう一度押す」方式、通知はトーストで行う
@@ -139,6 +202,35 @@ function toast(msg) {
 }
 
 const $ = (sel) => document.querySelector(sel);
+
+// Claude アプリは claude -p のセッションを取り込めないので、ターミナルで開くコマンドをコピーさせる
+const shq = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
+function resumeButton(e) {
+  if (!e.sessionId) return '';
+  // ボードの実行と同じく、設定のモデルをサブエージェントにも使わせる
+  const { model, effort } = board.config;
+  const cmd = `${e.cwd ? `cd ${shq(e.cwd)} && ` : ''}${model ? `CLAUDE_CODE_SUBAGENT_MODEL=${shq(model)} ` : ''}claude --resume ${e.sessionId}`
+    + `${model ? ` --model ${shq(model)}` : ''}${effort ? ` --effort ${shq(effort)}` : ''}`;
+  return `<button data-resume="${esc(cmd)}" title="${esc(cmd)}">resume をコピー</button>`;
+}
+document.addEventListener('click', async (ev) => {
+  const t = ev.target.closest('[data-resume]');
+  if (!t) return;
+  ev.stopPropagation();
+  // Clipboard API が拒否される環境では従来の execCommand で写し、それも駄目ならコマンドを見せる
+  const copied = await navigator.clipboard.writeText(t.dataset.resume).then(() => true, () => {
+    const ta = document.createElement('textarea');
+    ta.value = t.dataset.resume;
+    t.after(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  });
+  if (!copied) return toast(`コピーできませんでした:\n${t.dataset.resume}`);
+  t.textContent = 'コピーしました';
+  setTimeout(() => (t.textContent = 'resume をコピー'), 1500);
+}, true);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function api(path, opts = {}) {
@@ -169,23 +261,33 @@ async function load(refresh = false) {
 }
 
 function render() {
-  if (dragging) return; // 再描画するとドラッグが途切れる
+  if (dragging || laneDrag) return; // 再描画するとドラッグが途切れる
   $('#viewer').innerHTML = board.viewer ? `<img class="avatar" src="${esc(board.viewer.avatarUrl)}" alt=""> ${esc(board.viewer.login)}` : '';
   $('#meta').textContent = board.lastFetchedAt ? `最終取得 ${new Date(board.lastFetchedAt).toLocaleTimeString()}` : '';
   $('#banner').innerHTML = board.fetchError ? `<div class="banner">GitHub の取得に失敗しました: ${esc(board.fetchError)}</div>` : '';
 
-  const prs = [...board.prs].sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
-  $('#board').innerHTML = LANES.map((lane) => {
-    const cards = prs.filter((p) => lane.statuses.includes(p.status));
-    return `<section class="lane" data-lane="${lane.id}">
+  const mine = view() === 'receive';
+  document.querySelectorAll('nav.tabs a').forEach((a) => {
+    const v = a.dataset.view;
+    if (board.lastFetchedAt && (v === view() || seenSig[v] === undefined)) seenSig[v] = tabSig(v);
+    a.classList.toggle('on', v === view());
+    a.classList.toggle('changed', seenSig[v] !== undefined && seenSig[v] !== tabSig(v));
+  });
+  const prs = [...(mine ? board.mine : board.prs)].sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
+  $('#edit-lanes').hidden = !!laneEdit;
+  $('#lane-save').hidden = $('#lane-cancel').hidden = !laneEdit;
+  $('#board').classList.toggle('editing', !!laneEdit);
+  $('#board').innerHTML = lanesFor(view()).map((lane) => {
+    const cards = prs.filter(lane.match || ((p) => lane.statuses.includes(p.status)));
+    return `<section class="lane" data-lane="${lane.id}" ${laneEdit ? 'draggable="true"' : ''}>
       <h2><span class="dot" style="border-color:${lane.color}"></span>${lane.label}<span class="count">${cards.length}</span></h2>
-      ${cards.map(cardHtml).join('') || '<div class="muted" style="padding:4px">なし</div>'}
+      ${cards.map(mine ? mineCardHtml : cardHtml).join('') || '<div class="muted" style="padding:4px">なし</div>'}
     </section>`;
   }).join('');
 
   if (openKey && $('#review-dlg').open) {
-    const entry = board.prs.find((p) => p.key === openKey);
-    if (!entry || entry.status !== 'reviewed') $('#review-dlg').close();
+    const entry = [...board.prs, ...board.mine].find((p) => p.key === openKey);
+    if (!entry || !['reviewed', 'planned'].includes(entry.status)) $('#review-dlg').close();
   }
 }
 
@@ -194,14 +296,7 @@ function fmtTokens(n) {
 }
 
 function cardHtml(e) {
-  const pr = e.pr;
-  const mapping = board.config.repos[pr.repo];
-  const reviewed = new Set(pr.reviews.map((r) => r.login));
-  const reviewers = [
-    ...pr.reviews.map((r) => `<span class="rv" title="${esc(r.login)}: ${esc(r.state)}"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""><span class="st">${REVIEW_ICON[r.state] || ''}</span></span>`),
-    ...pr.requested.filter((r) => !reviewed.has(r.login)).map((r) => `<span class="rv pending" title="${esc(r.login)}: レビュー待ち"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""></span>`),
-  ].join('');
-
+  const mapping = board.config.repos[e.pr.repo];
   let action = '';
   if (e.status === 'requested') {
     action = mapping?.skill
@@ -211,36 +306,97 @@ function cardHtml(e) {
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> 待機中…</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
   } else if (e.status === 'reviewing') {
-    action = `<span class="muted"><span class="spin"></span> レビュー中… (${ago(new Date(e.startedAt).toISOString())}に開始)</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
+    action = `<span class="muted"><span class="spin"></span> レビュー中… (${ago(new Date(e.startedAt).toISOString())}に開始)</span><button data-log="${esc(e.key)}">ログ</button><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
   } else if (e.status === 'reviewed') {
     action = `<span>${e.findings ? `指摘 ${e.findings.length} 件 — 判断する` : '原文を確認する'}</span>`;
   } else if (e.status === 'posting') {
-    action = '<span class="muted"><span class="spin"></span> 投稿中…</span>';
+    action = `<span class="muted"><span class="spin"></span> 投稿中…</span><button data-log="${esc(e.key)}">ログ</button>`;
   } else if (e.status === 'commented') {
-    action = `${e.postedUrl ? `<a href="${esc(e.postedUrl)}" target="_blank" rel="noopener">投稿したレビュー</a>` : `<span class="muted">${e.skipped ? 'スキップ済み' : '投稿済み'}</span>`}<button data-dismiss="${esc(e.key)}" title="ボードから消す">×</button>`;
+    action = `${e.postedUrl ? `<a href="${esc(e.postedUrl)}" target="rb-viewer">投稿したレビュー</a>` : `<span class="muted">${e.skipped ? 'スキップ済み' : '投稿済み'}</span>`}${resumeButton(e)}<button data-dismiss="${esc(e.key)}" title="ボードから消す">×</button>`;
   }
 
   const clickable = e.status === 'reviewed';
-  // Requested ⇄ Reviewing の D&D で レビューする / キャンセル と同じ操作をする
-  const dragFrom = e.status === 'requested' ? (mapping?.skill ? 'requested' : null) : ['queued', 'reviewing'].includes(e.status) ? 'reviewing' : null;
-  return `<article class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}>
+  // Requested ⇄ Reviewing の D&D で レビューする / キャンセル、Requested・Reviewed → Done で投稿せずに終える
+  const dragFrom = ['requested', 'reviewed'].includes(e.status) ? e.status : ['queued', 'reviewing'].includes(e.status) ? 'reviewing' : null;
+  return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'reviewed');
+}
+
+const MINE_RUNNING = { self: 'セルフレビュー中…', fix: '指摘を確認中…' };
+function mineCardHtml(e) {
+  const mapping = board.config.repos[e.pr.repo] || {};
+  const cancel = `<button data-mine-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
+  let action = '';
+  if (e.status === 'idle') {
+    const buttons = [
+      mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(mapping.selfSkill)}">セルフレビュー</button>`,
+      mapping.fixSkill && `<button ${e.pending ? 'class="primary"' : ''} data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">指摘に対応</button>`,
+    ].filter(Boolean);
+    action = buttons.length ? `<span>${buttons.join(' ')}</span>` : '<a href="#" data-settings>スキル未設定</a>';
+    if (e.appliedAt) action += `<span class="muted">対応済み ${ago(new Date(e.appliedAt).toISOString())}</span>`;
+  } else if (e.status === 'queued') {
+    action = `<span class="muted"><span class="spin"></span> 待機中…</span>${cancel}`;
+  } else if (e.status === 'running') {
+    action = `<span class="muted"><span class="spin"></span> ${MINE_RUNNING[e.mode]} (${ago(new Date(e.startedAt).toISOString())}に開始)</span><button data-log="${esc(e.key)}">ログ</button>${cancel}`;
+  } else if (e.status === 'planned') {
+    action = `<span>${e.findings ? `指摘 ${e.findings.length} 件 — 判断する` : '原文を確認する'}</span>`;
+  } else if (e.status === 'applying') {
+    action = `<span class="muted"><span class="spin"></span> 修正・push・返信中…</span><button data-log="${esc(e.key)}">ログ</button>`;
+  }
+  const clickable = e.status === 'planned';
+  // 自分の PR ⇄ マージ可能 の D&D で手動で移す
+  const dragFrom = e.status === 'idle' && !e.pending ? (e.mergeReady ? 'mergeable' : 'mine') : null;
+  return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open-mine="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'planned');
+}
+
+// ボード上の同じリポジトリの PR で、base = 相手の head なら積まれている関係。親 → 自分 → 子 の順に並べる
+const prId = (pr) => `${pr.repo}#${pr.number}`;
+function stackHtml(pr) {
+  const all = new Map([...board.prs, ...board.mine].map((p) => [prId(p.pr), p.pr]));
+  const same = [...all.values()].filter((p) => p.repo === pr.repo && p.number !== pr.number);
+  const parents = same.filter((p) => p.head === pr.base);
+  const children = same.filter((p) => p.base === pr.head);
+  if (!parents.length && !children.length) return '';
+  const links = (ps) => ps.map((p) => `<a href="${esc(p.url)}" target="rb-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
+  return `<div class="stack">スタック: ${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
+}
+
+// スタックのリンク先カードを一時的に強調する。再描画されても消えないよう状態で持つ
+let highlight = null;
+function jumpTo(id) {
+  highlight = id;
+  render();
+  $(`#board [data-pr="${CSS.escape(id)}"]`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => { if (highlight === id) { highlight = null; render(); } }, 3000);
+}
+
+function cardShell(e, action, attrs, showError) {
+  const pr = e.pr;
+  const reviewed = new Set(pr.reviews.map((r) => r.login));
+  const reviewers = [
+    ...pr.reviews.map((r) => `<span class="rv" title="${esc(r.login)}: ${esc(r.state)}"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""><span class="st">${REVIEW_ICON[r.state] || ''}</span></span>`),
+    ...pr.requested.filter((r) => !reviewed.has(r.login)).map((r) => `<span class="rv pending" title="${esc(r.login)}: レビュー待ち"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""></span>`),
+  ].join('');
+  return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}`)}>
     <div class="top">
       <img class="avatar" src="${esc(pr.author?.avatarUrl)}" alt="" title="${esc(pr.author?.login)}">
-      <span class="grow"><a href="${esc(pr.url)}" target="_blank" rel="noopener">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
+      <span class="grow"><a href="${esc(pr.url)}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
       <span>${ago(pr.updatedAt)}</span>
     </div>
     <div class="title">${esc(pr.title)}</div>
+    ${pr.base ? `<div class="branch" title="base ← head">${esc(pr.base)} ← ${esc(pr.head)}</div>` : ''}
     <div class="chips">
       ${pr.state === 'MERGED' ? `<span class="chip merged" title="${esc(new Date(pr.mergedAt).toLocaleString())}">Merged</span>` : ''}
       ${pr.isDraft ? '<span class="chip draft">Draft</span>' : ''}
       ${e.active === false ? '<span class="chip off">依頼解除済み</span>' : ''}
+      ${e.pending ? `<span class="chip pending" title="未解決スレッドのうち、最後の発言が自分以外のもの">未対応の指摘 ${e.pending}</span>` : ''}
       ${e.usage ? `<span class="chip" title="このPRで使ったトークン (キャッシュ込み) と費用の累計">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
       ${e.error ? `<span class="chip err" title="${esc(e.error)}">エラー</span>` : ''}
       ${pr.labels.map((l) => `<span class="chip" style="border-color:#${esc(l.color)}">${esc(l.name)}</span>`).join('')}
     </div>
-    ${pr.issues.map((i) => `<a class="issue" href="${esc(i.url)}" target="_blank" rel="noopener">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
+    ${stackHtml(pr)}
+    ${pr.issues.map((i) => `<a class="issue" href="${esc(i.url)}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
     <div class="reviewers">${reviewers}</div>
-    ${e.error && e.status !== 'reviewed' ? `<div class="muted" style="color:var(--danger)">${esc(e.error)}</div>` : ''}
+    ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(e.error)}</div>` : ''}
     <div class="actions">${action}</div>
   </article>`;
 }
@@ -267,7 +423,7 @@ function openReview(key) {
     const ready = findings && decided === findings.length;
     dlg.innerHTML = `
       <div class="dlg-head">
-        <h3><a href="${esc(e.pr.url)}" target="_blank" rel="noopener">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
         <button data-close>閉じる</button>
       </div>
       <div class="dlg-body">
@@ -279,6 +435,7 @@ function openReview(key) {
       </div>
       <div class="dlg-foot">
         <button data-rereview>再レビュー</button>
+        ${resumeButton(e)}
         <span style="flex:1"></span>
         ${findings ? `<span class="muted">${decided} / ${findings.length} 判断済み</span>` : ''}
         <label title="AI 任せのノールックレビューを防ぐため、自分でもコードを読んだらチェックしてください"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> コードを読みました</label>
@@ -336,12 +493,13 @@ function openReview(key) {
   dlg.showModal();
 }
 
-function findingHtml(f, d) {
+const REVIEW_PLACEHOLDER = { agree: '理由・補足 (任意・コメント本文に反映されます)', disagree: '非同意の理由 (任意・書くと 🤔💭 付きで投稿されます)' };
+function findingHtml(f, d, placeholders = REVIEW_PLACEHOLDER) {
   const loc = f.path ? `${f.path}${f.line ? `:${f.line}` : ''}` : '';
-  const placeholder = d.verdict === 'disagree' ? '非同意の理由 (任意・書くと 🤔💭 付きで投稿されます)' : '理由・補足 (任意・コメント本文に反映されます)';
+  const placeholder = d.verdict === 'disagree' ? placeholders.disagree : placeholders.agree;
   return `<div class="finding ${esc(d.verdict || '')}">
     <div class="head"><strong>#${esc(f.no)}</strong>${f.severity ? `<span class="chip">${esc(f.severity)}</span>` : ''}<span class="grow">${esc(f.title)}</span></div>
-    ${loc ? `<div class="muted">${esc(loc)}</div>` : ''}
+    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(f.url)}" target="rb-viewer">元コメント</a>` : ''}</div>` : ''}
     <pre>${esc(f.body)}</pre>
     <div class="verdict">
       <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">同意</button>
@@ -349,6 +507,101 @@ function findingHtml(f, d) {
       <textarea data-reason data-no="${esc(f.no)}" placeholder="${placeholder}">${esc(d.reason || '')}</textarea>
     </div>
   </div>`;
+}
+
+// ---------- 自分の PR の判断ダイアログ ----------
+
+const MINE_PLACEHOLDER = {
+  self: { agree: '補足 (任意・投稿と修正に反映されます)', disagree: '非同意の指摘は投稿も修正もしません (メモ欄)' },
+  fix: { agree: '補足 (任意・修正と返信に反映されます)', disagree: '非同意の理由 (任意・書くとその内容で対応を決め直します。空なら修正も返信もしません)' },
+};
+
+// review-fix の対応計画を指摘カードの形にそろえる
+function planToFinding(item) {
+  return {
+    ...item,
+    severity: item.category,
+    title: `${item.author ? `@${item.author}: ` : ''}${item.comment || ''}`,
+    body: [item.plan && `【修正】\n${item.plan}`, item.reply && `【返信】\n${item.reply}`].filter(Boolean).join('\n\n'),
+  };
+}
+
+function openMine(key) {
+  openKey = key;
+  const e = board.mine.find((p) => p.key === key);
+  const draft = { decisions: {}, confirmed: false, ...loadDraft(key) };
+  const dlg = $('#review-dlg');
+  const findings = e.findings && (e.mode === 'fix' ? e.findings.map(planToFinding) : e.findings);
+  const runLabel = e.mode === 'self' ? 'セルフレビューをやり直す' : '計画を作り直す';
+
+  const renderDlg = () => {
+    const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
+    const ready = findings && decided === findings.length && draft.confirmed;
+    dlg.innerHTML = `
+      <div class="dlg-head">
+        <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <button data-close>閉じる</button>
+      </div>
+      <div class="dlg-body">
+        <p class="muted">${e.mode === 'self' ? 'セルフレビュー: 同意した指摘を PR に投稿し、修正・push してから、その指摘に返信します。' : '指摘への対応計画: 同意した計画どおりに修正・push・返信します。'}</p>
+        ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(e.error)}</div>` : ''}
+        ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
+        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, MINE_PLACEHOLDER[e.mode])).join('') : '<p class="muted">対応する指摘はありません。</p>')
+          : `<pre class="raw">${esc(e.raw || '(出力なし)')}</pre>`}
+        ${findings && e.raw ? `<details><summary class="muted">エージェントの原文</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
+        ${e.applyRaw ? `<details><summary class="muted">前回の対応の原文</summary><pre class="raw">${esc(e.applyRaw)}</pre></details>` : ''}
+      </div>
+      <div class="dlg-foot">
+        <button data-rerun>${runLabel}</button>
+        ${resumeButton(e)}
+        <span style="flex:1"></span>
+        ${findings ? `<span class="muted">${decided} / ${findings.length} 判断済み</span>` : ''}
+        <label><input type="checkbox" data-confirmed ${draft.confirmed ? 'checked' : ''} ${findings ? '' : 'disabled'}> 指摘内容を確認しました</label>
+        <button class="primary" data-submit ${ready ? '' : 'disabled'}>コメントする</button>
+      </div>`;
+  };
+
+  dlg.onclick = async (ev) => {
+    const t = ev.target;
+    if (t.matches('[data-close]')) return dlg.close();
+    if (t.matches('[data-verdict]')) {
+      const no = t.dataset.no;
+      draft.decisions[no] = { ...draft.decisions[no], verdict: t.dataset.verdict };
+      saveDraft(key, draft);
+      return renderDlg();
+    }
+    if (t.matches('[data-confirmed]')) {
+      draft.confirmed = t.checked;
+      saveDraft(key, draft);
+      return renderDlg();
+    }
+    if (t.matches('[data-rerun]')) {
+      if (!confirmTwice(t, `rerun:${key}`, 'もう一度押すと判断を破棄してやり直す')) return;
+      saveDraft(key, {});
+      dlg.close();
+      return runMine(key, e.mode);
+    }
+    if (t.matches('[data-submit]')) {
+      if (!confirmTwice(t, `submit:${key}`, 'もう一度押すと push・コメント')) return;
+      try {
+        await api('/api/mine/apply', { method: 'POST', body: { key, decisions: draft.decisions, confirmed: draft.confirmed } });
+        saveDraft(key, {});
+        dlg.close();
+        load();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+  };
+  dlg.oninput = (ev) => {
+    if (!ev.target.matches('[data-reason]')) return;
+    const no = ev.target.dataset.no;
+    draft.decisions[no] = { ...draft.decisions[no], reason: ev.target.value };
+    saveDraft(key, draft);
+  };
+
+  renderDlg();
+  dlg.showModal();
 }
 
 // ---------- 設定ダイアログ ----------
@@ -361,23 +614,42 @@ async function openSettings() {
     return (await api(`/api/skills?${new URLSearchParams(dirs.map((d) => ['dir', d]))}`)).skills;
   };
   let skills = await fetchSkills();
-  const repos = new Set([...Object.keys(cfg.repos), ...board.prs.map((p) => p.pr.repo)]);
+  const repos = new Set([...Object.keys(cfg.repos), ...board.prs.map((p) => p.pr.repo), ...board.mine.map((p) => p.pr.repo)]);
 
   const skillOptions = (current) => {
     const list = skills.includes(current) || !current ? skills : [current, ...skills];
     return `<option value="">(未設定)</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
   };
+  // 引数テンプレートを例の PR で展開し、実際に渡るコマンドを入力欄の下に出す
+  const ARG_SKILL = { args: 'skill', selfArgs: 'selfSkill', fixArgs: 'fixSkill' };
+  const preview = (r, field) => {
+    const m = cfg.repos[r] || {};
+    const [owner, name] = r.split('/');
+    const filled = (m[field] || '{pr-number}')
+      .replaceAll('{pr-number}', '123')
+      .replaceAll('{pr-url}', `https://github.com/${r}/pull/123`)
+      .replaceAll('{repo-name}', name)
+      .replaceAll('{owner-name}', owner)
+      .replaceAll('{full-repo-name}', r);
+    return `→ /${m[ARG_SKILL[field]] || '(スキル)'} ${filled}`;
+  };
+  const argInput = (r, field) => `<input data-repo="${esc(r)}" data-field="${field}" value="${esc(cfg.repos[r]?.[field] || '{pr-number}')}">`
+    + `<div class="muted" data-preview="${esc(r)}|${field}">${esc(preview(r, field))}</div>`;
   const renderDlg = () => {
     dlg.innerHTML = `
       <div class="dlg-head"><h3>設定</h3><button data-close>閉じる</button></div>
       <div class="dlg-body">
         <div class="form-row"><label>作業ディレクトリ</label><input data-cfg="workdir" value="${esc(cfg.workdir)}"></div>
+        <div class="form-row"><label title="空なら claude の既定。サブエージェントも同じモデルで動きます">モデル</label><input data-cfg="model" list="model-list" placeholder="opus" value="${esc(cfg.model || '')}"><datalist id="model-list"><option value="opus"><option value="sonnet"><option value="haiku"></datalist></div>
+        <div class="form-row"><label>effort</label><select data-cfg="effort">${['', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}" ${(cfg.effort || '') === v ? 'selected' : ''}>${v || '(既定)'}</option>`).join('')}</select></div>
         <div class="form-row"><label>claude 追加引数</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
         <div class="form-row"><label>マージ済み PR の表示日数</label><input data-cfg="mergedDays" type="number" min="0" value="${esc(cfg.mergedDays)}"></div>
+        <div class="form-row"><label>画面の更新間隔 (秒)</label><input data-cfg="refreshSeconds" type="number" min="1" value="${esc(cfg.refreshSeconds)}"></div>
+        <div class="form-row"><label>GitHub の取得間隔 (分)</label><input data-cfg="pollMinutes" type="number" min="1" value="${esc(cfg.pollMinutes)}"></div>
         <div class="form-row"><label>同時実行数</label><input data-cfg="maxConcurrent" type="number" min="1" value="${esc(cfg.maxConcurrent)}"></div>
         <div class="form-row"><label>PR 作成者 (1 行 1 人、空なら全員)</label><textarea data-cfg="authors" rows="5" placeholder="alice&#10;dependabot[bot]">${esc((cfg.authors || []).join('\n'))}</textarea></div>
         <h4>リポジトリとスキルの対応</h4>
-        <p class="muted">引数テンプレートで使える値: {number} {url} {repo} {owner} {fullRepo}。作業ディレクトリが空なら上の既定値で claude を起動します。スキル一覧は ~/.claude/skills と各作業ディレクトリの .claude/skills から探します。</p>
+        <p class="muted">引数テンプレートで使える値: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}。作業ディレクトリが空なら上の既定値で claude を起動します。スキル一覧は ~/.claude/skills と各作業ディレクトリの .claude/skills から探します。</p>
         <table class="repos">
           <thead><tr><th>リポジトリ</th><th>スキル</th><th>引数テンプレート</th><th>作業ディレクトリ</th></tr></thead>
           <tbody>
@@ -386,8 +658,25 @@ async function openSettings() {
               return `<tr>
                 <td>${esc(r)}</td>
                 <td><select data-repo="${esc(r)}" data-field="skill">${skillOptions(m.skill)}</select></td>
-                <td><input data-repo="${esc(r)}" data-field="args" value="${esc(m.args || '{number}')}"></td>
+                <td>${argInput(r, 'args')}</td>
                 <td><input data-repo="${esc(r)}" data-field="cwd" value="${esc(m.cwd || '')}" placeholder="既定"></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <h4>レビューを受ける (自分の PR) のスキル</h4>
+        <p class="muted">スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;review-board-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。</p>
+        <table class="repos">
+          <thead><tr><th>リポジトリ</th><th>セルフレビュー</th><th>引数テンプレート</th><th>指摘への対応</th><th>引数テンプレート</th></tr></thead>
+          <tbody>
+            ${[...repos].sort().map((r) => {
+              const m = cfg.repos[r] || {};
+              return `<tr>
+                <td>${esc(r)}</td>
+                <td><select data-repo="${esc(r)}" data-field="selfSkill">${skillOptions(m.selfSkill)}</select></td>
+                <td>${argInput(r, 'selfArgs')}</td>
+                <td><select data-repo="${esc(r)}" data-field="fixSkill">${skillOptions(m.fixSkill)}</select></td>
+                <td>${argInput(r, 'fixArgs')}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -401,7 +690,11 @@ async function openSettings() {
     const t = ev.target;
     if (t.dataset.cfg === 'authors') cfg.authors = t.value.split('\n').map((s) => s.trim()).filter(Boolean);
     else if (t.dataset.cfg) cfg[t.dataset.cfg] = t.type === 'number' ? Number(t.value) : t.value;
-    if (t.dataset.repo) cfg.repos[t.dataset.repo] = { args: '{number}', ...cfg.repos[t.dataset.repo], [t.dataset.field]: t.value };
+    if (t.dataset.repo) cfg.repos[t.dataset.repo] = { args: '{pr-number}', ...cfg.repos[t.dataset.repo], [t.dataset.field]: t.value };
+    if (t.dataset.repo) for (const el of dlg.querySelectorAll('[data-preview]')) {
+      const [r, field] = el.dataset.preview.split('|');
+      if (r === t.dataset.repo) el.textContent = preview(r, field);
+    }
   };
   // 作業ディレクトリを変えたらスキル候補を取り直す
   dlg.onchange = async (ev) => {
@@ -429,6 +722,36 @@ async function openSettings() {
 
 // ---------- イベント ----------
 
+async function runMine(key, mode) {
+  try {
+    await api('/api/mine/run', { method: 'POST', body: { key, mode } });
+  } catch (e) {
+    toast(e.message);
+  }
+  load();
+}
+
+// 開いている間だけ取り直す。末尾を見ているときだけ自動で末尾へ追従する
+async function openLog(key) {
+  const dlg = $('#log-dlg');
+  const pre = dlg.querySelector('pre');
+  pre.textContent = '読み込み中…';
+  dlg.showModal();
+  const token = (openLog.token = {});
+  while (dlg.open && openLog.token === token) {
+    try {
+      const { running, lines } = await api(`/api/log?key=${encodeURIComponent(key)}`);
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+      pre.textContent = lines.length ? lines.join('\n') : running ? 'まだ出力がありません' : '実行は終了しました';
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+      if (!running) return;
+    } catch (e) {
+      pre.textContent = e.message;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+}
+
 async function review(key) {
   try {
     await api('/api/review', { method: 'POST', body: { key } });
@@ -440,6 +763,8 @@ async function review(key) {
 
 $('#board').addEventListener('click', async (ev) => {
   const t = ev.target;
+  const jump = t.closest('[data-jump]');
+  if (jump && $(`#board [data-pr="${CSS.escape(jump.dataset.jump)}"]`)) { ev.preventDefault(); return jumpTo(jump.dataset.jump); }
   if (t.closest('a[target]')) return;
   if (t.matches('[data-review]')) return review(t.dataset.review);
   if (t.matches('[data-settings]')) { ev.preventDefault(); return openSettings(); }
@@ -464,17 +789,37 @@ $('#board').addEventListener('click', async (ev) => {
     await api('/api/dismiss', { method: 'POST', body: { key: t.dataset.dismiss } });
     return load();
   }
+  if (t.matches('[data-log]')) return openLog(t.dataset.log);
+  if (t.matches('[data-mine-run]')) return runMine(t.dataset.key, t.dataset.mineRun);
+  if (t.matches('[data-mine-cancel]')) {
+    if (!confirmTwice(t, `cancel:${t.dataset.mineCancel}`, '本当にキャンセル？')) return;
+    try {
+      await api('/api/mine/cancel', { method: 'POST', body: { key: t.dataset.mineCancel } });
+    } catch (e) {
+      toast(e.message);
+    }
+    return load();
+  }
   const card = t.closest('[data-open]');
-  if (card) openReview(card.dataset.open);
+  if (card) return openReview(card.dataset.open);
+  const mineCard = t.closest('[data-open-mine]');
+  if (mineCard) openMine(mineCard.dataset.openMine);
 });
 
 let dragging = null;
-const DROP_TO = { requested: 'reviewing', reviewing: 'requested' };
+const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], mine: ['mergeable'], mergeable: ['mine'] };
 const dropLane = (ev) => {
   const lane = ev.target.closest('[data-lane]');
-  return dragging && lane?.dataset.lane === DROP_TO[dragging.from] ? lane : null;
+  if (laneEdit) return laneDrag && lane?.dataset.lane !== laneDrag ? lane : null;
+  return dragging && DROP_TO[dragging.from].includes(lane?.dataset.lane) ? lane : null;
 };
 $('#board').addEventListener('dragstart', (ev) => {
+  if (laneEdit) {
+    laneDrag = ev.target.closest('[data-lane]')?.dataset.lane;
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', laneDrag);
+    return;
+  }
   const card = ev.target.closest('[data-drag]');
   if (!card) return;
   dragging = { key: card.dataset.drag, from: card.dataset.from };
@@ -495,27 +840,57 @@ $('#board').addEventListener('drop', async (ev) => {
   const lane = dropLane(ev);
   if (!lane) return;
   ev.preventDefault();
+  if (laneEdit) {
+    const from = laneEdit.indexOf(laneDrag);
+    const to = laneEdit.indexOf(lane.dataset.lane);
+    laneEdit.splice(to, 0, ...laneEdit.splice(from, 1));
+    laneDrag = null;
+    return render();
+  }
   const { key, from } = dragging;
   dragging = null;
-  if (from === 'requested') return review(key);
+  if (lane.dataset.lane === 'reviewing') return review(key);
   try {
-    await api('/api/cancel', { method: 'POST', body: { key } });
+    if (lane.dataset.lane === 'commented') await api('/api/skip', { method: 'POST', body: { key } });
+    else if (from === 'reviewing') await api('/api/cancel', { method: 'POST', body: { key } });
+    else await api('/api/mine/merge-ready', { method: 'POST', body: { key, ready: from === 'mine' } });
   } catch (e) {
     toast(e.message);
   }
   load();
 });
 $('#board').addEventListener('dragend', () => {
-  if (!dragging) return;
-  dragging = null;
+  if (!dragging && !laneDrag) return;
+  dragging = laneDrag = null;
   render();
 });
 $('#refresh').onclick = () => load(true);
+window.addEventListener('hashchange', () => {
+  laneEdit = null; // タブ切替で編集は破棄
+  render();
+});
+$('#edit-lanes').onclick = () => {
+  laneEdit = lanesFor(view()).map((l) => l.id);
+  render();
+};
+$('#lane-save').onclick = () => {
+  try { localStorage.setItem(laneOrderKey(view()), JSON.stringify(laneEdit)); } catch {}
+  laneEdit = null;
+  render();
+};
+$('#lane-cancel').onclick = () => {
+  laneEdit = null;
+  render();
+};
 $('#open-settings').onclick = openSettings;
+$('#open-tips').onclick = () => $('#tips-dlg').showModal();
 
 load();
-// ローカル状態は短い間隔で、GitHub はサーバー側の定期取得に任せる
-setInterval(() => load(), POLL_LOCAL_MS);
+// ローカル状態は設定した間隔で、GitHub はサーバー側の定期取得に任せる
+// 設定変更を即反映するため毎回間隔を読み直す
+(function poll() {
+  setTimeout(() => load().finally(poll), Math.max(1, Number(board.config.refreshSeconds) || 5) * 1000);
+})();
 </script>
 </body>
 </html>
