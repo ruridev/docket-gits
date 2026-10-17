@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Review Board</title>
+<title>Docket</title>
+<!-- 仮のマスコット (正面の黄色いアヒル)。あとで差し替える予定 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%231f2328' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 9q1-6 7-5'/%3E%3Ccircle cx='32' cy='35' r='25' fill='%23f2c94c'/%3E%3Ccircle cx='23' cy='30' r='4' fill='%231f2328' stroke='none'/%3E%3Ccircle cx='41' cy='30' r='4' fill='%231f2328' stroke='none'/%3E%3Cellipse cx='32' cy='41' rx='10' ry='6' fill='%23f2994a'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f6f8fa; --panel: #fff; --lane: #eef1f4; --border: #d0d7de; --text: #1f2328; --muted: #656d76;
@@ -32,8 +34,32 @@
   select { padding-right: 28px; }
   /* 選んだ項目の長さに合わせる (スプリント・期間は閉じているとタイトルだけになる) */
   select[data-sp-iteration] { field-sizing: content; }
-  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 1; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 30; }
+  .user-menu { position: relative; }
+  .user-menu > summary { list-style: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+  .user-menu > summary::-webkit-details-marker { display: none; }
+  .user-menu > summary:hover, .user-menu[open] > summary { background: var(--lane); }
+  .user-menu nav { position: absolute; right: 0; top: calc(100% + 4px); min-width: 140px; padding: 4px; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
+  .user-menu nav a { padding: 6px 10px; border-radius: 4px; color: var(--text); }
+  .user-menu nav a:hover { background: var(--lane); text-decoration: none; }
   header h1 { font-size: 18px; margin: 0; }
+  header h1 a { color: inherit; display: flex; align-items: center; gap: 6px; }
+  header h1 .logo { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .home { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 16px; }
+  .home .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .home .kpi, .home section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .home a.kpi { color: var(--text); }
+  .home a.kpi:hover { text-decoration: none; }
+  .home a.kpi:hover .n { text-decoration: underline; }
+  .home .kpi .n { font-size: 28px; font-weight: 600; line-height: 1.2; }
+  .home .kpi .l { color: var(--muted); font-size: 13px; }
+  .home .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .home h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  .home h2 a { margin-left: auto; font-size: 13px; font-weight: normal; }
+  .home .row { display: grid; grid-template-columns: minmax(90px, auto) 1fr 32px; align-items: center; gap: 8px; padding: 3px 0; }
+  .home .row .bar { height: 8px; border-radius: 4px; background: var(--lane); overflow: hidden; }
+  .home .row .bar i { display: block; height: 100%; }
+  .home .row b { text-align: right; }
   header .grow { flex: 1; }
   nav.tabs { display: flex; gap: 4px; }
   nav.tabs a { padding: 4px 12px; border-bottom: 2px solid transparent; color: var(--text); white-space: nowrap; }
@@ -51,8 +77,19 @@
   .board-bar > :not(.sp-people), .sp-right { margin-bottom: 9px; }
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 8px 16px 16px; overflow-x: auto; }
   /* ボードは画面の残りの高さでスクロールさせ、ヘッダ・フィルタ・レーン見出しを固定する */
-  body:has(#board:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
+  body:has(#board:not([hidden])), body:has(#sprint:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
   body:has(#board:not([hidden])) .board { flex: 1; min-height: 0; overflow-y: auto; grid-auto-rows: max-content; }
+  /* ロードマップも同じく画面に収め、フッタを常に見せる (表は残りの高さでスクロール) */
+  body:has(#sprint:not([hidden])) #sprint { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  /* 設定も画面に収め、保存ボタンとフッタを常に見せる (各ペインは残りの高さでスクロール) */
+  body:has(#settings:not([hidden])) { height: 100dvh; }
+  #settings:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 16px; }
+  #settings .settings-body { flex: 1; min-height: 0; height: auto; }
+  body:has(#sprint:not([hidden])) #sprint .sp-road { min-height: 0; max-height: none; }
+  /* メイン・About は内容が短くてもフッタを画面の最下部に置き、長いときはスクロール中も最下部に固定する */
+  body:has(#home:not([hidden])), body:has(#about:not([hidden])) { display: flex; flex-direction: column; min-height: 100dvh; }
+  #home, #about { width: 100%; box-sizing: border-box; }
+  .site-foot { margin-top: auto; position: sticky; bottom: 0; }
   .lane { background: var(--lane); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px 8px; min-height: 60vh; }
   /* 見出しはレーンの枠に重ねて固定する。スクロール中も角丸の枠に見えるよう、
      角の外側は背景色で塗り (h2 の background)、枠と角丸は ::before で描く。
@@ -123,6 +160,7 @@
   .verdict { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
   .verdict button.on.agree { background: var(--ok); border-color: var(--ok); color: #fff; }
   .verdict button.on.disagree { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .verdict button.on.skip { background: var(--muted); border-color: var(--muted); color: #fff; }
   .verdict textarea { flex: 1; min-height: 34px; resize: vertical; }
   table.repos { width: 100%; border-collapse: collapse; }
   table.repos th, table.repos td { border-bottom: 1px solid var(--border); padding: 6px; text-align: left; vertical-align: top; }
@@ -140,8 +178,6 @@
   .settings-pane:not(.on) { display: none; }
   .settings-pane h4 { margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }
   .settings-pane > h4:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-  .help { border: 0; border-radius: 50%; width: 24px; height: 24px; padding: 0; background: var(--chip); color: var(--muted); font-weight: 600; }
-  .help:hover { color: var(--text); }
   .tip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
   .tip summary { cursor: pointer; font-weight: 600; }
   /* Tip の説明図。実際の描画関数に架空のデータを渡して描く (操作はできない) */
@@ -161,7 +197,12 @@
   .about-flow span { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
   .about-flow .human { border: 2px solid var(--ok); font-weight: 600; }
   .about-flow i { font-style: normal; color: var(--muted); }
-  .site-foot { padding: 6px 16px; text-align: center; font-size: 12px; border-top: 1px solid var(--border); background: var(--panel); }
+  .site-foot { padding: 6px 16px; text-align: right; font-size: 12px; border-top: 1px solid var(--border); background: var(--panel); color: var(--muted); }
+  /* どの画面でもフッタを画面の下に出す (短いページは下端、長いページはスクロールしても常に見える) */
+  body { display: flex; flex-direction: column; min-height: 100dvh; }
+  body > main { width: 100%; }
+  .site-foot { margin-top: auto; position: sticky; bottom: 0; }
+  .page { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
   .consent ul { list-style: none; padding: 0; margin: 12px 0 0; }
   .consent li { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-top: 1px dashed var(--border); }
   .consent li p { margin: 4px 0 0; }
@@ -226,28 +267,30 @@
   .rm { display: grid; position: relative; width: max-content; font-size: 13px; }
   .rm > div { min-width: 0; }
   .rm .hd { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted); text-align: center; line-height: 16px; padding: 2px 0; }
+  .rm .hd.we { color: var(--accent); }
   .rm .hd.today { color: var(--danger); font-weight: 600; }
   /* スプリント期間はヘッダー上端の青い線だけで示す */
   .rm .hd.in { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--accent) 45%, transparent); }
   .rm .col { grid-row: 2 / -1; }
-  .rm .col.today { background: linear-gradient(var(--danger), var(--danger)) center / 2px 100% no-repeat; }
+  .rm .col.today { background: repeating-linear-gradient(var(--danger) 0 4px, transparent 4px 8px) center / 1px 100% no-repeat; }
   .rm .sep { border-top: 1px solid var(--border); }
   .rm .tg { width: 14px; flex: none; cursor: pointer; color: var(--muted); user-select: none; text-align: center; }
   /* 担当者 → タイトルの順に棒の先頭から並べ、棒より長いタイトルは棒の外へはみ出させる */
-  .rm .bar { z-index: 2; align-self: center; height: 22px; border-radius: 11px; display: flex; align-items: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: visible; }
+  .rm .bar { z-index: 2; align-self: center; height: 22px; border-radius: 2px; display: flex; align-items: center; gap: 4px; padding: 0 4px; white-space: nowrap; overflow: visible; }
   .rm .bar a.t { color: var(--text); }
-  /* 棒は枠線だけ色を付け、中は薄くする */
-  .rm .bar.s-open, .rm .bar.s-done, .rm .bar.s-np { border: 1.5px solid var(--c); background: var(--panel); }
+  /* 棒は細い枠線にして、左端の太い線だけで open / closed を色分けする */
+  .rm .bar.s-open, .rm .bar.s-done, .rm .bar.s-np { border: 1px solid var(--border); border-left: 3px solid var(--c); background: var(--panel); }
   .rm .bar.s-open { --c: var(--ok); } .rm .bar.s-done { --c: #8250df; } .rm .bar.s-np { --c: var(--muted); }
+  .rm .bar.s-done a.t, .rm .bar.s-np a.t { color: var(--muted); }
   /* スプリント外にはみ出す日付は、状態色の薄い点線だけで示す */
   .rm .bar.ext { z-index: 1; height: 0; padding: 0; border: none; border-top: 2px dotted color-mix(in srgb, var(--c) 35%, transparent); border-radius: 0; background: none; }
   /* 階層の記号は付けず、最上位だけ太い棒・太字にする (子孫は ▾ で畳める) */
-  .rm .bar.d0 { height: 26px; border-radius: 13px; border-width: 2px; }
+  .rm .bar.d0 { height: 26px; }
   .rm .bar.d0 a.t { font-weight: 600; }
   .rm .bar .avatar { width: 16px; height: 16px; }
   .rm .bar.dim { opacity: .35; }
   /* 紐づく PR があると 2 行にして、2 行目に PR 番号を並べる */
-  .rm .bar.two { height: auto; flex-direction: column; align-items: flex-start; gap: 0; padding: 2px 8px 2px 4px; border-radius: 12px; }
+  .rm .bar.two { height: auto; flex-direction: column; align-items: flex-start; gap: 0; padding: 2px 8px 2px 4px; }
   .rm .bar .ln { display: flex; align-items: center; gap: 4px; }
   .rm .bar .prs { padding-left: 18px; font-size: 12px; gap: 8px; }
   .rm .bar .prs a { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
@@ -266,12 +309,10 @@
 </head>
 <body>
 <header>
-  <h1>Review Board</h1>
+  <h1><a href="#"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M30 9q1-6 7-5M33 9q3-3 6-1"/><circle cx="32" cy="34" r="24" fill="#f2c94c"/><circle cx="23" cy="29" r="3.2" fill="#1f2328" stroke="none"/><circle cx="41" cy="29" r="3.2" fill="#1f2328" stroke="none"/><circle cx="24" cy="28" r="1" fill="#fff" stroke="none"/><circle cx="42" cy="28" r="1" fill="#fff" stroke="none"/><ellipse cx="32" cy="39" rx="9" ry="5" fill="#f2994a"/><path d="M24 39h16"/><circle cx="15" cy="37" r="3" fill="#f4a6a6" stroke="none"/><circle cx="49" cy="37" r="3" fill="#f4a6a6" stroke="none"/></svg>Docket</a></h1>
   <nav class="tabs"><a href="#review" data-view="review"><span data-i18n="tab.review"></span><span class="badges"></span></a><a href="#receive" data-view="receive"><span data-i18n="tab.receive"></span><span class="badges"></span></a><a href="#sprint" data-view="sprint"><span data-i18n="tab.roadmap"></span><small></small></a></nav>
   <span class="grow"></span>
-  <span id="viewer"></span>
-  <button id="open-tips" class="help" title="Tip" aria-label="Tip">?</button>
-  <button id="open-settings" data-i18n="settings"></button>
+  <details class="user-menu"><summary id="viewer"></summary><nav><a href="#settings" data-i18n="settings"></a><a href="#tips">Tip</a><a href="#about">About</a></nav></details>
 </header>
 <div id="banner"></div>
 <div class="board-bar" id="board-bar">
@@ -286,11 +327,23 @@
 </div>
 <main class="board" id="board"></main>
 <main id="sprint" hidden></main>
+<main id="home" class="home" hidden></main>
 <main id="about" class="about" hidden></main>
-<footer class="site-foot"><a href="#about">About</a></footer>
+<main id="tips" class="page" hidden>
+  <h2>Tip</h2>
+  <details class="tip" open data-i18n-html="tips.lanes" data-shots="review,receive"></details>
+  <details class="tip" data-i18n-html="tips.review" data-shots="findings,triage"></details>
+  <details class="tip" data-i18n-html="tips.buttons" data-shots="bar"></details>
+  <details class="tip" data-i18n-html="tips.html"></details>
+  <details class="tip" data-i18n-html="tips.roadmap" data-shots="roadmap"></details>
+  <details class="tip" data-i18n-html="tips.settings"></details>
+  <details class="tip" data-i18n-html="tips.cost" data-shots="cost"></details>
+  <button data-open-consent data-i18n="consent.open"></button>
+</main>
+<main id="settings" class="page" hidden></main>
+<footer class="site-foot"><a href="https://github.com/ruridev" target="docket-viewer">©ruridev</a></footer>
 
 <dialog id="review-dlg"></dialog>
-<dialog id="settings-dlg"></dialog>
 <dialog id="log-dlg">
   <form method="dialog" class="dlg-head"><h3 data-i18n="claudeOutput"></h3><button data-i18n="close"></button></form>
   <pre class="dlg-body log"></pre>
@@ -305,21 +358,15 @@
   <div class="dlg-body"></div>
   <div class="dlg-foot" hidden><span style="flex:1"></span><button data-copy="" data-i18n="cd.no"></button><button class="primary" data-copy="1" data-i18n="cd.yes"></button></div>
 </dialog>
-<dialog id="tips-dlg">
-  <form method="dialog" class="dlg-head"><h3>Tip</h3><button data-i18n="close"></button></form>
-  <div class="dlg-body">
-    <details class="tip" open data-i18n-html="tips.lanes" data-shots="review,receive"></details>
-    <details class="tip" data-i18n-html="tips.review" data-shots="findings"></details>
-    <details class="tip" data-i18n-html="tips.buttons" data-shots="bar"></details>
-    <details class="tip" data-i18n-html="tips.html"></details>
-    <details class="tip" data-i18n-html="tips.roadmap" data-shots="roadmap"></details>
-    <details class="tip" data-i18n-html="tips.settings"></details>
-    <details class="tip" data-i18n-html="tips.cost" data-shots="cost"></details>
-    <button data-open-consent data-i18n="consent.open"></button>
-  </div>
-</dialog>
 
 <script>
+// 旧名 (Review Board) 時代の保存値を新しいキーへ移す
+try {
+  for (const k of Object.keys(localStorage)) {
+    const nk = k.startsWith('rb-') ? `docket-${k.slice(3)}` : k.startsWith('review-board:') ? `docket:${k.slice(13)}` : null;
+    if (nk) { if (localStorage.getItem(nk) == null) localStorage.setItem(nk, localStorage.getItem(k)); localStorage.removeItem(k); }
+  }
+} catch {}
 // ---------- 多言語 ----------
 // 画面の言語はブラウザごとに保存する (未設定ならブラウザの言語)。切り替えたら再読み込みする
 // 値は HTML としてそのまま入れるので、ユーザーデータは呼び出し側でエスケープして params に渡す
@@ -329,18 +376,19 @@ const browserLang = () => {
   return LANGS[nav] ? nav : 'en';
 };
 const lang = (() => {
-  try { const saved = localStorage.getItem('rb-lang'); if (LANGS[saved]) return saved; } catch {}
+  try { const saved = localStorage.getItem('docket-lang'); if (LANGS[saved]) return saved; } catch {}
   return browserLang();
 })();
 document.documentElement.lang = lang;
 const I18N = {
   ja: {
+    'home.left': '残りのレビュー依頼', 'home.decide': '判断待ち', 'home.comments': '未対応の指摘', 'home.cost': 'Claude の費用', 'home.byRepo': 'リポジトリ別の残りのレビュー依頼', 'home.usage': 'Claude の使用量', 'home.usageNote': 'ボードに残っている PR の分だけを合計します', 'home.open': '開く →', 'home.total': '全 {n} 件',
     'tab.review': 'レビューする', 'tab.receive': 'レビューを受ける', 'tab.roadmap': 'ロードマップ', settings: '設定',
     'stackOrder': 'スタック順', 'stackOrder.title': '同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)',
     editLanes: 'レーン編集', cardDisplay: '表示設定', 'cd.branch': 'ブランチ名', 'cd.issue': 'issue 名', 'cd.stack': 'スタック PR', 'cd.updated': 'PR 更新日時', 'cd.applied': '対応日時', 'cd.usage': 'トークン使用量', 'cd.reviewers': 'レビュワー画像', 'cd.author': 'PR 作成者画像 (「レビューを受ける」では常に非表示)', 'cd.prs': 'issue に紐づく PR', 'cd.copy': '「{view}」にも同じ表示設定を適用しますか？', 'cd.yes': 'はい', 'cd.no': 'いいえ', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'Claude の出力',
-    'about.html': '<h2>Review Board について</h2><p class="lead">AI エージェントと一緒にコードをレビューし、受けた指摘を直す。それを 1 つの画面で。ただし、最後に判断するのはいつも人間です。</p><h3>AI は速い。だからこそ気をつけたい</h3><p>AI エージェントでコードを書き、レビューすることはすでに日常になり、生産性は驚くほど上がりました。AI の進化の速さを考えると、この流れはこれからさらに加速していくはずです。</p><p>ただ、便利になるほど気になることが 1 つあります。人が少しずつ怠けてしまうことです。「AI がうまくやってくれただろう」と中身を見ずに Approve を押すようになると、作っているサービスが本当に望んだものになっているのか、だんだん誰にも分からなくなっていきます。</p><p>コーディングスタイルのようなことは、もう AI に任せて構いません。大事なのは<b>自分の意図がコードにきちんと込められているか</b>です。それが抜けていれば、AI でどれだけ早く完成させても意味がありません。</p><blockquote>仕事は AI に任せられても、責任までは任せられない。コードと成果物の最終的な責任は人間にある。</blockquote><h3>人と AI が一緒にレビューしたことを、当たり前に保証する</h3><p>そこで Review Board では、AI に仕事を渡すところに、あえて人が判断するステップを入れています。</p><div class="about-flow"><b>🔍 レビューする側</b><span>🤖 AI が一次レビュー</span><i>→</i><span class="human">👤 コードを読み、指摘ごとに同意 / 非同意 (+意見)</span><i>→</i><span>💬 PR に投稿</span></div><div class="about-flow"><b>✍️ レビューを受ける側</b><span>💬 指摘を受ける</span><i>→</i><span>🤖 AI が修正方針を提案</span><i>→</i><span class="human">👤 指摘の妥当性と方針に同意 / 非同意</span><i>→</i><span>🤖 AI が修正を反映</span></div><ul><li><b>レビューする側</b>: 一次レビューは AI に任せます。ただし投稿の前に「コードを読みました」のチェックボックスで、人が一度は自分でコードを読むようにしています。AI の指摘を採用するかどうかも 1 件ずつ人が「同意 / 非同意」で決め、必要なら自分の意見を添えます。</li><li><b>レビューを受ける側</b>: 受けた指摘を直す手間は AI に任せます。ただし、その指摘がそもそも妥当か、AI が出した修正方針に同意するかは人が判断します。</li></ul><div data-shot="findings"></div><p>こうすることで、レビューする側もされる側も、相手のコメントの裏に人の判断があると分かります。だからお互いの意見を、より安心して信頼できるようになります。</p><h3>疲れないために: 画面設計の原則</h3><p>AI エージェントのおかげでレビューも修正も楽になりました。それでも、その周りの細かな作業がかえって疲れを溜めていました。Review Board の画面は、その疲れを減らすことを目指しています。</p><ul><li><b>ブラウザのタブを無限に開かない</b>: レビュー依頼・自分の PR・スプリントを 1 つの画面で見られます。GitHub のリンクもいつも同じ 1 つのタブで開きます。</li><li><b>ツールを行き来しない</b>: ブラウザで PR を見て、ターミナルに移って Claude に skill の実行を指示して、また戻って……という往復を、ボタン 1 つにまとめました。</li><li><b>新しい情報を探しに行かない</b>: GitHub Notifications を定期的に確認しなくても、新しいレビュー依頼や指摘がボードに自動で入ってきます。</li></ul><div data-shot="review"></div><blockquote>スピードは AI に。判断と責任は人間に。</blockquote>',
-    'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
-    'tips.lanes': '<summary>レーンの見方</summary><p><b>レビューする</b> タブ (他の人の PR)</p><ul><li>レビュー依頼: 自分にレビューが依頼された PR。「レビューする」で Claude のレビューを始めます。</li><li>レビュー中: Claude がレビュー中、または順番待ち。</li><li>レビュー済み: 指摘が出て、自分の判断を待っています。カードを開いて確認してください。</li><li>完了: PR に投稿した、またはスキップしたもの。</li></ul><p><b>レビューを受ける</b> タブ (自分の PR)</p><ul><li>下書き: Draft の PR。</li><li>レビュー待ち: レビューを待っている PR。</li><li>指摘あり: 未解決スレッドのうち、最後の発言が自分でないものがある PR。</li><li>実行中: セルフレビューや指摘対応が進行中。</li><li>判断待ち: セルフレビューの指摘や対応計画が出て、自分の判断を待っています。</li><li>マージ可能 / 完了: 自分で移すレーンです。カードをドラッグしてレビュー待ち ↔ マージ可能 ↔ 完了 の間を移せます。</li></ul>', 'tips.review': '<summary>指摘を判断して投稿する</summary><ol><li>カードを開くと指摘が 1 件ずつ並びます。それぞれ「同意」か「同意しない」を選び、必要ならメモを書きます。</li><li>レビューするタブ: 同意した指摘だけが PR にコメントとして投稿されます。同意しない指摘も理由を書けば <span data-disagree-icon>🤔💭</span> 付きで投稿されます。Approve するかもここで選びます。</li><li>レビューを受けるタブ: セルフレビューは同意した指摘を投稿し、修正・push・返信まで進めます。指摘対応は同意した計画どおりに修正・push・返信します。</li><li>「コードを読みました」は AI のレビューをそのまま出さないためのチェックです。自分でコードを読んでからチェックしてください。</li></ol><p class="muted">選んだ内容はブラウザに保存されるので、閉じて開き直しても残っています。投稿・Approve・再レビューなどのボタンは誤操作防止のため 2 回押すと実行されます。</p>', 'tips.buttons': '<summary>ボード上部のボタン</summary><ul><li>スタック順: 同じレーンの中でスタック PR を 親 → 子 → 孫 の順に並べます。もう一度押すと更新順に戻ります。</li><li>Approve 済み: 押すたびに すべて → のみ → 除外 と切り替わります。</li><li>レーン編集: レーンをドラッグして順番を変えたり、名前を変えたりできます。「保存」を押すと反映されます。</li><li>カード表示: カードに出す項目 (ブランチ名、issue、スタック、トークン使用量、レビュアー画像など) を選びます。</li><li>右端の更新ボタン: GitHub からすぐに取り直します。</li></ul>', 'tips.roadmap': '<summary>ロードマップ画面</summary><ul><li>設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を入れると、issue の予定がバーで表示されます。</li><li>スプリント別はプロジェクトの Iteration (スプリント) ごと、期間別は 1 週間 / 1 か月ごとに開始日・終了日で表示します。</li><li>「親 issue の担当者で絞る」をオンにすると、担当者の絞り込みを最上位 issue の担当者で行います。</li><li>データは 24 時間キャッシュされます。すぐに最新を見たいときは取り直しボタンを押してください。</li></ul>', 'tips.settings': '<summary>設定のコツ</summary><ul><li>リポジトリとスキルの対応の引数テンプレートでは {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name} が使えます。</li><li>GitHub 自動取得の時間帯の外では自動で取得しません。更新ボタンで手動取得はいつでもできます。</li><li>同時実行数を超えたレビューは「待機中」として順番に実行されます。</li><li>各設定画面の「すべて既定に戻す」で初期状態に戻せます。</li></ul>', 'tips.cost': '<summary>トークン使用量とログ</summary><ul><li>カードのトークン使用量は、その PR で使ったトークン (キャッシュ含む) と費用の累計です。「カード表示」でオン / オフできます。</li><li>実行中のカードの「ログ」で Claude の出力を見られます。</li><li>終わった実行のログは設定の「ログ保持日数」だけ残り、毎日自動で削除されます。設定画面からすぐに削除することもできます。</li></ul>',
+    'about.html': '<h2>Docket について</h2><p class="lead">AI エージェントと一緒にコードをレビューし、受けた指摘を直す。それを 1 つの画面で。ただし、最後に判断するのはいつも人間です。</p><h3>AI は速い。だからこそ気をつけたい</h3><p>AI エージェントでコードを書き、レビューすることはすでに日常になり、生産性は驚くほど上がりました。AI の進化の速さを考えると、この流れはこれからさらに加速していくはずです。</p><p>ただ、便利になるほど気になることが 1 つあります。人が少しずつ怠けてしまうことです。「AI がうまくやってくれただろう」と中身を見ずに Approve を押すようになると、作っているサービスが本当に望んだものになっているのか、だんだん誰にも分からなくなっていきます。</p><p>コーディングスタイルのようなことは、もう AI に任せて構いません。大事なのは<b>自分の意図がコードにきちんと込められているか</b>です。それが抜けていれば、AI でどれだけ早く完成させても意味がありません。</p><blockquote>仕事は AI に任せられても、責任までは任せられない。コードと成果物の最終的な責任は人間にある。</blockquote><h3>人と AI が一緒にレビューしたことを、当たり前に保証する</h3><p>そこで Docket では、AI に仕事を渡すところに、あえて人が判断するステップを入れています。</p><div class="about-flow"><b>🔍 レビューする側</b><span>🤖 AI が一次レビュー</span><i>→</i><span class="human">👤 コードを読み、指摘ごとに同意 / 非同意 (+意見)</span><i>→</i><span>💬 PR に投稿</span></div><div class="about-flow"><b>✍️ レビューを受ける側</b><span>💬 指摘を受ける</span><i>→</i><span class="human">👤 指摘の妥当性に同意 / 非同意 (+ 理由) / 対象外</span><i>→</i><span>🤖 AI が修正方針・反論を提案</span><i>→</i><span class="human">👤 方針と反論に同意 / 非同意</span><i>→</i><span>🤖 AI が修正を反映</span></div><ul><li><b>レビューする側</b>: 一次レビューは AI に任せます。ただし投稿の前に「コードを読みました」のチェックボックスで、人が一度は自分でコードを読むようにしています。AI の指摘を採用するかどうかも 1 件ずつ人が「同意 / 非同意」で決め、必要なら自分の意見を添えます。</li><li><b>レビューを受ける側</b>: 受けた指摘を直す手間は AI に任せます。ただし、AI の方針に引きずられないよう、その指摘がそもそも妥当かは AI を動かす前に人が判断します。AI はその判断に沿って修正方針を出し、人の判断が誤りだと考えれば反論します。最後にどうするかを決めるのも人です。</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>こうすることで、レビューする側もされる側も、相手のコメントの裏に人の判断があると分かります。だからお互いの意見を、より安心して信頼できるようになります。</p><h3>疲れないために: 画面設計の原則</h3><p>AI エージェントのおかげでレビューも修正も楽になりました。それでも、その周りの細かな作業がかえって疲れを溜めていました。Docket の画面は、その疲れを減らすことを目指しています。</p><ul><li><b>ブラウザのタブを無限に開かない</b>: レビュー依頼・自分の PR・スプリントを 1 つの画面で見られます。GitHub のリンクもいつも同じ 1 つのタブで開きます。</li><li><b>ツールを行き来しない</b>: ブラウザで PR を見て、ターミナルに移って Claude に skill の実行を指示して、また戻って……という往復を、ボタン 1 つにまとめました。</li><li><b>新しい情報を探しに行かない</b>: GitHub Notifications を定期的に確認しなくても、新しいレビュー依頼や指摘がボードに自動で入ってきます。</li></ul><div data-shot="review"></div><blockquote>スピードは AI に。判断と責任は人間に。</blockquote>',
+    'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (docket-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
+    'tips.lanes': '<summary>レーンの見方</summary><p><b>レビューする</b> タブ (他の人の PR)</p><ul><li>レビュー依頼: 自分にレビューが依頼された PR。「レビューする」で Claude のレビューを始めます。</li><li>レビュー中: Claude がレビュー中、または順番待ち。</li><li>レビュー済み: 指摘が出て、自分の判断を待っています。カードを開いて確認してください。</li><li>完了: PR に投稿した、またはスキップしたもの。</li></ul><p><b>レビューを受ける</b> タブ (自分の PR)</p><ul><li>下書き: Draft の PR。</li><li>レビュー待ち: レビューを待っている PR。</li><li>指摘あり: 未解決スレッドのうち、最後の発言が自分でないものがある PR (対象外にしたものは、新しい発言が付くまで除きます)。</li><li>実行中: セルフレビューや指摘対応が進行中。</li><li>判断待ち: セルフレビューの指摘や対応計画が出て、自分の判断を待っています。</li><li>マージ可能 / 完了: 自分で移すレーンです。カードをドラッグしてレビュー待ち ↔ マージ可能 ↔ 完了 の間を移せます。</li></ul>', 'tips.review': '<summary>指摘を判断して投稿する</summary><ol><li>カードを開くと指摘が 1 件ずつ並びます。それぞれ「同意」か「同意しない」を選び、必要ならメモを書きます。</li><li>レビューするタブ: 同意した指摘だけが PR にコメントとして投稿されます。同意しない指摘も理由を書けば <span data-disagree-icon>🤔💭</span> 付きで投稿されます。Approve するかもここで選びます。</li><li>レビューを受けるタブ: セルフレビューは同意した指摘を投稿し、修正・push・返信まで進めます。「指摘に対応」は AI を動かす前に、まず各指摘に「同意 / 非同意 (理由必須) / 対象外」を選びます (下の図)。AI は同意した指摘の対応計画と、非同意の指摘への反論か返信案を返すので、それを見てもう一度判断すると、修正・push・返信します。</li><li>「コードを読みました」は AI のレビューをそのまま出さないためのチェックです。自分でコードを読んでからチェックしてください。</li></ol><p class="muted">選んだ内容はブラウザに保存されるので、閉じて開き直しても残っています。投稿・Approve・再レビューなどのボタンは誤操作防止のため 2 回押すと実行されます。</p>', 'tips.buttons': '<summary>ボード上部のボタン</summary><ul><li>スタック順: 同じレーンの中でスタック PR を 親 → 子 → 孫 の順に並べます。もう一度押すと更新順に戻ります。</li><li>Approve 済み: 押すたびに すべて → のみ → 除外 と切り替わります。</li><li>レーン編集: レーンをドラッグして順番を変えたり、名前を変えたりできます。「保存」を押すと反映されます。</li><li>カード表示: カードに出す項目 (ブランチ名、issue、スタック、トークン使用量、レビュアー画像など) を選びます。</li><li>右端の更新ボタン: GitHub からすぐに取り直します。</li></ul>', 'tips.roadmap': '<summary>ロードマップ画面</summary><ul><li>設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を入れると、issue の予定がバーで表示されます。</li><li>スプリント別はプロジェクトの Iteration (スプリント) ごと、期間別は 1 週間 / 1 か月ごとに開始日・終了日で表示します。</li><li>「親 issue の担当者で絞る」をオンにすると、担当者の絞り込みを最上位 issue の担当者で行います。</li><li>データは 24 時間キャッシュされます。すぐに最新を見たいときは取り直しボタンを押してください。</li></ul>', 'tips.settings': '<summary>設定のコツ</summary><ul><li>リポジトリとスキルの対応の引数テンプレートでは {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name} が使えます。</li><li>GitHub 自動取得の時間帯の外では自動で取得しません。更新ボタンで手動取得はいつでもできます。</li><li>同時実行数を超えたレビューは「待機中」として順番に実行されます。</li><li>各設定画面の「すべて既定に戻す」で初期状態に戻せます。</li></ul>', 'tips.cost': '<summary>トークン使用量とログ</summary><ul><li>カードのトークン使用量は、その PR で使ったトークン (キャッシュ含む) と費用の累計です。「カード表示」でオン / オフできます。</li><li>実行中のカードの「ログ」で Claude の出力を見られます。</li><li>終わった実行のログは設定の「ログ保持日数」だけ残り、毎日自動で削除されます。設定画面からすぐに削除することもできます。</li></ul>',
     // README がこの英語のレーン名で説明しているので、日本語でも英語のままにする
     'lane.requested': 'レビュー依頼', 'lane.reviewing': 'レビュー中', 'lane.reviewed': 'レビュー済み', 'lane.done': '完了', 'lane.draft': '下書き',
     'lane.mine': 'レビュー待ち', 'lane.pending': '指摘あり', 'lane.running': '実行中', 'lane.planned': '判断待ち', 'lane.mergeable': 'マージ可能',
@@ -366,16 +414,22 @@ const I18N = {
     origComment: '元コメント', agree: '同意', disagree: '非同意',
     'ph.self.agree': '補足 (任意・投稿と修正に反映されます)', 'ph.self.disagree': '非同意の指摘は投稿も修正もしません (メモ欄)',
     'ph.fix.agree': '補足 (任意・修正と返信に反映されます)', 'ph.fix.disagree': '非同意の理由 (任意・書くとその内容で対応を決め直します。空なら修正も返信もしません)',
-    planFix: '【修正】', planReply: '【返信】', rerunSelf: 'セルフレビューをやり直す', rerunFix: '計画を作り直す',
-    'desc.self': 'セルフレビュー: 同意した指摘を PR に投稿し、修正・push してから、その指摘に返信します。', 'desc.fix': '指摘への対応計画: 同意した計画どおりに修正・push・返信します。',
+    planFix: '【修正】', planReply: '【返信】', planRebut: '【AI の反論】', planOwnReason: '【あなたの事前判断】', rerunSelf: 'セルフレビューをやり直す', rerunFix: '事前判断からやり直す',
+    'desc.triage': 'AI の方針を見る前に、まず各指摘が妥当か判断してください。同意した指摘は AI が対応計画を作り、非同意にした指摘は AI が理由を検討して反論か返信案を返します。指摘ではないコメントなどは「対象外」にすると AI は触れず、新しい発言が付くまで一覧から外れます。',
+    'ph.triage.agree': '補足 (任意・対応計画に反映されます)', 'ph.triage.disagree': '非同意の理由 (必須・AI が検討して反論か返信案を返します)',
+    notApplicable: '対象外', prComment: 'PR コメント',
+    triageSubmit: 'AI に計画を作らせる', triageSkipAll: '対象外にする', triageTargets: 'AI の対象 {n} 件', noThreads: '未対応の指摘はありません。', latestComment: '最新の発言',
+    'desc.self': 'セルフレビュー: 同意した指摘を PR に投稿し、修正・push してから、その指摘に返信します。', 'desc.fix': '指摘への対応計画: 同意した計画どおりに修正・push・返信します。rebut は事前判断への AI の反論で、同意すると指摘どおり修正し、非同意なら事前判断の理由で返信します。',
     noMineFindings: '対応する指摘はありません。', prevApplyRaw: '前回の対応の原文', confirmed: '指摘内容を確認しました',
     confirmRerun: 'もう一度押すと判断を破棄してやり直す', confirmPush: 'もう一度押すと push・コメント',
-    unset: '(未設定)', skillPh: '(スキル)', default: '既定', defaultParen: '(既定)', save: '保存',
+    's.fixPrompt': '指摘への対応プロンプト', 's.fixPrompt.help': 'スキルの代わりに「(設定のプロンプト)」を選んだリポジトリで、指摘への対応に使う指示です。作業ディレクトリの clone でブランチを切り替え、コミット・push・返信まで行います。対応計画の出力形式と、計画段階では修正しないことは Docket が後ろに付けます。空にすると既定のプロンプトを使います。',
+    'opt.prompt': '(設定のプロンプト)', 's.reviewPrompt': 'レビュープロンプト', 's.reviewPrompt.help': 'スキルの代わりに「(設定のプロンプト)」を選んだリポジトリで、レビュー・セルフレビューに使う指示です。{pr-url} などの変数が使えます。投稿しないことと指摘の出力形式は Docket が後ろに付けます。空にすると既定のプロンプトを使います。',
+    unset: '(未設定)', skillPh: '(スキル)', default: '既定', defaultParen: '(既定)', save: '保存', saved: '保存しました',
     's.repoSkills': 'リポジトリとスキルの対応',
     's.repoSkills.help': '引数テンプレートで使える値: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}。作業ディレクトリが空なら上の既定値で claude を起動します。スキル一覧は ~/.claude/skills と各作業ディレクトリの .claude/skills から探します。',
     'th.skill': 'スキル', 'th.args': '引数テンプレート', workdir: '作業ディレクトリ', 'th.fix': '指摘への対応',
     's.mine': 'レビューを受ける (自分の PR) のスキル',
-    's.mine.help': 'スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;review-board-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。',
+    's.mine.help': 'スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;docket-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。',
     's.uiLang': '画面の言語', 's.outLang': 'Claude の出力言語', 's.outLang.title': 'Claude が PR に書くコメント・返信や、ボードに出す指摘の言語',
     's.disagreeIcon': '同意しない意見のアイコン', 's.disagreeIcon.title': '同意しない指摘に理由を書いて投稿するとき、自分の意見の頭に付けるアイコン',
     's.model': 'モデル', 's.model.title': '空なら claude の既定。サブエージェントも同じモデルで動きます', 's.claudeArgs': 'claude 追加引数',
@@ -410,22 +464,23 @@ const I18N = {
     'err.resultParseFailed': '結果 (JSON) を取得できませんでした。原文を確認してください', 'err.applyUnknown': '対応結果を確認できませんでした。PR を確認してください',
     'err.projectNotConfigured': 'プロジェクトが設定にありません', 'err.skillMissing': '{repo} のスキルが未設定です', 'err.running': '実行中です',
     'err.cannotApply': '対応できる状態ではありません', 'err.confirmRequired': '「指摘内容を確認しました」にチェックしてください',
-    'err.undecided': '未判断の指摘があります', 'err.cannotMove': '移動できる状態ではありません', 'err.cannotCancel': 'キャンセルできる状態ではありません',
+    'err.undecided': '未判断の指摘があります', 'err.reasonRequired': '非同意には理由を書いてください', 'err.cannotMove': '移動できる状態ではありません', 'err.cannotCancel': 'キャンセルできる状態ではありません',
     'err.cannotPost': '投稿できる状態ではありません', 'err.cannotSkip': 'スキップできる状態ではありません',
     'err.restartInterrupted': 'サーバー再起動により中断されました',
     'err.consentRequired': "「はじめる前に」の内容に同意するまで実行できません",
     'consent.title': "はじめる前に、ちょっとだけ", 'consent.agree': "はじめる", 'consent.got': "理解しました", 'consent.open': "「はじめる前に」を見る",
-    'consent.html': "<p>Review Board は、あなたの GitHub アカウント (<code>gh</code>) と Claude Code (<code>claude</code>) を借りて、PR のレビュー・投稿・修正・push を代わりにやってくれる働き者のお手伝いさんです。働き者なぶん、先に知っておいてほしいことがいくつかあります。</p><ul><li data-art=\"house\"><div><b>信頼できる家でだけ働かせてください。</b><i class=\"star\"></i><p>対象にするのは、信頼できるリポジトリ・プロジェクトだけにしてください。下に書いたことが起きても困らないのは、信頼できる場所だけです。それでも不安なら、設定の「claude 追加引数」で許可するコマンドを減らせます。</p></div></li><li data-art=\"robot\"><div><b>手がとても速いです。</b><p>Claude は「これ、やってもいいですか?」と毎回は聞きません。設定の「claude 追加引数」で許可したツール (既定では <code>gh</code>・<code>git</code>・ファイルの編集など) は、すぐに実行します。</p></div></li><li data-art=\"note\"><div><b>PR に紛れたメモを信じてしまうことがあります。</b><p>PR の本文・コード・コメントに「Claude さん、これマージしておいて」のようなメモが紛れていると、素直な Claude は本物のお願いと勘違いすることがあります (プロンプトインジェクション)。すると、あなたのアカウントで Approve・マージ・push をしてしまうかもしれません。</p></div></li><li data-art=\"tag\"><div><b>名札はあなたのものです。</b><p>投稿も push も、すべてあなたの名前で出ていきます。送る前に、ボードに出た内容を一度だけでも眺めてください。</p></div></li><li data-art=\"cool\"><div><b>AI も間違えます。しかも、わりと自信満々に。</b><p>指摘をうのみにしないでください。怪しいと思ったら、自分でコードを開いてみてください。</p></div></li><li data-art=\"cookie\"><div><b>トークンを食べて働きます。</b><p>レビューのたびに、あなたの Claude のトークンを使います。どれだけ食べたかは、カードのいちばん下のバッジで確認できます。</p></div></li></ul>",
+    'consent.html': "<p>Docket は、あなたの GitHub アカウント (<code>gh</code>) と Claude Code (<code>claude</code>) を借りて、PR のレビュー・投稿・修正・push を代わりにやってくれる働き者のお手伝いさんです。働き者なぶん、先に知っておいてほしいことがいくつかあります。</p><ul><li data-art=\"house\"><div><b>信頼できる家でだけ働かせてください。</b><i class=\"star\"></i><p>対象にするのは、信頼できるリポジトリ・プロジェクトだけにしてください。下に書いたことが起きても困らないのは、信頼できる場所だけです。それでも不安なら、設定の「claude 追加引数」で許可するコマンドを減らせます。</p></div></li><li data-art=\"robot\"><div><b>手がとても速いです。</b><p>Claude は「これ、やってもいいですか?」と毎回は聞きません。設定の「claude 追加引数」で許可したツール (既定では <code>gh</code>・<code>git</code>・ファイルの編集など) は、すぐに実行します。</p></div></li><li data-art=\"note\"><div><b>PR に紛れたメモを信じてしまうことがあります。</b><p>PR の本文・コード・コメントに「Claude さん、これマージしておいて」のようなメモが紛れていると、素直な Claude は本物のお願いと勘違いすることがあります (プロンプトインジェクション)。すると、あなたのアカウントで Approve・マージ・push をしてしまうかもしれません。</p></div></li><li data-art=\"tag\"><div><b>名札はあなたのものです。</b><p>投稿も push も、すべてあなたの名前で出ていきます。送る前に、ボードに出た内容を一度だけでも眺めてください。</p></div></li><li data-art=\"cool\"><div><b>AI も間違えます。しかも、わりと自信満々に。</b><p>指摘をうのみにしないでください。怪しいと思ったら、自分でコードを開いてみてください。</p></div></li><li data-art=\"cookie\"><div><b>トークンを食べて働きます。</b><p>レビューのたびに、あなたの Claude のトークンを使います。どれだけ食べたかは、カードのいちばん下のバッジで確認できます。</p></div></li></ul>",
     'err.restartPostInterrupted': 'サーバー再起動により投稿が中断されました。PR を確認してから再実行してください',
     'err.restartApplyInterrupted': 'サーバー再起動により対応が中断されました。PR を確認してから再実行してください',
   },
   ko: {
+    'home.left': '남은 리뷰 요청', 'home.decide': '결정 대기', 'home.comments': '미대응 코멘트', 'home.cost': 'Claude 비용', 'home.byRepo': '리포지토리별 남은 리뷰 요청', 'home.usage': 'Claude 사용량', 'home.usageNote': '보드에 남아 있는 PR 분만 합산합니다', 'home.open': '열기 →', 'home.total': '전체 {n}건',
     'tab.review': '리뷰하기', 'tab.receive': '리뷰 받기', 'tab.roadmap': '로드맵', settings: '설정',
     'stackOrder': '스택 순', 'stackOrder.title': '같은 레인 안에서 스택의 부모 → 자식 → 손자 순으로 정렬 (다시 누르면 업데이트 순으로 돌아감)',
     editLanes: '레인 편집', cardDisplay: '표시 설정', 'cd.branch': '브랜치명', 'cd.issue': 'issue 이름', 'cd.stack': '스택 PR', 'cd.updated': 'PR 업데이트 일시', 'cd.applied': '반영 일시', 'cd.usage': '토큰 사용량', 'cd.reviewers': '리뷰어 이미지', 'cd.author': 'PR 작성자 이미지 (\'리뷰 받기\'에서는 항상 숨김)', 'cd.prs': 'issue에 연결된 PR', 'cd.copy': '\'{view}\'에도 같은 표시 설정을 적용할까요?', 'cd.yes': '예', 'cd.no': '아니오', cancel: '취소', close: '닫기', claudeOutput: 'Claude 출력',
-    'about.html': '<h2>Review Board에 대하여</h2><p class="lead">AI 에이전트와 함께 코드를 리뷰하고, 받은 지적을 고치는 일을 한 화면에서. 단, 마지막 판단은 언제나 사람이 합니다.</p><h3>AI는 빠르다. 그래서 더 조심해야 한다</h3><p>AI 에이전트로 코드를 쓰고 리뷰하는 일은 이미 일상이 되었고, 생산성은 놀라울 만큼 올라갔습니다. AI의 발전 속도를 생각하면 이 흐름은 앞으로 더 빨라질 것입니다.</p><p>하지만 편해질수록 마음에 걸리는 것이 하나 있습니다. 사람이 조금씩 게을러진다는 것입니다. "AI가 알아서 잘 했겠지" 하는 마음으로 내용을 보지 않고 Approve를 누르기 시작하면, 지금 만들고 있는 서비스가 정말 원하던 모습인지 점점 아무도 확신할 수 없게 됩니다.</p><p>코딩 스타일 같은 것은 이제 AI에게 맡겨도 괜찮습니다. 중요한 것은 <b>내가 의도한 것이 코드에 제대로 담겨 있는가</b>입니다. 그것이 빠져 있다면 AI로 아무리 빨리 완성했어도 의미가 없습니다.</p><blockquote>일은 AI에게 맡길 수 있어도, 책임까지 맡길 수는 없다. 코드와 결과물에 대한 최종 책임은 사람에게 있다.</blockquote><h3>사람과 AI가 함께 리뷰했다는 것을, 기본으로 보장하기</h3><p>그래서 Review Board는 AI에게 일을 넘기는 곳마다, 일부러 사람이 판단하는 단계를 넣었습니다.</p><div class="about-flow"><b>🔍 리뷰하는 쪽</b><span>🤖 AI가 1차 리뷰</span><i>→</i><span class="human">👤 코드를 읽고, 지적마다 동의 / 동의 안 함 (+의견)</span><i>→</i><span>💬 PR에 게시</span></div><div class="about-flow"><b>✍️ 리뷰받는 쪽</b><span>💬 지적을 받음</span><i>→</i><span>🤖 AI가 수정 방침 제안</span><i>→</i><span class="human">👤 지적의 타당성과 방침에 동의 / 동의 안 함</span><i>→</i><span>🤖 AI가 수정 반영</span></div><ul><li><b>리뷰하는 쪽</b>: 1차 리뷰는 AI에게 맡깁니다. 하지만 게시하기 전에 「코드를 읽었습니다」 체크박스로, 사람이 코드를 한 번은 직접 읽도록 했습니다. AI의 지적을 채택할지도 하나하나 사람이 「동의 / 동의 안 함」으로 정하고, 필요하면 자기 의견을 덧붙입니다.</li><li><b>리뷰받는 쪽</b>: 받은 지적을 고치는 수고는 AI에게 맡깁니다. 하지만 그 지적이 애초에 타당한지, AI가 내놓은 수정 방침에 동의하는지는 사람이 판단합니다.</li></ul><div data-shot="findings"></div><p>이렇게 하면 리뷰하는 쪽도, 리뷰받는 쪽도 상대의 코멘트 뒤에 사람의 판단이 있다는 것을 알 수 있습니다. 그래서 서로의 의견을 더 안심하고 신뢰할 수 있게 됩니다.</p><h3>피곤하지 않게: 화면 설계의 원칙</h3><p>AI 에이전트 덕분에 리뷰도 수정도 편해졌습니다. 그런데도 그 주변의 자잘한 일들이 오히려 피로를 쌓고 있었습니다. Review Board의 화면은 그 피로를 줄이는 것을 목표로 합니다.</p><ul><li><b>브라우저 탭을 끝없이 열지 않는다</b>: 리뷰 요청, 내 PR, 스프린트를 한 화면에서 봅니다. GitHub 링크도 항상 같은 탭 하나에서 열립니다.</li><li><b>도구 사이를 오가지 않는다</b>: 브라우저에서 PR을 보고, 터미널로 가서 Claude에게 skill 실행을 지시하고, 다시 돌아오는… 그 왕복을 버튼 하나로 줄였습니다.</li><li><b>새 소식을 찾으러 가지 않는다</b>: GitHub Notifications를 주기적으로 확인하지 않아도, 새 리뷰 요청과 지적이 보드에 알아서 들어옵니다.</li></ul><div data-shot="review"></div><blockquote>속도는 AI에게. 판단과 책임은 사람에게.</blockquote>',
-    'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(rb-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
-    'tips.lanes': '<summary>레인 보는 법</summary><p><b>리뷰하기</b> 탭 (다른 사람의 PR)</p><ul><li>리뷰 요청: 나에게 리뷰가 요청된 PR. 「리뷰하기」로 Claude 리뷰를 시작합니다.</li><li>리뷰 중: Claude가 리뷰하고 있거나 차례를 기다리는 중.</li><li>리뷰 완료: 리뷰 의견이 나와서 내 결정을 기다리는 중. 카드를 열어 검토하세요.</li><li>완료: PR에 게시했거나 건너뛴 것.</li></ul><p><b>리뷰 받기</b> 탭 (내 PR)</p><ul><li>드래프트: Draft 상태의 PR.</li><li>리뷰 대기: 리뷰를 기다리는 PR.</li><li>코멘트 있음: 해결되지 않은 스레드 중 마지막 발언이 내가 아닌 것이 있는 PR.</li><li>실행 중: 셀프 리뷰나 코멘트 반영이 진행 중.</li><li>결정 대기: 셀프 리뷰 의견이나 반영 계획이 나와서 내 결정을 기다리는 중.</li><li>머지 가능 / 완료: 직접 옮기는 레인입니다. 카드를 끌어서 리뷰 대기 ↔ 머지 가능 ↔ 완료 사이를 옮길 수 있습니다.</li></ul>', 'tips.review': '<summary>리뷰 의견 결정하고 게시하기</summary><ol><li>카드를 열면 리뷰 의견이 하나씩 나옵니다. 각각 「동의」 또는 「동의 안 함」을 고르고, 필요하면 메모를 남깁니다.</li><li>리뷰하기 탭: 동의한 의견만 PR에 코멘트로 게시됩니다. 동의하지 않은 의견도 이유를 쓰면 <span data-disagree-icon>🤔💭</span>와 함께 게시됩니다. Approve할지도 여기서 고릅니다.</li><li>리뷰 받기 탭: 셀프 리뷰는 동의한 의견을 게시하고 수정·push·답글까지 진행합니다. 코멘트 반영은 동의한 계획대로 수정·push·답글을 진행합니다.</li><li>「코드를 읽었습니다」는 AI 리뷰를 그대로 내보내지 않기 위한 체크입니다. 직접 코드를 읽은 뒤 체크하세요.</li></ol><p class="muted">고른 내용은 브라우저에 저장되므로 창을 닫았다가 다시 열어도 남아 있습니다. 게시·Approve·다시 리뷰 같은 버튼은 실수 방지를 위해 두 번 눌러야 실행됩니다.</p>', 'tips.buttons': '<summary>보드 위쪽 버튼</summary><ul><li>스택 순: 같은 레인 안에서 스택 PR을 부모 → 자식 → 손자 순으로 정렬합니다. 다시 누르면 업데이트 순으로 돌아갑니다.</li><li>Approve 완료: 누를 때마다 전체 → 만 보기 → 제외 순으로 바뀝니다.</li><li>레인 편집: 레인을 끌어서 순서를 바꾸거나 이름을 바꿀 수 있습니다. 「저장」을 눌러야 반영됩니다.</li><li>표시 설정: 카드에 보여 줄 항목(브랜치명, issue, 스택, 토큰 사용량, 리뷰어 이미지 등)을 고릅니다.</li><li>오른쪽 끝 새로고침 버튼: GitHub에서 바로 다시 가져옵니다.</li></ul>', 'tips.roadmap': '<summary>로드맵 화면</summary><ul><li>설정의 「로드맵 화면의 GitHub Projects」에 프로젝트 URL을 넣으면 issue 일정이 막대로 나옵니다.</li><li>스프린트별은 프로젝트의 Iteration(스프린트)마다, 기간별은 1주 / 1개월 단위로 시작일·종료일 기준으로 보여 줍니다.</li><li>「부모 issue 담당자로 필터」를 켜면 담당자 필터를 최상위 issue의 담당자 기준으로 적용합니다.</li><li>데이터는 24시간 캐시됩니다. 바로 최신으로 보려면 다시 가져오기 버튼을 누르세요.</li></ul>', 'tips.settings': '<summary>설정 요령</summary><ul><li>저장소와 스킬 매핑의 인자 템플릿에는 {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}를 쓸 수 있습니다.</li><li>GitHub 자동 가져오기 시간대 밖에서는 자동으로 가져오지 않습니다. 새로고침 버튼으로 직접 가져오는 건 언제든 됩니다.</li><li>동시 실행 수를 넘는 리뷰는 「대기 중」으로 줄을 서서 차례로 실행됩니다.</li><li>각 설정 화면의 「모두 기본값으로 되돌리기」로 처음 상태로 돌릴 수 있습니다.</li></ul>', 'tips.cost': '<summary>토큰 사용량과 로그</summary><ul><li>카드의 토큰 사용량은 그 PR에서 쓴 토큰(캐시 포함)과 비용의 누계입니다. 「표시 설정」에서 켜고 끌 수 있습니다.</li><li>실행 중인 카드의 「로그」로 Claude 출력을 볼 수 있습니다.</li><li>끝난 실행의 로그는 설정의 「로그 보관 일수」만큼 남고 매일 자동으로 지워집니다. 설정 화면에서 바로 지울 수도 있습니다.</li></ul>',
+    'about.html': '<h2>Docket에 대하여</h2><p class="lead">AI 에이전트와 함께 코드를 리뷰하고, 받은 지적을 고치는 일을 한 화면에서. 단, 마지막 판단은 언제나 사람이 합니다.</p><h3>AI는 빠르다. 그래서 더 조심해야 한다</h3><p>AI 에이전트로 코드를 쓰고 리뷰하는 일은 이미 일상이 되었고, 생산성은 놀라울 만큼 올라갔습니다. AI의 발전 속도를 생각하면 이 흐름은 앞으로 더 빨라질 것입니다.</p><p>하지만 편해질수록 마음에 걸리는 것이 하나 있습니다. 사람이 조금씩 게을러진다는 것입니다. "AI가 알아서 잘 했겠지" 하는 마음으로 내용을 보지 않고 Approve를 누르기 시작하면, 지금 만들고 있는 서비스가 정말 원하던 모습인지 점점 아무도 확신할 수 없게 됩니다.</p><p>코딩 스타일 같은 것은 이제 AI에게 맡겨도 괜찮습니다. 중요한 것은 <b>내가 의도한 것이 코드에 제대로 담겨 있는가</b>입니다. 그것이 빠져 있다면 AI로 아무리 빨리 완성했어도 의미가 없습니다.</p><blockquote>일은 AI에게 맡길 수 있어도, 책임까지 맡길 수는 없다. 코드와 결과물에 대한 최종 책임은 사람에게 있다.</blockquote><h3>사람과 AI가 함께 리뷰했다는 것을, 기본으로 보장하기</h3><p>그래서 Docket은 AI에게 일을 넘기는 곳마다, 일부러 사람이 판단하는 단계를 넣었습니다.</p><div class="about-flow"><b>🔍 리뷰하는 쪽</b><span>🤖 AI가 1차 리뷰</span><i>→</i><span class="human">👤 코드를 읽고, 지적마다 동의 / 동의 안 함 (+의견)</span><i>→</i><span>💬 PR에 게시</span></div><div class="about-flow"><b>✍️ 리뷰받는 쪽</b><span>💬 지적을 받음</span><i>→</i><span class="human">👤 지적의 타당성에 동의 / 동의 안 함 (+ 이유) / 대상 아님</span><i>→</i><span>🤖 AI가 수정 방침·반론 제안</span><i>→</i><span class="human">👤 방침과 반론에 동의 / 동의 안 함</span><i>→</i><span>🤖 AI가 수정 반영</span></div><ul><li><b>리뷰하는 쪽</b>: 1차 리뷰는 AI에게 맡깁니다. 하지만 게시하기 전에 「코드를 읽었습니다」 체크박스로, 사람이 코드를 한 번은 직접 읽도록 했습니다. AI의 지적을 채택할지도 하나하나 사람이 「동의 / 동의 안 함」으로 정하고, 필요하면 자기 의견을 덧붙입니다.</li><li><b>리뷰받는 쪽</b>: 받은 지적을 고치는 수고는 AI에게 맡깁니다. 하지만 AI의 방침에 끌려가지 않도록, 그 지적이 애초에 타당한지는 AI를 돌리기 전에 사람이 먼저 판단합니다. AI는 그 판단에 따라 수정 방침을 내고, 사람의 판단이 틀렸다고 보면 반론합니다. 마지막에 어떻게 할지 정하는 것도 사람입니다.</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>이렇게 하면 리뷰하는 쪽도, 리뷰받는 쪽도 상대의 코멘트 뒤에 사람의 판단이 있다는 것을 알 수 있습니다. 그래서 서로의 의견을 더 안심하고 신뢰할 수 있게 됩니다.</p><h3>피곤하지 않게: 화면 설계의 원칙</h3><p>AI 에이전트 덕분에 리뷰도 수정도 편해졌습니다. 그런데도 그 주변의 자잘한 일들이 오히려 피로를 쌓고 있었습니다. Docket의 화면은 그 피로를 줄이는 것을 목표로 합니다.</p><ul><li><b>브라우저 탭을 끝없이 열지 않는다</b>: 리뷰 요청, 내 PR, 스프린트를 한 화면에서 봅니다. GitHub 링크도 항상 같은 탭 하나에서 열립니다.</li><li><b>도구 사이를 오가지 않는다</b>: 브라우저에서 PR을 보고, 터미널로 가서 Claude에게 skill 실행을 지시하고, 다시 돌아오는… 그 왕복을 버튼 하나로 줄였습니다.</li><li><b>새 소식을 찾으러 가지 않는다</b>: GitHub Notifications를 주기적으로 확인하지 않아도, 새 리뷰 요청과 지적이 보드에 알아서 들어옵니다.</li></ul><div data-shot="review"></div><blockquote>속도는 AI에게. 판단과 책임은 사람에게.</blockquote>',
+    'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(docket-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
+    'tips.lanes': '<summary>레인 보는 법</summary><p><b>리뷰하기</b> 탭 (다른 사람의 PR)</p><ul><li>리뷰 요청: 나에게 리뷰가 요청된 PR. 「리뷰하기」로 Claude 리뷰를 시작합니다.</li><li>리뷰 중: Claude가 리뷰하고 있거나 차례를 기다리는 중.</li><li>리뷰 완료: 리뷰 의견이 나와서 내 결정을 기다리는 중. 카드를 열어 검토하세요.</li><li>완료: PR에 게시했거나 건너뛴 것.</li></ul><p><b>리뷰 받기</b> 탭 (내 PR)</p><ul><li>드래프트: Draft 상태의 PR.</li><li>리뷰 대기: 리뷰를 기다리는 PR.</li><li>코멘트 있음: 해결되지 않은 스레드 중 마지막 발언이 내가 아닌 것이 있는 PR (대상 아님으로 둔 것은 새 발언이 달릴 때까지 제외).</li><li>실행 중: 셀프 리뷰나 코멘트 반영이 진행 중.</li><li>결정 대기: 셀프 리뷰 의견이나 반영 계획이 나와서 내 결정을 기다리는 중.</li><li>머지 가능 / 완료: 직접 옮기는 레인입니다. 카드를 끌어서 리뷰 대기 ↔ 머지 가능 ↔ 완료 사이를 옮길 수 있습니다.</li></ul>', 'tips.review': '<summary>리뷰 의견 결정하고 게시하기</summary><ol><li>카드를 열면 리뷰 의견이 하나씩 나옵니다. 각각 「동의」 또는 「동의 안 함」을 고르고, 필요하면 메모를 남깁니다.</li><li>리뷰하기 탭: 동의한 의견만 PR에 코멘트로 게시됩니다. 동의하지 않은 의견도 이유를 쓰면 <span data-disagree-icon>🤔💭</span>와 함께 게시됩니다. Approve할지도 여기서 고릅니다.</li><li>리뷰 받기 탭: 셀프 리뷰는 동의한 의견을 게시하고 수정·push·답글까지 진행합니다. 「코멘트 반영」은 AI를 돌리기 전에 먼저 각 코멘트에 「동의 / 동의 안 함 (이유 필수) / 대상 아님」을 고릅니다 (아래 그림). AI가 동의한 코멘트의 반영 계획과 동의하지 않은 코멘트에 대한 반론이나 답글 초안을 돌려주면, 그것을 보고 한 번 더 결정한 뒤 수정·push·답글을 진행합니다.</li><li>「코드를 읽었습니다」는 AI 리뷰를 그대로 내보내지 않기 위한 체크입니다. 직접 코드를 읽은 뒤 체크하세요.</li></ol><p class="muted">고른 내용은 브라우저에 저장되므로 창을 닫았다가 다시 열어도 남아 있습니다. 게시·Approve·다시 리뷰 같은 버튼은 실수 방지를 위해 두 번 눌러야 실행됩니다.</p>', 'tips.buttons': '<summary>보드 위쪽 버튼</summary><ul><li>스택 순: 같은 레인 안에서 스택 PR을 부모 → 자식 → 손자 순으로 정렬합니다. 다시 누르면 업데이트 순으로 돌아갑니다.</li><li>Approve 완료: 누를 때마다 전체 → 만 보기 → 제외 순으로 바뀝니다.</li><li>레인 편집: 레인을 끌어서 순서를 바꾸거나 이름을 바꿀 수 있습니다. 「저장」을 눌러야 반영됩니다.</li><li>표시 설정: 카드에 보여 줄 항목(브랜치명, issue, 스택, 토큰 사용량, 리뷰어 이미지 등)을 고릅니다.</li><li>오른쪽 끝 새로고침 버튼: GitHub에서 바로 다시 가져옵니다.</li></ul>', 'tips.roadmap': '<summary>로드맵 화면</summary><ul><li>설정의 「로드맵 화면의 GitHub Projects」에 프로젝트 URL을 넣으면 issue 일정이 막대로 나옵니다.</li><li>스프린트별은 프로젝트의 Iteration(스프린트)마다, 기간별은 1주 / 1개월 단위로 시작일·종료일 기준으로 보여 줍니다.</li><li>「부모 issue 담당자로 필터」를 켜면 담당자 필터를 최상위 issue의 담당자 기준으로 적용합니다.</li><li>데이터는 24시간 캐시됩니다. 바로 최신으로 보려면 다시 가져오기 버튼을 누르세요.</li></ul>', 'tips.settings': '<summary>설정 요령</summary><ul><li>저장소와 스킬 매핑의 인자 템플릿에는 {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}를 쓸 수 있습니다.</li><li>GitHub 자동 가져오기 시간대 밖에서는 자동으로 가져오지 않습니다. 새로고침 버튼으로 직접 가져오는 건 언제든 됩니다.</li><li>동시 실행 수를 넘는 리뷰는 「대기 중」으로 줄을 서서 차례로 실행됩니다.</li><li>각 설정 화면의 「모두 기본값으로 되돌리기」로 처음 상태로 돌릴 수 있습니다.</li></ul>', 'tips.cost': '<summary>토큰 사용량과 로그</summary><ul><li>카드의 토큰 사용량은 그 PR에서 쓴 토큰(캐시 포함)과 비용의 누계입니다. 「표시 설정」에서 켜고 끌 수 있습니다.</li><li>실행 중인 카드의 「로그」로 Claude 출력을 볼 수 있습니다.</li><li>끝난 실행의 로그는 설정의 「로그 보관 일수」만큼 남고 매일 자동으로 지워집니다. 설정 화면에서 바로 지울 수도 있습니다.</li></ul>',
     'lane.requested': '리뷰 요청', 'lane.reviewing': '리뷰 중', 'lane.reviewed': '리뷰 완료', 'lane.done': '완료', 'lane.draft': '드래프트',
     'lane.mine': '리뷰 대기', 'lane.pending': '코멘트 있음', 'lane.running': '실행 중', 'lane.planned': '결정 대기', 'lane.mergeable': '머지 가능',
     'rm.sprint': '스프린트별', 'rm.period': '기간별',
@@ -450,16 +505,22 @@ const I18N = {
     origComment: '원래 코멘트', agree: '동의', disagree: '동의 안 함',
     'ph.self.agree': '추가 설명 (선택, 게시와 수정에 반영됨)', 'ph.self.disagree': '동의하지 않은 의견은 게시도 수정도 하지 않습니다 (메모)',
     'ph.fix.agree': '추가 설명 (선택, 수정과 답글에 반영됨)', 'ph.fix.disagree': '동의하지 않는 이유 (선택, 쓰면 그 내용으로 계획을 다시 세웁니다. 비우면 수정도 답글도 하지 않습니다)',
-    planFix: '【수정】', planReply: '【답글】', rerunSelf: '셀프 리뷰 다시 하기', rerunFix: '계획 다시 만들기',
-    'desc.self': '셀프 리뷰: 동의한 의견을 PR에 게시하고, 수정·push한 뒤 해당 코멘트에 답글을 답니다.', 'desc.fix': '코멘트 반영 계획: 동의한 계획대로 수정·push·답글을 진행합니다.',
+    planFix: '【수정】', planReply: '【답글】', planRebut: '【AI의 반론】', planOwnReason: '【내 사전 판단】', rerunSelf: '셀프 리뷰 다시 하기', rerunFix: '사전 판단부터 다시 하기',
+    'desc.triage': 'AI의 방침을 보기 전에 먼저 각 코멘트가 타당한지 판단하세요. 동의한 코멘트는 AI가 반영 계획을 세우고, 동의하지 않은 코멘트는 AI가 이유를 검토해 반론이나 답글 초안을 돌려줍니다. 지적이 아닌 코멘트 등은 「대상 아님」으로 두면 AI가 손대지 않고, 새 발언이 달릴 때까지 목록에서 빠집니다.',
+    'ph.triage.agree': '추가 설명 (선택, 반영 계획에 반영됨)', 'ph.triage.disagree': '동의하지 않는 이유 (필수, AI가 검토해 반론이나 답글 초안을 돌려줍니다)',
+    notApplicable: '대상 아님', prComment: 'PR 코멘트',
+    triageSubmit: 'AI에게 계획 맡기기', triageSkipAll: '대상 아님으로 처리', triageTargets: 'AI 대상 {n}건', noThreads: '반영할 코멘트가 없습니다.', latestComment: '최신 발언',
+    'desc.self': '셀프 리뷰: 동의한 의견을 PR에 게시하고, 수정·push한 뒤 해당 코멘트에 답글을 답니다.', 'desc.fix': '코멘트 반영 계획: 동의한 계획대로 수정·push·답글을 진행합니다. rebut은 사전 판단에 대한 AI의 반론으로, 동의하면 코멘트대로 수정하고 동의하지 않으면 사전 판단의 이유로 답글을 답니다.',
     noMineFindings: '반영할 코멘트가 없습니다.', prevApplyRaw: '이전 반영 원문', confirmed: '리뷰 의견을 확인했습니다',
     confirmRerun: '한 번 더 누르면 선택을 초기화하고 다시 실행', confirmPush: '한 번 더 누르면 push·코멘트',
-    unset: '(미설정)', skillPh: '(스킬)', default: '기본값', defaultParen: '(기본값)', save: '저장',
+    's.fixPrompt': '코멘트 반영 프롬프트', 's.fixPrompt.help': '스킬 대신 「(설정의 프롬프트)」를 고른 리포지토리에서 코멘트 반영에 쓰는 지시입니다. 작업 디렉터리의 clone에서 브랜치를 바꾸고 커밋·push·답글까지 합니다. 반영 계획 출력 형식과 계획 단계에서는 수정하지 않는다는 지시는 Docket이 뒤에 붙입니다. 비우면 기본 프롬프트를 씁니다.',
+    'opt.prompt': '(설정의 프롬프트)', 's.reviewPrompt': '리뷰 프롬프트', 's.reviewPrompt.help': '스킬 대신 「(설정의 프롬프트)」를 고른 리포지토리에서 리뷰·셀프 리뷰에 쓰는 지시입니다. {pr-url} 등의 변수를 쓸 수 있습니다. 게시하지 않는다는 지시와 지적 출력 형식은 Docket이 뒤에 붙입니다. 비우면 기본 프롬프트를 씁니다.',
+    unset: '(미설정)', skillPh: '(스킬)', default: '기본값', defaultParen: '(기본값)', save: '저장', saved: '저장했습니다',
     's.repoSkills': '저장소와 스킬 매핑',
     's.repoSkills.help': '인자 템플릿에서 쓸 수 있는 값: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. 작업 디렉터리가 비어 있으면 위의 기본값에서 claude를 실행합니다. 스킬 목록은 ~/.claude/skills와 각 작업 디렉터리의 .claude/skills에서 찾습니다.',
     'th.skill': '스킬', 'th.args': '인자 템플릿', workdir: '작업 디렉터리', 'th.fix': '코멘트 반영',
     's.mine': '리뷰 받기(내 PR) 스킬',
-    's.mine.help': '스킬이 비어 있으면 해당 버튼을 표시하지 않습니다. 셀프 리뷰용 스킬은 <code>&lt;review-board-findings&gt;</code> 형식의 리뷰 의견 목록을, 반영용 스킬(예: review-fix)은 코멘트별 반영 계획을 반환하도록 지시해서 실행합니다.',
+    's.mine.help': '스킬이 비어 있으면 해당 버튼을 표시하지 않습니다. 셀프 리뷰용 스킬은 <code>&lt;docket-findings&gt;</code> 형식의 리뷰 의견 목록을, 반영용 스킬(예: review-fix)은 코멘트별 반영 계획을 반환하도록 지시해서 실행합니다.',
     's.uiLang': '화면 언어', 's.outLang': 'Claude 출력 언어', 's.outLang.title': 'Claude가 PR에 쓰는 코멘트·답글과 보드에 표시하는 리뷰 의견의 언어',
     's.disagreeIcon': '동의 안 함 의견 아이콘', 's.disagreeIcon.title': '동의하지 않은 의견에 이유를 써서 게시할 때 내 의견 앞에 붙이는 아이콘',
     's.model': '모델', 's.model.title': '비우면 claude 기본값. 서브에이전트도 같은 모델로 동작합니다', 's.claudeArgs': 'claude 추가 인자',
@@ -494,22 +555,23 @@ const I18N = {
     'err.resultParseFailed': '결과(JSON)를 가져오지 못했습니다. 원문을 확인하세요', 'err.applyUnknown': '반영 결과를 확인하지 못했습니다. PR을 확인하세요',
     'err.projectNotConfigured': '프로젝트가 설정에 없습니다', 'err.skillMissing': '{repo}의 스킬이 설정되지 않았습니다', 'err.running': '실행 중입니다',
     'err.cannotApply': '반영할 수 있는 상태가 아닙니다', 'err.confirmRequired': '"리뷰 의견을 확인했습니다"에 체크하세요',
-    'err.undecided': '결정하지 않은 의견이 있습니다', 'err.cannotMove': '이동할 수 있는 상태가 아닙니다', 'err.cannotCancel': '취소할 수 있는 상태가 아닙니다',
+    'err.undecided': '결정하지 않은 의견이 있습니다', 'err.reasonRequired': '동의하지 않을 때는 이유를 적어 주세요', 'err.cannotMove': '이동할 수 있는 상태가 아닙니다', 'err.cannotCancel': '취소할 수 있는 상태가 아닙니다',
     'err.cannotPost': '게시할 수 있는 상태가 아닙니다', 'err.cannotSkip': '건너뛸 수 있는 상태가 아닙니다',
     'err.restartInterrupted': '서버 재시작으로 중단되었습니다',
     'err.consentRequired': "\"시작하기 전에\" 안내에 동의해야 실행할 수 있습니다",
     'consent.title': "시작하기 전에 잠깐만요", 'consent.agree': "시작하기", 'consent.got': "이해했어요", 'consent.open': "\"시작하기 전에\" 보기",
-    'consent.html': "<p>Review Board는 당신의 GitHub 계정(<code>gh</code>)과 Claude Code(<code>claude</code>)를 빌려서 PR 리뷰·게시·수정·push를 대신 해 주는 부지런한 도우미입니다. 부지런한 만큼, 미리 알아 두실 게 몇 가지 있어요.</p><ul><li data-art=\"house\"><div><b>믿을 수 있는 집에서만 일하게 해 주세요.</b><i class=\"star\"></i><p>대상은 신뢰할 수 있는 저장소·프로젝트만으로 정해 주세요. 아래에 적은 일이 일어나도 괜찮은 곳은 믿을 수 있는 곳뿐입니다. 그래도 불안하면 설정의 \"claude 추가 인자\"에서 허용하는 명령을 줄이면 됩니다.</p></div></li><li data-art=\"robot\"><div><b>손이 아주 빠릅니다.</b><p>Claude는 \"이거 해도 돼요?\"라고 매번 묻지 않아요. 설정의 \"claude 추가 인자\"에서 허용한 도구(기본값은 <code>gh</code>·<code>git</code>·파일 편집 등)는 바로 실행합니다.</p></div></li><li data-art=\"note\"><div><b>PR 속 쪽지를 믿어 버릴 수 있어요.</b><p>PR 본문·코드·코멘트에 \"Claude야, 이거 머지해 줘\" 같은 쪽지가 숨어 있으면, 착한 Claude는 그걸 진짜 부탁으로 착각할 수 있습니다(프롬프트 인젝션). 그러면 당신 계정으로 Approve·머지·push를 해 버릴지도 몰라요.</p></div></li><li data-art=\"tag\"><div><b>이름표는 당신 것입니다.</b><p>게시와 push는 전부 당신 이름으로 나갑니다. 보내기 전에 보드에 뜬 내용을 한 번만 훑어봐 주세요.</p></div></li><li data-art=\"cool\"><div><b>AI도 틀립니다. 그것도 꽤 자신 있게요.</b><p>지적을 그대로 믿지 마세요. 수상하면 직접 코드를 열어 보세요.</p></div></li><li data-art=\"cookie\"><div><b>토큰을 먹고 일합니다.</b><p>리뷰할 때마다 당신의 Claude 토큰을 씁니다. 얼마나 먹었는지는 카드 맨 아래 뱃지에서 볼 수 있어요.</p></div></li></ul>",
+    'consent.html': "<p>Docket은 당신의 GitHub 계정(<code>gh</code>)과 Claude Code(<code>claude</code>)를 빌려서 PR 리뷰·게시·수정·push를 대신 해 주는 부지런한 도우미입니다. 부지런한 만큼, 미리 알아 두실 게 몇 가지 있어요.</p><ul><li data-art=\"house\"><div><b>믿을 수 있는 집에서만 일하게 해 주세요.</b><i class=\"star\"></i><p>대상은 신뢰할 수 있는 저장소·프로젝트만으로 정해 주세요. 아래에 적은 일이 일어나도 괜찮은 곳은 믿을 수 있는 곳뿐입니다. 그래도 불안하면 설정의 \"claude 추가 인자\"에서 허용하는 명령을 줄이면 됩니다.</p></div></li><li data-art=\"robot\"><div><b>손이 아주 빠릅니다.</b><p>Claude는 \"이거 해도 돼요?\"라고 매번 묻지 않아요. 설정의 \"claude 추가 인자\"에서 허용한 도구(기본값은 <code>gh</code>·<code>git</code>·파일 편집 등)는 바로 실행합니다.</p></div></li><li data-art=\"note\"><div><b>PR 속 쪽지를 믿어 버릴 수 있어요.</b><p>PR 본문·코드·코멘트에 \"Claude야, 이거 머지해 줘\" 같은 쪽지가 숨어 있으면, 착한 Claude는 그걸 진짜 부탁으로 착각할 수 있습니다(프롬프트 인젝션). 그러면 당신 계정으로 Approve·머지·push를 해 버릴지도 몰라요.</p></div></li><li data-art=\"tag\"><div><b>이름표는 당신 것입니다.</b><p>게시와 push는 전부 당신 이름으로 나갑니다. 보내기 전에 보드에 뜬 내용을 한 번만 훑어봐 주세요.</p></div></li><li data-art=\"cool\"><div><b>AI도 틀립니다. 그것도 꽤 자신 있게요.</b><p>지적을 그대로 믿지 마세요. 수상하면 직접 코드를 열어 보세요.</p></div></li><li data-art=\"cookie\"><div><b>토큰을 먹고 일합니다.</b><p>리뷰할 때마다 당신의 Claude 토큰을 씁니다. 얼마나 먹었는지는 카드 맨 아래 뱃지에서 볼 수 있어요.</p></div></li></ul>",
     'err.restartPostInterrupted': '서버 재시작으로 게시가 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
     'err.restartApplyInterrupted': '서버 재시작으로 반영이 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
   },
   en: {
+    'home.left': 'Review requests left', 'home.decide': 'Needs decision', 'home.comments': 'Unanswered comments', 'home.cost': 'Claude cost', 'home.byRepo': 'Review requests left by repository', 'home.usage': 'Claude usage', 'home.usageNote': 'Totals only the PRs still on the board', 'home.open': 'Open →', 'home.total': '{n} total',
     'tab.review': 'Review', 'tab.receive': 'Get reviewed', 'tab.roadmap': 'Roadmap', settings: 'Settings',
     'stackOrder': 'Stack order', 'stackOrder.title': 'Sort cards in each lane by stack: parent → child → grandchild (click again to sort by last update)',
     editLanes: 'Edit lanes', cardDisplay: 'Display', 'cd.branch': 'Branch name', 'cd.issue': 'Issue title', 'cd.stack': 'Stacked PRs', 'cd.updated': 'PR updated time', 'cd.applied': 'Addressed time', 'cd.usage': 'Token usage', 'cd.reviewers': 'Reviewer avatars', 'cd.author': 'PR author avatar (always hidden in "Get reviewed")', 'cd.prs': 'PRs linked to issues', 'cd.copy': 'Apply the same display settings to "{view}" too?', 'cd.yes': 'Yes', 'cd.no': 'No', cancel: 'Cancel', close: 'Close', claudeOutput: 'Claude output',
-    'about.html': '<h2>About Review Board</h2><p class="lead">Review code with AI agents and fix the feedback you get, all on one screen. But the final call always belongs to a human.</p><h3>AI is fast. That’s exactly why we need to be careful</h3><p>Writing and reviewing code with AI agents is already part of everyday work, and productivity has gone up dramatically. Given how fast AI is improving, this will only speed up.</p><p>But the more convenient it gets, the more one thing worries me: people slowly getting complacent. Once we start hitting Approve without reading, thinking “the AI probably got it right,” it gets harder and harder for anyone to say whether the service we are building is really what we wanted.</p><p>Things like coding style can be left to AI now. What matters is <b>whether what I intended actually made it into the code</b>. If it didn’t, it doesn’t matter how fast AI helped us finish.</p><blockquote>You can hand work to AI, but not responsibility. The final responsibility for the code and what it produces stays with people.</blockquote><h3>Making “reviewed by a human and AI together” the default</h3><p>So wherever Review Board hands work to AI, it deliberately puts a human decision in the loop.</p><div class="about-flow"><b>🔍 Reviewing</b><span>🤖 AI does the first review</span><i>→</i><span class="human">👤 Read the code, Agree / Disagree on each finding (+ comment)</span><i>→</i><span>💬 Post to the PR</span></div><div class="about-flow"><b>✍️ Being reviewed</b><span>💬 Receive feedback</span><i>→</i><span>🤖 AI proposes a fix plan</span><i>→</i><span class="human">👤 Agree / Disagree on the feedback and the plan</span><i>→</i><span>🤖 AI applies the fix</span></div><ul><li><b>Reviewing</b>: AI does the first pass. But before anything is posted, an “I read the code” checkbox asks you to read the code yourself at least once. You also decide on each AI finding with “Agree / Disagree”, adding your own comment when needed.</li><li><b>Being reviewed</b>: AI takes on the work of fixing the feedback you received. But whether that feedback is valid in the first place, and whether you agree with the AI’s fix plan, is your call.</li></ul><div data-shot="findings"></div><p>This way, both reviewers and authors know there is human judgment behind every comment, so they can trust each other’s feedback with more confidence.</p><h3>Less fatigue: the design principles</h3><p>AI agents made reviewing and fixing easier. Yet the small chores around them kept piling up fatigue. Review Board’s screens are built to cut that fatigue.</p><ul><li><b>No endless browser tabs</b>: review requests, your own PRs and sprints on one screen. GitHub links always open in the same single tab.</li><li><b>No hopping between tools</b>: reading a PR in the browser, switching to a terminal to tell Claude to run a skill, then coming back… that round trip is now one button.</li><li><b>No hunting for news</b>: no need to keep checking GitHub Notifications. New review requests and feedback land on the board on their own.</li></ul><div data-shot="review"></div><blockquote>Speed from AI. Judgment and responsibility from people.</blockquote>',
-    'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (rb-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
-    'tips.lanes': '<summary>What each lane means</summary><p><b>Review</b> tab (other people\'s PRs)</p><ul><li>Requested: your review was requested. Press "Review" to start a Claude review.</li><li>Reviewing: Claude is reviewing, or waiting its turn.</li><li>Reviewed: findings are ready and waiting for your decision. Open the card to go through them.</li><li>Done: posted to the PR, or skipped.</li></ul><p><b>Receive</b> tab (your PRs)</p><ul><li>Draft: PRs in Draft.</li><li>Awaiting review: PRs waiting for review.</li><li>Has comments: an unresolved thread whose last comment is not yours.</li><li>Running: a self-review or comment fix is in progress.</li><li>Needs decision: self-review findings or a fix plan are waiting for your decision.</li><li>Ready to merge / Done: lanes you move cards into yourself. Drag a card between Awaiting review, Ready to merge and Done.</li></ul>', 'tips.review': '<summary>Decide on findings and post</summary><ol><li>Open a card to see the findings one by one. Pick "Agree" or "Disagree" for each and add a note if needed.</li><li>Review tab: only agreed findings are posted as PR comments. A disagreed finding is also posted with <span data-disagree-icon>🤔💭</span> if you write a reason. You also choose whether to approve here.</li><li>Receive tab: self-review posts the agreed findings, then fixes, pushes and replies. Comment fixes follow the agreed plan to fix, push and reply.</li><li>"I read the code" keeps AI reviews from going out unread. Check it after reading the code yourself.</li></ol><p class="muted">Your choices are saved in the browser, so they survive closing and reopening. Buttons such as post, approve and re-review need two clicks to avoid mistakes.</p>', 'tips.buttons': '<summary>Buttons above the board</summary><ul><li>Stack order: sorts stacked PRs in each lane as parent → child → grandchild. Click again to sort by last update.</li><li>Approved: each click cycles All → Only → Exclude.</li><li>Edit lanes: drag lanes to reorder them, or rename them. Press "Save" to apply.</li><li>Card display: choose what cards show (branch, issue, stack, token usage, reviewer avatars and more).</li><li>Refresh button at the far right: fetches from GitHub right away.</li></ul>', 'tips.roadmap': '<summary>Roadmap screen</summary><ul><li>Add project URLs to "GitHub Projects for the roadmap" in settings to see issue schedules as bars.</li><li>By sprint groups by the project Iteration (sprint); by period shows 1-week or 1-month spans based on start and end dates.</li><li>"Filter by parent issue assignee" applies the assignee filter to the top-level issue assignee.</li><li>Data is cached for 24 hours. Press the fetch-again button to see the latest right away.</li></ul>', 'tips.settings': '<summary>Settings tips</summary><ul><li>Argument templates in the repo-to-skill mapping can use {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}.</li><li>Outside the GitHub auto-fetch hours nothing is fetched automatically. The refresh button still works any time.</li><li>Reviews beyond the concurrency limit wait as "Queued" and run in order.</li><li>"Reset all to defaults" on each settings pane restores the initial values.</li></ul>', 'tips.cost': '<summary>Token usage and logs</summary><ul><li>Token usage on a card is the running total of tokens (including cache) and cost spent on that PR. Turn it on or off in "Card display".</li><li>"Log" on a running card shows the Claude output.</li><li>Logs of finished runs are kept for the "log retention days" in settings and deleted automatically every day. You can also delete them right away from settings.</li></ul>',
+    'about.html': '<h2>About Docket</h2><p class="lead">Review code with AI agents and fix the feedback you get, all on one screen. But the final call always belongs to a human.</p><h3>AI is fast. That’s exactly why we need to be careful</h3><p>Writing and reviewing code with AI agents is already part of everyday work, and productivity has gone up dramatically. Given how fast AI is improving, this will only speed up.</p><p>But the more convenient it gets, the more one thing worries me: people slowly getting complacent. Once we start hitting Approve without reading, thinking “the AI probably got it right,” it gets harder and harder for anyone to say whether the service we are building is really what we wanted.</p><p>Things like coding style can be left to AI now. What matters is <b>whether what I intended actually made it into the code</b>. If it didn’t, it doesn’t matter how fast AI helped us finish.</p><blockquote>You can hand work to AI, but not responsibility. The final responsibility for the code and what it produces stays with people.</blockquote><h3>Making “reviewed by a human and AI together” the default</h3><p>So wherever Docket hands work to AI, it deliberately puts a human decision in the loop.</p><div class="about-flow"><b>🔍 Reviewing</b><span>🤖 AI does the first review</span><i>→</i><span class="human">👤 Read the code, Agree / Disagree on each finding (+ comment)</span><i>→</i><span>💬 Post to the PR</span></div><div class="about-flow"><b>✍️ Being reviewed</b><span>💬 Receive feedback</span><i>→</i><span class="human">👤 Agree / Disagree (+ reason) / Skip on each comment</span><i>→</i><span>🤖 AI proposes a fix plan or pushes back</span><i>→</i><span class="human">👤 Agree / Disagree on the plan and pushback</span><i>→</i><span>🤖 AI applies the fix</span></div><ul><li><b>Reviewing</b>: AI does the first pass. But before anything is posted, an “I read the code” checkbox asks you to read the code yourself at least once. You also decide on each AI finding with “Agree / Disagree”, adding your own comment when needed.</li><li><b>Being reviewed</b>: AI takes on the work of fixing the feedback you received. But so you aren’t swayed by the AI’s take, you decide whether each comment is valid before the AI runs. The AI then plans fixes along your calls, and pushes back if it thinks you got one wrong. The final call is still yours.</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>This way, both reviewers and authors know there is human judgment behind every comment, so they can trust each other’s feedback with more confidence.</p><h3>Less fatigue: the design principles</h3><p>AI agents made reviewing and fixing easier. Yet the small chores around them kept piling up fatigue. Docket’s screens are built to cut that fatigue.</p><ul><li><b>No endless browser tabs</b>: review requests, your own PRs and sprints on one screen. GitHub links always open in the same single tab.</li><li><b>No hopping between tools</b>: reading a PR in the browser, switching to a terminal to tell Claude to run a skill, then coming back… that round trip is now one button.</li><li><b>No hunting for news</b>: no need to keep checking GitHub Notifications. New review requests and feedback land on the board on their own.</li></ul><div data-shot="review"></div><blockquote>Speed from AI. Judgment and responsibility from people.</blockquote>',
+    'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (docket-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
+    'tips.lanes': '<summary>What each lane means</summary><p><b>Review</b> tab (other people\'s PRs)</p><ul><li>Requested: your review was requested. Press "Review" to start a Claude review.</li><li>Reviewing: Claude is reviewing, or waiting its turn.</li><li>Reviewed: findings are ready and waiting for your decision. Open the card to go through them.</li><li>Done: posted to the PR, or skipped.</li></ul><p><b>Receive</b> tab (your PRs)</p><ul><li>Draft: PRs in Draft.</li><li>Awaiting review: PRs waiting for review.</li><li>Has comments: an unresolved thread whose last comment is not yours (ones you skipped are left out until someone posts again).</li><li>Running: a self-review or comment fix is in progress.</li><li>Needs decision: self-review findings or a fix plan are waiting for your decision.</li><li>Ready to merge / Done: lanes you move cards into yourself. Drag a card between Awaiting review, Ready to merge and Done.</li></ul>', 'tips.review': '<summary>Decide on findings and post</summary><ol><li>Open a card to see the findings one by one. Pick "Agree" or "Disagree" for each and add a note if needed.</li><li>Review tab: only agreed findings are posted as PR comments. A disagreed finding is also posted with <span data-disagree-icon>🤔💭</span> if you write a reason. You also choose whether to approve here.</li><li>Receive tab: self-review posts the agreed findings, then fixes, pushes and replies. "Address comments" first has you mark each comment Agree / Disagree (reason required) / Skip before the AI runs (see below). The AI returns a plan for the agreed ones and pushback or a draft reply for the disagreed ones; you decide once more, then it fixes, pushes and replies.</li><li>"I read the code" keeps AI reviews from going out unread. Check it after reading the code yourself.</li></ol><p class="muted">Your choices are saved in the browser, so they survive closing and reopening. Buttons such as post, approve and re-review need two clicks to avoid mistakes.</p>', 'tips.buttons': '<summary>Buttons above the board</summary><ul><li>Stack order: sorts stacked PRs in each lane as parent → child → grandchild. Click again to sort by last update.</li><li>Approved: each click cycles All → Only → Exclude.</li><li>Edit lanes: drag lanes to reorder them, or rename them. Press "Save" to apply.</li><li>Card display: choose what cards show (branch, issue, stack, token usage, reviewer avatars and more).</li><li>Refresh button at the far right: fetches from GitHub right away.</li></ul>', 'tips.roadmap': '<summary>Roadmap screen</summary><ul><li>Add project URLs to "GitHub Projects for the roadmap" in settings to see issue schedules as bars.</li><li>By sprint groups by the project Iteration (sprint); by period shows 1-week or 1-month spans based on start and end dates.</li><li>"Filter by parent issue assignee" applies the assignee filter to the top-level issue assignee.</li><li>Data is cached for 24 hours. Press the fetch-again button to see the latest right away.</li></ul>', 'tips.settings': '<summary>Settings tips</summary><ul><li>Argument templates in the repo-to-skill mapping can use {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}.</li><li>Outside the GitHub auto-fetch hours nothing is fetched automatically. The refresh button still works any time.</li><li>Reviews beyond the concurrency limit wait as "Queued" and run in order.</li><li>"Reset all to defaults" on each settings pane restores the initial values.</li></ul>', 'tips.cost': '<summary>Token usage and logs</summary><ul><li>Token usage on a card is the running total of tokens (including cache) and cost spent on that PR. Turn it on or off in "Card display".</li><li>"Log" on a running card shows the Claude output.</li><li>Logs of finished runs are kept for the "log retention days" in settings and deleted automatically every day. You can also delete them right away from settings.</li></ul>',
     'lane.requested': 'Requested', 'lane.reviewing': 'Reviewing', 'lane.reviewed': 'Reviewed', 'lane.done': 'Done', 'lane.draft': 'Draft',
     'lane.mine': 'Awaiting review', 'lane.pending': 'Has comments', 'lane.running': 'Running', 'lane.planned': 'Needs decision', 'lane.mergeable': 'Ready to merge',
     'rm.sprint': 'By sprint', 'rm.period': 'By period',
@@ -534,16 +596,22 @@ const I18N = {
     origComment: 'Original comment', agree: 'Agree', disagree: 'Disagree',
     'ph.self.agree': 'Notes (optional, reflected in the post and fix)', 'ph.self.disagree': 'Disagreed findings are neither posted nor fixed (notes only)',
     'ph.fix.agree': 'Notes (optional, reflected in the fix and reply)', 'ph.fix.disagree': 'Reason for disagreeing (optional: if given, the plan is revised accordingly; if empty, no fix or reply)',
-    planFix: '[Fix]', planReply: '[Reply]', rerunSelf: 'Redo self-review', rerunFix: 'Redo plan',
-    'desc.self': 'Self-review: posts agreed findings to the PR, fixes and pushes, then replies to those findings.', 'desc.fix': 'Plan for review comments: fixes, pushes and replies as per the agreed plan.',
+    planFix: '[Fix]', planReply: '[Reply]', planRebut: "[AI's pushback]", planOwnReason: '[Your initial call]', rerunSelf: 'Redo self-review', rerunFix: 'Redo from your initial calls',
+    'desc.triage': "Before seeing the AI's take, decide whether each comment is valid. The AI plans fixes for the ones you agree with, and for the ones you disagree with, it weighs your reason and returns either pushback or a draft reply. Mark comments that aren't feedback as Skip: the AI leaves them alone and they stay off the list until someone posts again.",
+    'ph.triage.agree': 'Notes (optional, reflected in the plan)', 'ph.triage.disagree': 'Reason for disagreeing (required: the AI weighs it and returns pushback or a draft reply)',
+    notApplicable: 'Skip', prComment: 'PR comment',
+    triageSubmit: 'Have the AI plan', triageSkipAll: 'Skip all', triageTargets: '{n} for the AI', noThreads: 'No unaddressed comments.', latestComment: 'Latest message',
+    'desc.self': 'Self-review: posts agreed findings to the PR, fixes and pushes, then replies to those findings.', 'desc.fix': "Plan for review comments: fixes, pushes and replies as per the agreed plan. rebut is the AI's pushback on your initial call: agree to fix as the reviewer asked, disagree to reply based on your initial reason.",
     noMineFindings: 'Nothing to address.', prevApplyRaw: 'Raw output of the last run', confirmed: "I've reviewed the findings",
     confirmRerun: 'Click again to discard decisions and redo', confirmPush: 'Click again to push and comment',
-    unset: '(not set)', skillPh: '(skill)', default: 'Default', defaultParen: '(default)', save: 'Save',
+    's.fixPrompt': 'Address-comments prompt', 's.fixPrompt.help': 'Instructions used to address comments in repositories set to "(prompt in settings)" instead of a skill. It switches branches in the working directory clone, then commits, pushes and replies. Docket appends the plan format and the rule not to change code while planning. Leave empty to use the default prompt.',
+    'opt.prompt': '(prompt in settings)', 's.reviewPrompt': 'Review prompt', 's.reviewPrompt.help': 'Instructions used for review and self-review in repositories set to "(prompt in settings)" instead of a skill. Variables such as {pr-url} work. Docket appends the no-posting rule and the findings format. Leave empty to use the default prompt.',
+    unset: '(not set)', skillPh: '(skill)', default: 'Default', defaultParen: '(default)', save: 'Save', saved: 'Saved',
     's.repoSkills': 'Repository skills',
     's.repoSkills.help': 'Values usable in argument templates: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. If the working directory is empty, claude starts in the default above. Skills are looked up in ~/.claude/skills and each working directory\'s .claude/skills.',
     'th.skill': 'Skill', 'th.args': 'Argument template', workdir: 'Working directory', 'th.fix': 'Address comments',
     's.mine': 'Skills for "Get reviewed" (my PRs)',
-    's.mine.help': 'If a skill is empty, its button is hidden. The self-review skill is told to return findings in <code>&lt;review-board-findings&gt;</code> format, and the fix skill (e.g. review-fix) to return a plan for each review comment.',
+    's.mine.help': 'If a skill is empty, its button is hidden. The self-review skill is told to return findings in <code>&lt;docket-findings&gt;</code> format, and the fix skill (e.g. review-fix) to return a plan for each review comment.',
     's.uiLang': 'Display language', 's.outLang': 'Output language', 's.outLang.title': 'Language Claude uses for PR comments, replies and the findings shown on the board',
     's.disagreeIcon': 'Disagree icon', 's.disagreeIcon.title': 'Icon placed before your own opinion when a disagreed finding is posted with a reason',
     's.model': 'Model', 's.model.title': "Empty uses claude's default. Subagents run on the same model", 's.claudeArgs': 'Extra claude args',
@@ -578,12 +646,12 @@ const I18N = {
     'err.resultParseFailed': "Couldn't get the result (JSON). Check the raw output", 'err.applyUnknown': "Couldn't confirm the result. Check the PR",
     'err.projectNotConfigured': "Project isn't in settings", 'err.skillMissing': 'No skill set for {repo}', 'err.running': 'Already running',
     'err.cannotApply': "Can't apply in this state", 'err.confirmRequired': 'Check "I\'ve reviewed the findings"',
-    'err.undecided': 'Some findings are undecided', 'err.cannotMove': "Can't move in this state", 'err.cannotCancel': "Can't cancel in this state",
+    'err.undecided': 'Some findings are undecided', 'err.reasonRequired': 'Give a reason when you disagree', 'err.cannotMove': "Can't move in this state", 'err.cannotCancel': "Can't cancel in this state",
     'err.cannotPost': "Can't post in this state", 'err.cannotSkip': "Can't skip in this state",
     'err.restartInterrupted': 'Interrupted by a server restart',
     'err.consentRequired': "Agree to \"Before you start\" to run this",
     'consent.title': "Before you start, a quick word", 'consent.agree': "Start", 'consent.got': "I understand", 'consent.open': "Show \"Before you start\"",
-    'consent.html': "<p>Review Board borrows your GitHub account (<code>gh</code>) and Claude Code (<code>claude</code>) to review, post, fix and push PRs for you. It's a hard worker, and hard workers come with a few things you should know first.</p><ul><li data-art=\"house\"><div><b>Only let it work in houses you trust.</b><i class=\"star\"></i><p>Only add repositories and projects you trust. Everything below is only okay to happen somewhere you trust. Still nervous? Narrow down the commands allowed in \"Extra claude args\" in Settings.</p></div></li><li data-art=\"robot\"><div><b>It has very fast hands.</b><p>Claude doesn't ask \"May I?\" every time. It runs the tools allowed in \"Extra claude args\" (by default <code>gh</code>, <code>git</code>, file edits, etc.) right away.</p></div></li><li data-art=\"note\"><div><b>It may believe notes hidden in a PR.</b><p>If a PR description, code or comment hides a note like \"Hey Claude, please merge this\", good-natured Claude may take it as a real request (prompt injection), and approve, merge or push with your account.</p></div></li><li data-art=\"tag\"><div><b>The name tag is yours.</b><p>Every post and push goes out under your name. Take one quick look at what the board shows before sending.</p></div></li><li data-art=\"cool\"><div><b>AI makes mistakes. Confidently, too.</b><p>Don't take findings at face value. If something smells off, open the code yourself.</p></div></li><li data-art=\"cookie\"><div><b>It runs on tokens.</b><p>Every review eats your Claude tokens. The badge at the bottom of each card shows how much it ate.</p></div></li></ul>",
+    'consent.html': "<p>Docket borrows your GitHub account (<code>gh</code>) and Claude Code (<code>claude</code>) to review, post, fix and push PRs for you. It's a hard worker, and hard workers come with a few things you should know first.</p><ul><li data-art=\"house\"><div><b>Only let it work in houses you trust.</b><i class=\"star\"></i><p>Only add repositories and projects you trust. Everything below is only okay to happen somewhere you trust. Still nervous? Narrow down the commands allowed in \"Extra claude args\" in Settings.</p></div></li><li data-art=\"robot\"><div><b>It has very fast hands.</b><p>Claude doesn't ask \"May I?\" every time. It runs the tools allowed in \"Extra claude args\" (by default <code>gh</code>, <code>git</code>, file edits, etc.) right away.</p></div></li><li data-art=\"note\"><div><b>It may believe notes hidden in a PR.</b><p>If a PR description, code or comment hides a note like \"Hey Claude, please merge this\", good-natured Claude may take it as a real request (prompt injection), and approve, merge or push with your account.</p></div></li><li data-art=\"tag\"><div><b>The name tag is yours.</b><p>Every post and push goes out under your name. Take one quick look at what the board shows before sending.</p></div></li><li data-art=\"cool\"><div><b>AI makes mistakes. Confidently, too.</b><p>Don't take findings at face value. If something smells off, open the code yourself.</p></div></li><li data-art=\"cookie\"><div><b>It runs on tokens.</b><p>Every review eats your Claude tokens. The badge at the bottom of each card shows how much it ate.</p></div></li></ul>",
     'err.restartPostInterrupted': 'Posting was interrupted by a server restart. Check the PR before retrying',
     'err.restartApplyInterrupted': 'Applying was interrupted by a server restart. Check the PR before retrying',
   },
@@ -629,13 +697,13 @@ const MINE_LANES = [
 ];
 // レーンの並び順と名前はブラウザごとに保存する。「レーン編集」モード中だけドラッグで並び替え・名前の変更ができる
 // 名前は表示だけの上書きで、key は `${view}:${lane id}`。無ければ既定の名前
-const LANE_NAMES_KEY = 'rb-lane-names';
+const LANE_NAMES_KEY = 'docket-lane-names';
 const laneNames = () => { try { return JSON.parse(localStorage.getItem(LANE_NAMES_KEY)) || {}; } catch { return {}; } };
 const saveLaneNames = (names) => {
   try { localStorage.setItem(LANE_NAMES_KEY, JSON.stringify(Object.fromEntries(Object.entries(names).map(([k, n]) => [k, n.trim()]).filter(([, n]) => n)))); } catch {}
 };
 const laneLabel = (v, lane) => laneNames()[`${v}:${lane.id}`] || lane.label;
-const laneOrderKey = (v) => `rb-lane-order:${v}`;
+const laneOrderKey = (v) => `docket-lane-order:${v}`;
 function lanesFor(v) {
   const lanes = v === 'receive' ? MINE_LANES : LANES;
   let order = laneEdit || [];
@@ -647,7 +715,7 @@ const laneMatch = (lane) => lane.match || ((p) => lane.statuses.includes(p.statu
 let laneEdit = null; // 編集中の lane id 配列
 let laneNameEdit = null; // 編集中のレーン名 (laneNames と同じ形)
 // リポジトリ・作成者の絞り込み (非表示にしたもの) もタブごと・ブラウザごとに保存する。kind は multiSelect の key
-const hiddenKey = (kind, v) => `rb-hidden-${kind}:${v}`;
+const hiddenKey = (kind, v) => `docket-hidden-${kind}:${v}`;
 function hiddenOf(kind, v) {
   try { return JSON.parse(localStorage.getItem(hiddenKey(kind, v))) || []; } catch { return []; }
 }
@@ -656,7 +724,8 @@ let laneDrag = null;
 const RM_MODES = { sprint: tr('rm.sprint'), period: tr('rm.period') };
 if (['#milestone', '#repo'].includes(location.hash)) location.replace('#sprint'); // 廃止した Milestone別 / リポジトリ別 のブックマーク
 const rmMode = () => (RM_MODES[location.hash.slice(1)] ? location.hash.slice(1) : null);
-const view = () => (location.hash === '#receive' ? 'receive' : location.hash === '#about' ? 'about' : rmMode() ? 'sprint' : 'review');
+const PAGES = ['about', 'tips', 'settings'];
+const view = () => (!location.hash ? 'home' : location.hash === '#receive' ? 'receive' : PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : rmMode() ? 'sprint' : 'review');
 const REVIEW_ICON = { APPROVED: '✅', CHANGES_REQUESTED: '🔴', COMMENTED: '💬', DISMISSED: '⚪', PENDING: '⏳' };
 
 let board = { prs: [], mine: [], config: { repos: {} } };
@@ -701,7 +770,7 @@ const safeUrl = (u) => (/^https:\/\//i.test(u || '') ? u : '#');
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', 'X-Review-Board': '1' },
+    headers: { 'Content-Type': 'application/json', 'X-Docket': '1' },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const json = await res.json();
@@ -761,7 +830,7 @@ function render() {
   $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString(lang)} — ` : ''}${tr('refetchTitle')}`;
   // 別のタブを見ていても、判断待ち (Reviewed / 判断待ち) が出たことをブラウザのタブ名で分かるようにする
   const waiting = board.prs.filter((p) => p.status === 'reviewed').length + board.mine.filter((p) => p.status === 'planned').length;
-  document.title = `${waiting ? `(${waiting}) ` : ''}Review Board`;
+  document.title = `${waiting ? `(${waiting}) ` : ''}Docket`;
   $('#banner').innerHTML = (board.fetchError ? `<div class="banner">${tr('fetchFailed', { msg: esc(board.fetchError) })}</div>` : '')
     + (board.truncated ? `<div class="banner" style="border-color:var(--warn);color:var(--warn)">${tr('truncated')}</div>` : '');
 
@@ -789,11 +858,15 @@ function render() {
   });
   const sprint = view() === 'sprint';
   const about = view() === 'about';
-  $('#board').hidden = $('#board-bar').hidden = sprint || about;
+  const home = view() === 'home';
+  const page = PAGES.includes(view());
+  $('#board').hidden = $('#board-bar').hidden = sprint || page || home;
   $('#sprint').hidden = !sprint;
-  $('#about').hidden = !about;
+  for (const p of PAGES) $(`#${p}`).hidden = view() !== p;
+  $('#home').hidden = !home;
   if (about && !$('#about').innerHTML) renderAbout(); // 言語を変えると再読み込みになるので 1 回だけ描く
-  if (sprint || about) return;
+  if (home) renderHome();
+  if (sprint || page || home) return;
   const hidden = hiddenOf('repos', view());
   const hiddenAuthors = mine ? [] : hiddenOf('authors', view());
   const all = mine ? board.mine : board.prs;
@@ -821,7 +894,7 @@ function render() {
   }
   // 1 人以上に approve された PR だけ / それ以外だけ に絞れる (latestReviews なので今も approve のまま)。タブごとに保存
   let approved = '';
-  try { approved = localStorage.getItem(`rb-approved:${view()}`) || ''; } catch {}
+  try { approved = localStorage.getItem(`docket-approved:${view()}`) || ''; } catch {}
   const isApproved = (p) => p.pr.reviews.some((r) => r.state === 'APPROVED');
   // 押すたびに すべて → のみ → 除外 と切り替わる 1 つのボタン
   const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
@@ -860,6 +933,37 @@ function render() {
   }
 }
 
+// メイン画面: 取得済みのボードのデータだけで件数をまとめる (GitHub への追加の問い合わせはしない)
+function renderHome() {
+  const count = (v, l) => (v === 'receive' ? board.mine : board.prs).filter(laneMatch(l)).length;
+  const lanesSection = (v, title) => {
+    const rows = lanesFor(v).map((l) => [l, count(v, l)]);
+    const max = Math.max(1, ...rows.map(([, n]) => n));
+    return `<section><h2>${title}<span class="muted">${tr('home.total', { n: v === 'receive' ? board.mine.length : board.prs.length })}</span><a href="#${v}">${tr('home.open')}</a></h2>
+      ${rows.map(([l, n]) => `<div class="row"><span>${esc(laneLabel(v, l))}</span><span class="bar"><i style="width:${(n / max) * 100}%;background:${l.color}"></i></span><b>${n}</b></div>`).join('')}</section>`;
+  };
+  const left = board.prs.filter((p) => p.status !== 'commented');
+  const byRepo = Object.entries(left.reduce((m, p) => ({ ...m, [p.pr.repo]: (m[p.pr.repo] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1]);
+  const maxRepo = Math.max(1, ...byRepo.map(([, n]) => n));
+  const all = [...board.prs, ...board.mine];
+  const usage = (list) => list.reduce((u, p) => ({ tokens: u.tokens + (p.usage?.tokens || 0), costUsd: u.costUsd + (p.usage?.costUsd || 0) }), { tokens: 0, costUsd: 0 });
+  const total = usage(all);
+  const kpi = (n, label, href) => (href ? `<a class="kpi" href="${href}">` : '<div class="kpi">') + `<div class="n">${n}</div><div class="l">${label}</div>` + (href ? '</a>' : '</div>');
+  $('#home').innerHTML = `<div class="kpis">
+      ${kpi(left.length, tr('home.left'), '#review')}
+      ${kpi(board.prs.filter((p) => p.status === 'reviewed').length + board.mine.filter((p) => p.status === 'planned').length, tr('home.decide'), board.mine.some((p) => p.status === 'planned') && !board.prs.some((p) => p.status === 'reviewed') ? '#receive' : '#review')}
+      ${kpi(board.mine.reduce((n, p) => n + (p.pending || 0), 0), tr('home.comments'), '#receive')}
+      ${kpi(`$${total.costUsd.toFixed(2)}`, tr('home.cost'))}
+    </div>
+    <div class="cols">${lanesSection('review', tr('tab.review'))}${lanesSection('receive', tr('tab.receive'))}</div>
+    <div class="cols">
+      <section><h2>${tr('home.byRepo')}</h2>${byRepo.map(([r, n]) => `<div class="row"><span>${esc(r.split('/')[1])}</span><span class="bar"><i style="width:${(n / maxRepo) * 100}%;background:var(--accent)"></i></span><b>${n}</b></div>`).join('') || `<div class="muted">${tr('none')}</div>`}</section>
+      <section><h2>${tr('home.usage')}</h2>
+        ${[[tr('tab.review'), usage(board.prs)], [tr('tab.receive'), usage(board.mine)]].map(([l, u]) => `<div class="row" style="grid-template-columns:minmax(90px, auto) 1fr auto"><span>${l}</span><span class="muted">${fmtTokens(u.tokens)} tok</span><b>$${u.costUsd.toFixed(2)}</b></div>`).join('')}
+        <div class="muted" style="font-size:12px;margin-top:6px">${tr('home.usageNote')}</div></section>
+    </div>`;
+}
+
 const fmtBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.ceil(n / 1024)}KB`);
 
 function fmtTokens(n) {
@@ -871,8 +975,8 @@ function cardHtml(e) {
   let action = '';
   if (e.status === 'requested') {
     action = mapping?.skill
-      ? `<button class="primary" data-review="${esc(e.key)}">${tr('btn.review')}</button><span class="muted">${esc(mapping.skill)}</span>`
-      : `<button disabled>${tr('btn.review')}</button><a href="#" data-settings>${tr('skillMissing')}</a>`;
+      ? `<button class="primary" data-review="${esc(e.key)}">${tr('btn.review')}</button><span class="muted">${esc(skillLabel(mapping.skill))}</span>`
+      : `<button disabled>${tr('btn.review')}</button><a href="#settings" data-settings>${tr('skillMissing')}</a>`;
     action += `<button data-skip="${esc(e.key)}" title="${tr('skip.title')}">${tr('skip')}</button>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
@@ -883,7 +987,7 @@ function cardHtml(e) {
   } else if (e.status === 'posting') {
     action = `<span class="muted"><span class="spin"></span> ${tr('posting')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   } else if (e.status === 'commented') {
-    action = `${e.postedUrl ? `<a href="${esc(safeUrl(e.postedUrl))}" target="rb-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
+    action = `${e.postedUrl ? `<a href="${esc(safeUrl(e.postedUrl))}" target="docket-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
   }
 
   const clickable = e.status === 'reviewed';
@@ -899,10 +1003,10 @@ function mineCardHtml(e) {
   let action = '';
   if (e.status === 'idle') {
     const buttons = [
-      mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(mapping.selfSkill)}">${tr('selfReview')}</button>`,
-      mapping.fixSkill && `<button data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">${tr('fixComments')}</button>`,
+      mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(skillLabel(mapping.selfSkill))}">${tr('selfReview')}</button>`,
+      mapping.fixSkill && `<button data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(skillLabel(mapping.fixSkill))}">${tr('fixComments')}</button>`,
     ].filter(Boolean);
-    action = buttons.length ? `<span class="btns">${buttons.join('')}</span>` : `<a href="#" data-settings>${tr('skillMissing')}</a>`;
+    action = buttons.length ? `<span class="btns">${buttons.join('')}</span>` : `<a href="#settings" data-settings>${tr('skillMissing')}</a>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span>${cancel}`;
   } else if (e.status === 'running') {
@@ -940,7 +1044,7 @@ document.addEventListener('input', (ev) => {
 });
 // 外側をクリックしたら閉じる
 document.addEventListener('click', (ev) => {
-  for (const d of document.querySelectorAll('details.ms[open]')) if (!d.contains(ev.target)) d.open = false;
+  for (const d of document.querySelectorAll('details.ms[open], .user-menu[open]')) if (!d.contains(ev.target) || ev.target.closest('.user-menu a')) d.open = false;
 });
 
 const prId = (pr) => `${pr.repo}#${pr.number}`;
@@ -950,7 +1054,7 @@ function stackHtml(pr) {
   const parents = same.filter((p) => p.head === pr.base);
   const children = same.filter((p) => p.base === pr.head);
   if (!parents.length && !children.length) return '';
-  const links = (ps) => ps.map((p) => `<a href="${esc(safeUrl(p.url))}" target="rb-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
+  const links = (ps) => ps.map((p) => `<a href="${esc(safeUrl(p.url))}" target="docket-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
   return `<div class="stack">${tr('stack')}${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
 }
 
@@ -973,7 +1077,7 @@ function stackSort(cards) {
 
 // スタックのリンク先カードを一時的に強調する。再描画されても消えないよう状態で持つ
 let highlight = null;
-// 右のタブ (rb-viewer) で最後に開いたリンクのカード
+// 右のタブ (docket-viewer) で最後に開いたリンクのカード
 let viewing = null;
 function jumpTo(id) {
   highlight = id;
@@ -992,7 +1096,7 @@ function cardShell(e, action, attrs, showError) {
   return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}${viewing === prId(pr) ? ' viewing' : ''}`)}>
     <div class="top">
       ${view() === 'receive' ? '' : `<img class="avatar" src="${esc(pr.author?.avatarUrl)}" alt="" title="${esc(pr.author?.login)}">`}
-      <span class="grow"><a href="${esc(safeUrl(pr.url))}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
+      <span class="grow"><a href="${esc(safeUrl(pr.url))}" target="docket-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
       <span class="time" title="${esc(new Date(pr.updatedAt).toLocaleString(lang))}">${tr('fetchedAgo', { ago: ago(pr.updatedAt) })}</span>
     </div>
     <div class="title">${esc(pr.title)}${e.pending ? `<span class="pending-dot" role="img" aria-label="${tr('pending.title')}"></span>` : ''}</div>
@@ -1004,7 +1108,7 @@ function cardShell(e, action, attrs, showError) {
       ${pr.labels.map((l) => `<span class="chip" style="border-color:#${esc(l.color)}">${esc(l.name)}</span>`).join('')}
     </div>
     ${stackHtml(pr)}
-    ${pr.issues.map((i) => `<a class="issue" href="${esc(safeUrl(i.url))}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
+    ${pr.issues.map((i) => `<a class="issue" href="${esc(safeUrl(i.url))}" target="docket-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
     <div class="reviewers">${reviewers}</div>
     ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}${e.lastLog && !e.run ? ` <button data-log="${esc(e.key)}">${tr('log')}</button>` : ''}</div>` : ''}
     ${e.usage || (e.status === 'idle' && e.appliedAt) ? `<div class="chips foot">
@@ -1017,7 +1121,7 @@ function cardShell(e, action, attrs, showError) {
 
 // ---------- 判断ダイアログ ----------
 
-const draftKey = (key) => `review-board:decisions:${key}`;
+const draftKey = (key) => `docket:decisions:${key}`;
 function loadDraft(key) {
   try { return JSON.parse(localStorage.getItem(draftKey(key))) || {}; } catch { return {}; }
 }
@@ -1037,7 +1141,7 @@ function openReview(key) {
     const ready = findings && decided === findings.length;
     dlg.innerHTML = `
       <div class="dlg-head">
-        <h3><a href="${esc(safeUrl(e.pr.url))}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <h3><a href="${esc(safeUrl(e.pr.url))}" target="docket-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
         <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
@@ -1120,17 +1224,21 @@ function openReview(key) {
   dlg.showModal();
 }
 
+// server.js の PROMPT_SKILL と同じ値。スキルではなく設定のレビュープロンプトを使う
+const PROMPT_SKILL = '(prompt)';
+const skillLabel = (s) => (s === PROMPT_SKILL ? tr('opt.prompt') : s);
 const disagreeIcon = () => board.config?.disagreeIcon?.trim() || '🤔💭';
-function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr('ph.disagree', { icon: disagreeIcon() }) }) {
+function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr('ph.disagree', { icon: disagreeIcon() }) }, skippable = false) {
   const loc = f.path ? `${f.path}${f.line ? `:${f.line}` : ''}` : '';
   const placeholder = d.verdict === 'disagree' ? placeholders.disagree : placeholders.agree;
   return `<div class="finding ${esc(d.verdict || '')}">
     <div class="head"><strong>#${esc(f.no)}</strong>${f.severity ? `<span class="chip">${esc(f.severity)}</span>` : ''}<span class="grow">${esc(f.title)}</span></div>
-    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(safeUrl(f.url))}" target="rb-viewer">${tr('origComment')}</a>` : ''}</div>` : ''}
+    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(safeUrl(f.url))}" target="docket-viewer">${tr('origComment')}</a>` : ''}</div>` : ''}
     <pre>${esc(f.body)}</pre>
     <div class="verdict">
       <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">${tr('agree')}</button>
       <button class="disagree ${d.verdict === 'disagree' ? 'on' : ''}" data-verdict="disagree" data-no="${esc(f.no)}">${tr('disagree')}</button>
+      ${skippable ? `<button class="skip ${d.verdict === 'skip' ? 'on' : ''}" data-verdict="skip" data-no="${esc(f.no)}">${tr('notApplicable')}</button>` : ''}
       <textarea data-reason data-no="${esc(f.no)}" placeholder="${placeholder}">${esc(d.reason || '')}</textarea>
     </div>
   </div>`;
@@ -1149,7 +1257,12 @@ function planToFinding(item) {
     ...item,
     severity: item.category,
     title: `${item.author ? `@${item.author}: ` : ''}${item.comment || ''}`,
-    body: [item.plan && `${tr('planFix')}\n${item.plan}`, item.reply && `${tr('planReply')}\n${item.reply}`].filter(Boolean).join('\n\n'),
+    body: [
+      item.category === 'rebut' && item.ownReason && `${tr('planOwnReason')}\n${item.ownReason}`,
+      item.rebuttal && `${tr('planRebut')}\n${item.rebuttal}`,
+      item.plan && `${tr('planFix')}\n${item.plan}`,
+      item.reply && `${tr('planReply')}\n${item.reply}`,
+    ].filter(Boolean).join('\n\n'),
   };
 }
 
@@ -1166,7 +1279,7 @@ function openMine(key) {
     const ready = findings && decided === findings.length && draft.confirmed;
     dlg.innerHTML = `
       <div class="dlg-head">
-        <h3><a href="${esc(safeUrl(e.pr.url))}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <h3><a href="${esc(safeUrl(e.pr.url))}" target="docket-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
         <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
@@ -1219,7 +1332,7 @@ function openMine(key) {
       if (!confirmTwice(t, `rerun:${key}`, tr('confirmRerun'))) return;
       saveDraft(key, {});
       dlg.close();
-      return runMine(key, e.mode);
+      return e.mode === 'fix' ? openTriage(key) : runMine(key, e.mode);
     }
     if (t.matches('[data-submit]')) {
       if (!confirmTwice(t, `submit:${key}`, tr('confirmPush'))) return;
@@ -1244,10 +1357,88 @@ function openMine(key) {
   dlg.showModal();
 }
 
+// ---------- 指摘への事前判断 (AI 実行前) ----------
+
+// AI の方針に引きずられないよう、AI を動かす前に人が各スレッドの妥当性を判断する。
+// スレッドの番号は取得のたびに振り直されるので、判断は URL に結び付けて持つ
+function openTriage(key) {
+  openKey = null; // idle のまま開くので、再描画で閉じないようにする
+  const e = board.mine.find((p) => p.key === key);
+  const threads = e.threads || [];
+  const draft = { decisions: {}, ...loadDraft(`triage:${key}`) };
+  const dlg = $('#review-dlg');
+  const urlOf = (no) => threads.find((th) => String(th.no) === String(no))?.url;
+  const toFinding = (th) => ({
+    no: th.no,
+    severity: th.kind === 'comment' ? tr('prComment') : '',
+    url: th.url,
+    path: th.path,
+    line: th.line,
+    title: th.author ? `@${th.author}` : '',
+    body: [th.comment, th.latest && `── ${tr('latestComment')}${th.latest.author ? ` (@${th.latest.author})` : ''}\n${th.latest.body}`].filter(Boolean).join('\n\n'),
+  });
+
+  // 非同意は理由必須 (理由が無いと AI に判断材料を渡せない)。指摘ではないものは対象外にする
+  const tally = () => {
+    const ds = threads.map((th) => draft.decisions[th.url] || {});
+    const decided = ds.filter((d) => d.verdict).length;
+    const targets = ds.filter((d) => d.verdict && d.verdict !== 'skip').length;
+    const ready = threads.length > 0 && decided === threads.length && !ds.some((d) => d.verdict === 'disagree' && !d.reason?.trim());
+    // すべて対象外なら AI は動かさず、対象外として覚えるだけ
+    return { ds, ready, label: tr(ready && targets === 0 ? 'triageSkipAll' : 'triageSubmit'), text: `${tr('decided', { n: decided, total: threads.length })} · ${tr('triageTargets', { n: targets })}` };
+  };
+
+  const renderDlg = () => {
+    const { ds, ready, label, text } = tally();
+    dlg.innerHTML = `
+      <div class="dlg-head">
+        <h3><a href="${esc(safeUrl(e.pr.url))}" target="docket-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <button data-close>${tr('close')}</button>
+      </div>
+      <div class="dlg-body">
+        <p class="muted">${tr('desc.triage')}</p>
+        ${threads.length ? threads.map((th, i) => findingHtml(toFinding(th), ds[i], { agree: tr('ph.triage.agree'), disagree: tr('ph.triage.disagree') }, true)).join('') : `<p class="muted">${tr('noThreads')}</p>`}
+      </div>
+      <div class="dlg-foot">
+        <span style="flex:1"></span>
+        ${threads.length ? `<span class="muted">${text}</span>` : ''}
+        <button class="primary" data-submit ${ready ? '' : 'disabled'}>${label}</button>
+      </div>`;
+  };
+
+  dlg.onclick = async (ev) => {
+    const t = ev.target;
+    if (t.matches('[data-close]')) return dlg.close();
+    if (t.matches('[data-verdict]')) {
+      const url = urlOf(t.dataset.no);
+      draft.decisions[url] = { ...draft.decisions[url], verdict: t.dataset.verdict };
+      saveDraft(`triage:${key}`, draft);
+      return renderDlg();
+    }
+    if (t.matches('[data-submit]')) {
+      if (!confirmTwice(t, `triage:${key}`, tr('confirmRun'))) return;
+      dlg.close();
+      return runMine(key, 'fix', draft.decisions);
+    }
+  };
+  dlg.oninput = (ev) => {
+    if (!ev.target.matches('[data-reason]')) return;
+    const url = urlOf(ev.target.dataset.no);
+    draft.decisions[url] = { ...draft.decisions[url], reason: ev.target.value };
+    saveDraft(`triage:${key}`, draft);
+    // 理由の有無で送信できるかが変わるが、入力中の textarea を作り直さないようボタンだけ切り替える
+    const { ready, label } = tally();
+    Object.assign(dlg.querySelector('[data-submit]'), { disabled: !ready, textContent: label });
+  };
+
+  renderDlg();
+  dlg.showModal();
+}
+
 // ---------- 設定ダイアログ ----------
 
 async function openSettings() {
-  const dlg = $('#settings-dlg');
+  const dlg = $('#settings');
   const cfg = structuredClone(board.config);
   let uiLang = lang;
   const fetchSkills = async () => {
@@ -1260,8 +1451,9 @@ async function openSettings() {
   const known = { ...cfg.repos };
 
   const skillOptions = (current) => {
-    const list = skills.includes(current) || !current ? skills : [current, ...skills];
-    return `<option value="">${tr('unset')}</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    const list = skills.includes(current) || !current || current === PROMPT_SKILL ? skills : [current, ...skills];
+    return `<option value="">${tr('unset')}</option>`
+      + `<option value="${PROMPT_SKILL}" ${current === PROMPT_SKILL ? 'selected' : ''}>${tr('opt.prompt')}</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
   };
   // 引数テンプレートを例の PR で展開し、実際に渡るコマンドを入力欄の下に出す
   const ARG_SKILL = { args: 'skill', selfArgs: 'selfSkill', fixArgs: 'fixSkill' };
@@ -1274,6 +1466,7 @@ async function openSettings() {
       .replaceAll('{repo-name}', name)
       .replaceAll('{owner-name}', owner)
       .replaceAll('{full-repo-name}', r);
+    if (m[ARG_SKILL[field]] === PROMPT_SKILL) return `→ ${tr('opt.prompt')}`;
     return `→ /${m[ARG_SKILL[field]] || tr('skillPh')} ${filled}`;
   };
   const argInput = (r, field) => `<input data-repo="${esc(r)}" data-field="${field}" value="${esc(cfg.repos[r]?.[field] || '{pr-number}')}">`
@@ -1314,13 +1507,19 @@ async function openSettings() {
               </tr>`;
             }).join('')}
           </tbody>
-        </table>`;
+        </table>
+        <h4>${tr('s.reviewPrompt')}</h4>
+        <p class="muted">${tr('s.reviewPrompt.help')}</p>
+        <textarea data-cfg="reviewPrompt" rows="8" style="width:100%" placeholder="${esc(board.defaults.reviewPrompt)}">${esc(cfg.reviewPrompt ?? '')}</textarea>
+        <h4>${tr('s.fixPrompt')}</h4>
+        <p class="muted">${tr('s.fixPrompt.help')}</p>
+        <textarea data-cfg="fixPrompt" rows="10" style="width:100%" placeholder="${esc(board.defaults.fixPrompt)}">${esc(cfg.fixPrompt ?? '')}</textarea>`;
   };
   const PANES = ['claude', 'github', 'refresh', 'lang', 'terms'];
   // 「すべて既定に戻す」で戻す設定 (用語と画面の言語は別に扱う)
   const PANE_KEYS = {
     claude: ['workdir', 'model', 'effort', 'claudeArgs', 'maxConcurrent', 'logKeepDays'],
-    github: ['mergedDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'repos'],
+    github: ['mergedDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'repos', 'reviewPrompt', 'fixPrompt'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
     lang: ['outputLang', 'disagreeIcon'],
   };
@@ -1331,7 +1530,7 @@ async function openSettings() {
   let pane = PANES[0];
   const renderDlg = () => {
     dlg.innerHTML = `
-      <div class="dlg-head"><h3>${tr('settings')}</h3><button data-close>${tr('close')}</button></div>
+      <h2>${tr('settings')}</h2>
       <div class="settings-body">
         <nav class="settings-nav">${PANES.map((p) => `<button data-pane="${p}" class="${p === pane ? 'on' : ''}">${tr(`nav.${p}`)}</button>`).join('')}</nav>
         <div class="settings-pane" data-pane-body="claude">
@@ -1418,7 +1617,6 @@ async function openSettings() {
       for (const el of dlg.querySelectorAll('[data-pane], [data-pane-body]')) el.classList.toggle('on', (el.dataset.pane || el.dataset.paneBody) === pane);
       return;
     }
-    if (t.matches('[data-close]')) return dlg.close();
     // 「古いもの」は入力中 (未保存) の保存日数で消す
     const clear = t.dataset.logsClear;
     if (clear) {
@@ -1451,17 +1649,15 @@ async function openSettings() {
         return toast(err.message);
       }
       saveLaneNames(terms);
-      dlg.close();
       if (uiLang !== lang) {
-        try { localStorage.setItem('rb-lang', uiLang); } catch {}
+        try { localStorage.setItem('docket-lang', uiLang); } catch {}
         return location.reload();
       }
       await load();
-      if (view() === 'sprint') loadSprint();
+      toast(tr('saved'));
     }
   };
   renderDlg();
-  dlg.showModal();
 }
 
 // ---------- スプリント ----------
@@ -1470,8 +1666,8 @@ async function openSettings() {
 // people: 表示する担当者の login (null なら全員)。repos: 表示するリポジトリ (null なら全部)。rootOnly: 最上位 issue の担当者だけで絞る
 // periods: 期間別の区切り (設定で変わるので毎回取る)
 const sp = { meta: {}, periods: {}, data: {}, error: null, loading: false, collapsed: new Set(), people: null, rootOnly: false, repos: null };
-const spGet = (k) => { try { return localStorage.getItem(`rb-sprint:${k}`); } catch { return null; } };
-const spSet = (k, v) => { try { localStorage.setItem(`rb-sprint:${k}`, v); } catch {} };
+const spGet = (k) => { try { return localStorage.getItem(`docket-sprint:${k}`); } catch { return null; } };
+const spSet = (k, v) => { try { localStorage.setItem(`docket-sprint:${k}`, v); } catch {} };
 const spProject = () => {
   const list = board.config.projects || [];
   return list.includes(spGet('project')) ? spGet('project') : list[0];
@@ -1637,7 +1833,7 @@ const PR_ICON = {
   draft: 'M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z',
 };
 const prKind = (pr) => (pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open');
-const prsHtml = (prs) => prs.map((pr) => `<a class="${prKind(pr)}" href="${esc(safeUrl(pr.url))}" target="rb-viewer" title="${esc(prKind(pr))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="${PR_ICON[prKind(pr)]}"/></svg>#${pr.number}</a>`).join('');
+const prsHtml = (prs) => prs.map((pr) => `<a class="${prKind(pr)}" href="${esc(safeUrl(pr.url))}" target="docket-viewer" title="${esc(prKind(pr))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="${PR_ICON[prKind(pr)]}"/></svg>#${pr.number}</a>`).join('');
 
 function roadmapHtml({ sprint, roots }, empty) {
   if (!roots.length) return `<p class="muted" style="padding:12px">${empty}</p>`;
@@ -1663,7 +1859,8 @@ function roadmapHtml({ sprint, roots }, empty) {
   const cells = [];
   days.forEach((d, i) => {
     const inSprint = d >= sprint.startDate && d <= sprint.endDate;
-    cells.push(`<div class="hd${d === today ? ' today' : ''}${inSprint ? ' in' : ''}" style="grid-row:1;grid-column:${1 + i}">${i === 0 || d.endsWith('-01') ? `${new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' })}<br>` : '<br>'}${Number(d.slice(8))}</div>`);
+    const we = [0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay());
+    cells.push(`<div class="hd${we ? ' we' : ''}${d === today ? ' today' : ''}${inSprint ? ' in' : ''}" style="grid-row:1;grid-column:${1 + i}">${i === 0 || d.endsWith('-01') ? `${new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' })}<br>` : '<br>'}${Number(d.slice(8))}</div>`);
     if (d === today) cells.push(`<div class="col today" style="grid-column:${1 + i}"></div>`);
   });
   let r = 2;
@@ -1686,7 +1883,7 @@ function roadmapHtml({ sprint, roots }, empty) {
       // サーバーのキャッシュが古いと prs が無い
       const prs = cardHiddenOf('sprint').includes('prs') ? [] : n.prs || [];
       heights.push(prs.length ? '48px' : '30px');
-      const head = `${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span>`;
+      const head = `${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="docket-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span>`;
       const line = prs.length ? `<div class="ln">${head}</div><div class="ln prs">${prsHtml(prs)}</div>` : head;
       cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}${prs.length ? ' two' : ''}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${line}</div>`);
     });
@@ -1763,9 +1960,9 @@ async function applyComments(key) {
   saveDraft(key, {});
 }
 
-async function runMine(key, mode) {
+async function runMine(key, mode, decisions) {
   try {
-    await api('/api/mine/run', { method: 'POST', body: { key, mode } });
+    await api('/api/mine/run', { method: 'POST', body: { key, mode, decisions } });
     saveDraft(key, {}); // 前回の判断が新しい結果の同じ番号に付かないようにする
   } catch (e) {
     toast(e.message);
@@ -1816,7 +2013,6 @@ $('#board').addEventListener('click', async (ev) => {
     return;
   }
   if (t.matches('[data-review]')) return review(t.dataset.review);
-  if (t.matches('[data-settings]')) { ev.preventDefault(); return openSettings(); }
   if (t.matches('[data-cancel]')) {
     if (!confirmTwice(t, `cancel:${t.dataset.cancel}`, tr('confirmCancel'))) return;
     try {
@@ -1843,7 +2039,7 @@ $('#board').addEventListener('click', async (ev) => {
     return load();
   }
   if (t.matches('[data-log]')) return openLog(t.dataset.log);
-  if (t.matches('[data-mine-run]')) return runMine(t.dataset.key, t.dataset.mineRun);
+  if (t.matches('[data-mine-run]')) return t.dataset.mineRun === 'fix' ? openTriage(t.dataset.key) : runMine(t.dataset.key, t.dataset.mineRun);
   if (t.matches('[data-mine-cancel]')) {
     if (!confirmTwice(t, `cancel:${t.dataset.mineCancel}`, tr('confirmCancel'))) return;
     try {
@@ -1939,7 +2135,7 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
   const seg = ev.type === 'click' && ev.target.closest('[data-approved]');
   if (seg) {
     const next = { '': 'only', only: 'exclude', exclude: '' }[seg.dataset.approved];
-    try { localStorage.setItem(`rb-approved:${view()}`, next); } catch {}
+    try { localStorage.setItem(`docket-approved:${view()}`, next); } catch {}
     return render();
   }
   const r = ev.type === 'change' && ev.target.dataset.msValue;
@@ -1957,8 +2153,14 @@ window.addEventListener('hashchange', () => {
   laneEdit = null; // タブ切替で編集は破棄
   applyCardHidden();
   render();
-  if (view() === 'sprint') loadSprint();
+  enterView();
 });
+// 画面に入ったときだけ描く (render のたびに描くと設定の入力中の値が消える)
+function enterView() {
+  if (view() === 'sprint') loadSprint();
+  if (view() === 'settings') openSettings();
+  if (view() === 'tips') renderTipShots();
+}
 $('#edit-lanes').onclick = () => {
   laneEdit = lanesFor(view()).map((l) => l.id);
   laneNameEdit = laneNames();
@@ -2002,17 +2204,19 @@ $('#consent-dlg').onclick = async (ev) => {
     toast(e.message);
   }
 };
-$('#tips-dlg').addEventListener('click', (ev) => ev.target.matches('[data-open-consent]') && openConsent(false));
-$('#open-settings').onclick = openSettings;
+$('#tips').addEventListener('click', (ev) => ev.target.matches('[data-open-consent]') && openConsent(false));
 // ---------- Tip の説明図 ----------
 // 実際のカード・レーン・ロードマップの描画関数に架空のデータを渡して描く。名前や画像はすべて作りもの
 const TIP_TEXT = {
   ja: { t: ['ログイン画面のエラー表示を改善', '注文一覧に CSV 出力を追加', '商品検索の並び替えを修正', '決済 API のタイムアウト設定', 'カートの数量変更を即時反映', 'お知らせ機能の下書き', 'README の手順を更新', '配送先住所の入力チェック', '会員ランク機能', 'ランク判定バッチ', 'ランク表示画面'],
-    f: ['null のときに例外になります', 'items が空だと items[0] で TypeError になります。先に空配列をチェックしてください。', 'テストが足りません', '境界値 (0 件) のテストを追加してください。'], r: '別 PR で対応予定です' },
+    f: ['null のときに例外になります', 'items が空だと items[0] で TypeError になります。先に空配列をチェックしてください。', 'テストが足りません', '境界値 (0 件) のテストを追加してください。'], r: '別 PR で対応予定です',
+    g: ['数量が 0 のときも考慮が必要では?', '関数名を calcTotal に変えませんか?', 'チームの規約で既存の名前に合わせています', 'Coverage: 82.4% (+0.3%)'] },
   ko: { t: ['로그인 화면의 오류 표시 개선', '주문 목록에 CSV 내보내기 추가', '상품 검색 정렬 수정', '결제 API 타임아웃 설정', '장바구니 수량 변경 즉시 반영', '공지 기능 초안', 'README 절차 갱신', '배송지 주소 입력 검사', '회원 등급 기능', '등급 판정 배치', '등급 표시 화면'],
-    f: ['null일 때 예외가 납니다', 'items가 비어 있으면 items[0]에서 TypeError가 납니다. 먼저 빈 배열인지 확인하세요.', '테스트가 부족합니다', '경곗값(0건) 테스트를 추가하세요.'], r: '별도 PR에서 처리할 예정입니다' },
+    f: ['null일 때 예외가 납니다', 'items가 비어 있으면 items[0]에서 TypeError가 납니다. 먼저 빈 배열인지 확인하세요.', '테스트가 부족합니다', '경곗값(0건) 테스트를 추가하세요.'], r: '별도 PR에서 처리할 예정입니다',
+    g: ['수량이 0일 때도 고려해야 하지 않을까요?', '함수 이름을 calcTotal로 바꾸면 어떨까요?', '팀 규칙상 기존 이름에 맞추고 있습니다', 'Coverage: 82.4% (+0.3%)'] },
   en: { t: ['Improve error messages on the login screen', 'Add CSV export to the order list', 'Fix sorting in product search', 'Set a timeout for the payment API', 'Apply cart quantity changes instantly', 'Draft of the notice feature', 'Update the steps in README', 'Validate the shipping address', 'Member rank feature', 'Rank calculation batch', 'Rank display screen'],
-    f: ['Throws when the value is null', 'If items is empty, items[0] throws a TypeError. Check for an empty array first.', 'Tests are missing', 'Add a test for the boundary case (0 items).'], r: 'Will handle this in a separate PR' },
+    f: ['Throws when the value is null', 'If items is empty, items[0] throws a TypeError. Check for an empty array first.', 'Tests are missing', 'Add a test for the boundary case (0 items).'], r: 'Will handle this in a separate PR',
+    g: ["Shouldn't this also handle a quantity of 0?", 'How about renaming this to calcTotal?', 'Our team convention keeps the existing name', 'Coverage: 82.4% (+0.3%)'] },
 };
 const TIP_REPO = 'acme/shop-web';
 const tipAvatar = (name, color) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="${color}"/><text x="10" y="14" font-size="11" text-anchor="middle" fill="#fff" font-family="sans-serif">${name[0].toUpperCase()}</text></svg>`)}`;
@@ -2073,6 +2277,18 @@ const TIP_SHOTS = {
       <div class="dlg-foot"><span style="flex:1"></span><span class="muted">${tr('decided', { n: 2, total: 2 })}</span>
       <label><input type="checkbox" checked> ${tr('humanRead')}</label><label><input type="checkbox"> ${tr('approve')}</label><button class="primary">${tr('submit')}</button></div>`, 0.8];
   },
+  // 指摘に対応を押したときの事前判断 (AI 実行前)
+  triage: () => {
+    const g = (TIP_TEXT[lang] || TIP_TEXT.ja).g;
+    const items = [
+      [{ no: 1, title: '@minho', path: 'src/cart.js', line: 42, body: g[0] }, { verdict: 'agree' }],
+      [{ no: 2, title: '@alex', path: 'src/order.js', line: 8, body: g[1] }, { verdict: 'disagree', reason: g[2] }],
+      [{ no: 3, severity: tr('prComment'), title: '@ci-bot', body: g[3] }, { verdict: 'skip' }],
+    ];
+    const ph = { agree: tr('ph.triage.agree'), disagree: tr('ph.triage.disagree') };
+    return [`<div class="dlg-body">${items.map(([f, d]) => findingHtml(f, d, ph, true)).join('')}</div>
+      <div class="dlg-foot"><span style="flex:1"></span><span class="muted">${tr('decided', { n: 3, total: 3 })} · ${tr('triageTargets', { n: 2 })}</span><button class="primary">${tr('triageSubmit')}</button></div>`, 0.65];
+  },
   bar: () => {
     const bar = $('#board-bar').cloneNode(true);
     for (const el of [bar, ...bar.querySelectorAll('[id]')]) el.removeAttribute('id');
@@ -2101,7 +2317,7 @@ function tipShotEl(name) {
 }
 function renderTipShots() {
   withTipRepo(() => {
-    for (const d of $('#tips-dlg').querySelectorAll('[data-shots]')) {
+    for (const d of $('#tips').querySelectorAll('[data-shots]')) {
       d.querySelectorAll('.tip-shot').forEach((el) => el.remove());
       const lists = d.querySelectorAll(':scope > ul, :scope > ol');
       d.dataset.shots.split(',').forEach((name, i) => d.insertBefore(tipShotEl(name), lists[i] || null));
@@ -2114,10 +2330,6 @@ function renderAbout() {
   el.innerHTML = tr('about.html');
   withTipRepo(() => el.querySelectorAll('[data-shot]').forEach((d) => d.replaceWith(tipShotEl(d.dataset.shot))));
 }
-$('#open-tips').onclick = () => {
-  if (board) renderTipShots();
-  $('#tips-dlg').showModal();
-};
 // モーダルの外側 (backdrop) を押したら、そのモーダルの閉じるボタンを押したのと同じにする
 // 中で押し始めて外で離した (テキスト選択など) ときは閉じない。閉じるボタンが隠れている (同意前など) なら閉じない
 const onBackdrop = (ev) => {
@@ -2135,7 +2347,7 @@ const CARD_PARTS = ['branch', 'issue', 'stack', 'updated', 'applied', 'usage', '
 // ロードマップは行の高さを JS で決めるので、クラスではなく描画時に読む
 const ROADMAP_PARTS = ['prs'];
 const partsOf = (v) => (v === 'sprint' ? ROADMAP_PARTS : CARD_PARTS);
-const cardHiddenKey = (v) => `rb-card-hidden:${v}`;
+const cardHiddenKey = (v) => `docket-card-hidden:${v}`;
 const cardHiddenOf = (v) => { try { return JSON.parse(localStorage.getItem(cardHiddenKey(v))) || []; } catch { return []; } };
 const saveCardHidden = (v, list) => { try { localStorage.setItem(cardHiddenKey(v), JSON.stringify(list)); } catch {} };
 const applyCardHidden = () => { const h = cardHiddenOf(view()); CARD_PARTS.forEach((p) => document.body.classList.toggle(`hide-${p}`, h.includes(p))); };
@@ -2174,7 +2386,7 @@ $('#display-dlg').onclick = (ev) => {
   $('#display-dlg').close();
 };
 
-load().then(() => view() === 'sprint' && loadSprint());
+load().then(enterView);
 // ローカル状態は設定した間隔で、GitHub はサーバー側の定期取得に任せる
 // 設定変更を即反映するため毎回間隔を読み直す
 (function poll() {

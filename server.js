@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 
 const PORT = Number(process.env.PORT || 4649);
-const DATA_DIR = process.env.REVIEW_BOARD_DATA || path.join(__dirname, 'data');
+const DATA_DIR = process.env.DOCKET_DATA || path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
@@ -33,6 +33,22 @@ const DEFAULT_CONFIG = {
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
   // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
   repos: {},
+  // スキルの代わりに「設定のプロンプト」(PROMPT_SKILL) を選んだリポジトリで使うレビュー指示。空なら既定値に戻す
+  reviewPrompt: `PR {pr-url} をレビューしてください。
+
+- \`gh pr view {pr-url}\` で概要を、\`gh pr diff {pr-url}\` で差分を確認する。必要なら周辺のコードも読む。
+- 正しさ (バグ・境界値・エラー処理)・セキュリティ・性能・可読性の観点で、修正すべき点を挙げる。好みの問題は避ける。
+- 重要度は must (直さないと壊れる) / want (直した方がよい) / imo (意見) / nit (些細) のいずれかにする。
+- 各指摘は該当するファイルと diff 上の行番号を添え、なぜ問題か・どう直すかを具体的に書く。`,
+  // 指摘への対応で「設定のプロンプト」を選んだリポジトリで使う指示。空なら既定値に戻す
+  fixPrompt: `PR {pr-url} に付いたレビュー指摘に対応してください。
+
+- カレントディレクトリが対象リポジトリの clone でなければ、何もせず理由を返す。
+- 未コミットの変更があれば、何もせず理由を返す (ユーザーの作業を消さないため)。
+- \`gh pr checkout {pr-url}\` で PR ブランチをチェックアウトする。
+- 未解決のレビュースレッドとPR コメントを \`gh api\` で取得し、指摘ごとに修正・返信のどちらで対応するかを決める。
+- 修正は 1 指摘 1 コミットにし、既存のコミットメッセージの書き方に合わせる。push は force しない。
+- 返信には対応したコミット SHA を含める。スレッドへは \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`、PR コメントへは元のコメントを引用して \`gh pr comment {pr-url}\` で返信する。`,
   // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
   projects: [],
   // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
@@ -69,7 +85,11 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
   open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...pr } }
   merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...pr } }
   mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...pr ... on PullRequest {
-    reviewThreads(first: 100) { nodes { isResolved comments(last: 1) { nodes { author { login } } } } }
+    reviewThreads(first: 100) { nodes { isResolved path line
+      root: comments(first: 1) { nodes { author { login } body url } }
+      comments(last: 1) { nodes { author { login } body url } } } }
+    comments(last: 30) { nodes { author { login } body url createdAt } }
+    reviews(last: 30) { nodes { author { login } body url submittedAt } }
   } } }
 }
 fragment pr on PullRequest {
@@ -157,9 +177,43 @@ function mergeBoard(prs, fetched, now) {
 
 // 未解決スレッドのうち最後の発言が自分以外 = まだ自分が応答していない指摘
 // 返信すると最後の発言が自分になるので、状態を持たずに「新しい指摘」を判定できる
+// AI 実行前に人が判断できるよう、最初の指摘と (返信が続いていれば) 最新の発言も持つ
 function pendingThreads(node, login) {
-  return (node.reviewThreads?.nodes || []).filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login !== login).length;
+  return (node.reviewThreads?.nodes || [])
+    .filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login !== login)
+    .map((t, i) => {
+      const root = t.root?.nodes[0];
+      const last = t.comments.nodes.at(-1);
+      return {
+        no: i + 1,
+        author: root?.author?.login || null,
+        url: root?.url || null,
+        path: t.path || null,
+        line: t.line ?? null,
+        comment: root?.body || '',
+        lastUrl: last?.url || null,
+        ...(last && last.url !== root?.url && { latest: { author: last.author?.login || null, body: last.body || '' } }),
+      };
+    });
 }
+
+// PR 全体へのコメント (Conversation のコメント・レビュー本文) には解決状態が無いので、
+// 自分が最後に PR 全体へ発言した後に他の人が書いたものを未対応とみなす
+// ponytail: 一部にだけ返信しても以前のものはすべて外れる。コメントごとの対応状態が要るならローカルに持つ
+function pendingComments(node, login) {
+  const all = [
+    ...(node.comments?.nodes || []).map((c) => ({ ...c, at: c.createdAt })),
+    ...(node.reviews?.nodes || []).map((r) => ({ ...r, at: r.submittedAt })),
+  ].filter((c) => c.at && c.body?.trim());
+  const lastMine = all.filter((c) => c.author?.login === login).map((c) => c.at).sort().at(-1) || '';
+  return all
+    .filter((c) => c.author?.login !== login && c.at > lastMine)
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .map((c) => ({ kind: 'comment', author: c.author?.login || null, url: c.url, path: null, line: null, comment: c.body, lastUrl: c.url }));
+}
+
+// 対象外にした指摘は、その時点の最後の発言とセットで覚える。新しい発言が付けば別のキーになり、また一覧に出る
+const skipKey = (t) => `${t.url} ${t.lastUrl}`;
 
 function mineKey(pr) {
   return `mine:${prKey(pr)}`;
@@ -170,9 +224,15 @@ function mergeMine(mine, fetched, login) {
   const next = {};
   for (const node of fetched) {
     const key = mineKey(node);
-    const pending = pendingThreads(node, login);
+    // レーンの「指摘あり」はスレッドだけで判定する (PR 全体へのコメントは返信するまで外れず、bot の定期コメントで居座るため)
+    const all = [...pendingThreads(node, login), ...pendingComments(node, login)];
+    const prev = new Set(mine[key]?.skipped || []);
+    // 今も未対応のものだけ覚えておく (新しい発言が付いた・返信したものは忘れる)
+    const skipped = all.map(skipKey).filter((k) => prev.has(k));
+    const threads = all.filter((t) => !prev.has(skipKey(t))).map((t, i) => ({ ...t, no: i + 1 }));
+    const pending = threads.filter((t) => t.kind !== 'comment').length;
     // マージ可能・Done に移した PR でも、新しい指摘が来たら指摘ありに戻す
-    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, ...(pending && { mergeReady: false, done: false }) };
+    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, threads, skipped, ...(pending && { mergeReady: false, done: false }) };
   }
   for (const [key, entry] of Object.entries(mine)) {
     if (!next[key] && ['queued', 'running', 'applying'].includes(entry.status)) next[key] = entry;
@@ -203,8 +263,14 @@ function fillTemplate(template, pr) {
     .replaceAll('{full-repo-name}', pr.repo);
 }
 
-function buildReviewPrompt(pr, mapping) {
-  return `/${mapping.skill} ${fillTemplate(mapping.args, pr)}
+// スキルの選択肢のうち、ローカルの skill ではなく設定の reviewPrompt を使うことを表す値
+const PROMPT_SKILL = '(prompt)';
+
+function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_CONFIG.reviewPrompt) {
+  const head = mapping.skill === PROMPT_SKILL
+    ? fillTemplate(reviewPrompt?.trim() || DEFAULT_CONFIG.reviewPrompt, pr)
+    : `/${mapping.skill} ${fillTemplate(mapping.args, pr)}`;
+  return `${head}
 
 ---
 (ローカルのレビューボードからの非対話実行です)
@@ -213,12 +279,15 @@ function buildReviewPrompt(pr, mapping) {
 - レビュー完了後、最終回答の末尾に、投稿予定の指摘を次の形式で必ず出力してください。指摘が 0 件なら findings は空配列にしてください。
 - 結果として読み取るのは最後のメッセージだけです。サブエージェントの完了通知などで回答が続いた場合も、最後のメッセージにこのブロックを省略せず再掲してください。
 
-<review-board-findings>
+<docket-findings>
 {"summary":"全体所感(1〜3文)","findings":[{"no":1,"severity":"must / want / imo / nit など","title":"一行要約","path":"ファイルパス or null","line":行番号 or null,"body":"投稿予定のコメント本文(Markdown)"}]}
-</review-board-findings>`;
+</docket-findings>`;
 }
 
 // 前回の投稿・対応が途中で失敗した後のやり直しでも、同じものを二重に投稿・返信しないようにする
+// スキルを使わない (設定のプロンプト) 場合や、スキルに投稿手順がない場合の投稿方法
+const GH_POST = 'スキルに投稿手順がない場合は、`gh api repos/{owner}/{repo}/pulls/{number}/reviews` で 1 つのレビューとして投稿する (body と event、行の指摘は comments に path・line・side: RIGHT)。diff に含まれない行で失敗したら、その指摘はファイル名と行番号を添えてレビュー本文に入れる。';
+
 const NO_DUPLICATE = '始める前に PR の既存のレビュー・コメント・コミットを確認し、前回の実行で既に投稿・返信・push 済みのものは繰り返さず、残りだけを行う。';
 
 function buildPostPrompt(pr, findings, decisions, approve, humanRead, icon = DEFAULT_CONFIG.disagreeIcon) {
@@ -241,12 +310,13 @@ ${decisionLines(findings, decisions)}
   - 2 段落目: 「${icon} 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 投稿しない。
 - 投稿対象が 0 件で、Approve もコード確認の表明もない場合は何も投稿しない。
+- ${GH_POST}
 - ${NO_DUPLICATE}
 - 完了後、最終回答の末尾に次を必ず出力する。投稿に失敗した場合は posted を false にし、error に理由を入れる。
 
-<review-board-posted>
+<docket-posted>
 {"posted":true,"url":"投稿したレビューの URL または null","error":null}
-</review-board-posted>`;
+</docket-posted>`;
 }
 
 // 番号だけだと振り直した場合に取り違えるので、指摘の要約も添える
@@ -262,30 +332,56 @@ function decisionLines(items, decisions) {
 
 const APPLIED_TAG = `完了後、最終回答の末尾に次を必ず出力する。push や返信に失敗した場合は done を false にし、error に理由を入れる。
 
-<review-board-applied>
+<docket-applied>
 {"done":true,"error":null}
-</review-board-applied>`;
+</docket-applied>`;
+
+// AI の方針に引きずられないよう、人が先に各指摘の妥当性を判断する (triage)。
+// 同意 / 非同意 (理由必須) が AI の対象。skip (対象外: 指摘ではないコメントなど) は触れない
+function triageFrom(threads, decisions) {
+  const triage = (threads || []).map((t) => ({ ...t, verdict: decisions?.[t.url]?.verdict, reason: decisions?.[t.url]?.reason?.trim() || '' }));
+  return triage.every((t) => ['agree', 'disagree', 'skip'].includes(t.verdict)) ? triage : null;
+}
+
+const triageTargets = (triage) => triage.filter((t) => t.verdict !== 'skip');
 
 // review-fix は手順 1〜3 (取得・チェックアウト・分類) で止め、対応計画だけを返させる
-function buildFixPlanPrompt(pr, mapping) {
-  return `/${mapping.fixSkill} ${fillTemplate(mapping.fixArgs, pr)}
+function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_CONFIG.fixPrompt) {
+  const lines = triageTargets(triage).map((t) => {
+    const loc = t.path ? ` ${t.path}${t.line ? `:${t.line}` : ''}` : '';
+    const summary = t.comment.replace(/\s+/g, ' ').slice(0, 80);
+    return `- #${t.no}${t.kind === 'comment' ? ' [PR コメント]' : ''} @${t.author}${loc} ${t.url}\n  指摘: ${summary}\n  ${t.verdict === 'agree' ? '同意' : '非同意'} / ${t.reason ? `理由: ${t.reason}` : '理由なし'}`;
+  });
+  const head = mapping.fixSkill === PROMPT_SKILL
+    ? fillTemplate(fixPrompt?.trim() || DEFAULT_CONFIG.fixPrompt, pr)
+    : `/${mapping.fixSkill} ${fillTemplate(mapping.fixArgs, pr)}`;
+  return `${head}
 
 ---
 (ローカルのレビューボードからの非対話実行です)
 - 対象PR: ${pr.url}
 - ユーザーへの確認・質問はできません。この実行では指摘の取得・ブランチのチェックアウト・分類までを行い、コードの修正・コミット・push・返信はまだ行わないでください。
-- 最終回答の末尾に、指摘ごとの対応計画を次の形式で必ず出力してください。未対応の指摘が 0 件なら items は空配列にしてください。
+
+## ユーザーの事前判断
+ユーザーは AI の方針を見る前に、未対応の指摘ごとに妥当性を判断しました。対象は次の指摘だけです。番号は items の no にそのまま使ってください。
+${lines.join('\n')}
+
+- 一覧にないスレッド・コメントは計画に含めない。
+- [PR コメント] はスレッドではなく PR 全体へのコメント (またはレビュー本文) です。返信は元のコメントを引用 (またはリンク) した PR コメントとして行う。
+- 同意: 指摘に対応する計画を立てる (category は fix / reply / defer / split / followup)。理由が書かれていれば反映する。
+- 非同意: ユーザーの理由を検討する。理由が妥当なら category を reply にし、理由に沿った返信案を reply に書く。ユーザーの判断が誤りと考えるなら category を rebut にし、rebuttal に根拠を添えた反論、plan に指摘どおり直す場合の修正内容、reply にその場合の返信案を書く。迎合せず、率直に判断する。
+- 最終回答の末尾に、指摘ごとの対応計画を次の形式で必ず出力してください。
 - レビュアーが別 PR への分割を求めた、または了承した指摘は category を split にし、plan に「この PR から取り除く変更 (なければ なし)」「新しい PR の内容」「新しいブランチの base (この PR の base か、この PR のブランチか)」を書いてください。
 - この PR では対応せず後続で対応することにレビュアーが同意した、または求めた指摘 (この PR の変更は不要) は category を followup にし、plan に後続 issue のタイトルと内容を書いてください。
 - 結果として読み取るのは最後のメッセージだけです。サブエージェントの完了通知などで回答が続いた場合も、最後のメッセージにこのブロックを省略せず再掲してください。
 
-<review-board-fix-plan>
-{"summary":"全体の対応方針(1〜3文)","items":[{"no":1,"category":"fix / reply / defer / split / followup","author":"指摘者の login","url":"元コメントの URL","path":"ファイルパス or null","line":行番号 or null,"comment":"指摘内容の要約","plan":"修正内容 (fix / split / followup のみ。それ以外は null)","reply":"返信文ドラフト(Markdown)"}]}
-</review-board-fix-plan>`;
+<docket-fix-plan>
+{"summary":"全体の対応方針(1〜3文)","items":[{"no":1,"category":"fix / reply / defer / split / followup / rebut","author":"指摘者の login","url":"元コメントの URL","path":"ファイルパス or null","line":行番号 or null,"comment":"指摘内容の要約","plan":"修正内容 (fix / split / followup / rebut のみ。それ以外は null)","rebuttal":"ユーザーの判断への反論 (rebut のみ。それ以外は null)","reply":"返信文ドラフト(Markdown)"}]}
+</docket-fix-plan>`;
 }
 
 function buildFixApplyPrompt(pr, items, decisions) {
-  return `レビューボードでユーザーが各指摘への対応計画を判断しました。以下に従って、PR ${pr.url} についてこのスキルの修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
+  return `レビューボードでユーザーが各指摘への対応計画を判断しました。以下に従って、PR ${pr.url} についてスキル (または最初の指示) の修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
 
 ## 判断
 ${decisionLines(items, decisions)}
@@ -303,6 +399,10 @@ ${decisionLines(items, decisions)}
   1. 対象リポジトリの AGENTS.md の規約に従い、後続 issue を作成する (本文に元の指摘とこの PR の URL を含める)。
   2. この PR が Closes する issue の sub-issue として紐付ける。
   3. 元のスレッドに、作成した issue の URL を含めて返信する。
+- [PR コメント] の指摘への返信は、元のコメントを引用 (またはリンク) した PR コメントとして行う。
+- rebut (AI の反論) は上の同意 / 非同意より優先して次のとおりにする。
+  - 同意 (反論を受け入れた): plan どおり修正し、返信する。
+  - 非同意: 修正しない。事前判断の理由 (今回の理由があればそれも) に沿って返信する。
 - 計画にない指摘には触れない。resolve はしない。force-push はしない。
 - ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
@@ -324,13 +424,14 @@ ${decisionLines(findings, decisions)}
 ## ルール
 - 非同意の指摘は投稿も修正もしない。
 - 同意が 0 件なら何もしない。
+- ${GH_POST}
 - ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
 }
 
 // 判断ダイアログを使わず、ユーザーが PR に直接書いたコメントを指示として対応させる
 function buildCommentApplyPrompt(pr) {
-  return `ユーザーは対応計画への判断をレビューボードではなく、PR ${pr.url} 上のコメントで行いました。PR のレビュースレッドとコメントを取得し、PR 作成者 (ユーザー) が最後に書いたコメントを指示として、このスキルの修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
+  return `ユーザーは対応計画への判断をレビューボードではなく、PR ${pr.url} 上のコメントで行いました。PR のレビュースレッドとコメントを取得し、PR 作成者 (ユーザー) が最後に書いたコメントを指示として、スキル (または最初の指示) の修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
 
 ## ルール
 - ユーザーのコメントで指示された内容だけ対応する。指示が無いスレッドには触れない。
@@ -347,7 +448,7 @@ function withOutputLang(prompt, lang) {
   return `${prompt}
 
 ## 出力言語
-- PR・issue に書く文章 (レビューコメント・返信・issue / PR の本文) と、<review-board-*> ブロック内の文章 (summary・title・body・comment・plan・reply・error) はすべて${name}で書く。上の指示にある定型文 (「人間のレビュアーもコードを読みました ✅」「修正しました」など) も${name}にして使う。
+- PR・issue に書く文章 (レビューコメント・返信・issue / PR の本文) と、<docket-*> ブロック内の文章 (summary・title・body・comment・plan・rebuttal・reply・error) はすべて${name}で書く。上の指示にある定型文 (「人間のレビュアーもコードを読みました ✅」「修正しました」など) も${name}にして使う。
 - category など値が決められている項目は指示どおりの値のままにする。`;
 }
 
@@ -981,7 +1082,7 @@ function finishReview(key, cwd, res, runId) {
   // キャンセル済みなら結果を捨てる
   if (stale || state.prs[key]?.status !== 'reviewing') return;
   if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || E('reviewFailed') });
-  const parsed = extractTagJson(res.result, 'review-board-findings');
+  const parsed = extractTagJson(res.result, 'docket-findings');
   updateEntry(key, {
     status: 'reviewed',
     sessionId: res.sessionId,
@@ -996,7 +1097,7 @@ function finishReview(key, cwd, res, runId) {
 
 function finishPost(key, res) {
   updateEntry(key, { run: null, usage: addUsage(state.prs[key]?.usage, res.usage) });
-  const posted = res.ok ? extractTagJson(res.result, 'review-board-posted') : null;
+  const posted = res.ok ? extractTagJson(res.result, 'docket-posted') : null;
   if (!posted?.posted) {
     return updateEntry(key, { status: 'reviewed', error: posted?.error || res.error || E('postUnknown'), postRaw: res.result });
   }
@@ -1011,7 +1112,7 @@ function enqueueReview(key) {
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await runForTag('review-board-findings', buildReviewPrompt(entry.pr, mapping), { key, cwd, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
+    finishReview(key, cwd, await runForTag('docket-findings', buildReviewPrompt(entry.pr, mapping, config.reviewPrompt), { key, cwd, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
   } });
   pump();
 }
@@ -1065,8 +1166,9 @@ function finishMine(key, cwd, res, runId) {
   // キャンセル済みなら結果を捨てる
   if (stale || entry?.status !== 'running') return;
   if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || E('runFailed') });
-  const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan');
-  const items = entry.mode === 'self' ? parsed?.findings : parsed?.items;
+  const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'docket-findings' : 'docket-fix-plan');
+  // rebut の判断材料として、事前判断で書いた理由を添える
+  const items = entry.mode === 'self' ? parsed?.findings : parsed?.items?.map((i) => ({ ...i, ownReason: entry.triage?.find((t) => String(t.no) === String(i.no))?.reason || null }));
   updateEntry(key, {
     status: 'planned',
     sessionId: res.sessionId,
@@ -1080,24 +1182,33 @@ function finishMine(key, cwd, res, runId) {
 
 function finishApply(key, res) {
   updateEntry(key, { run: null, usage: addUsage(state.mine[key]?.usage, res.usage) });
-  const applied = res.ok ? extractTagJson(res.result, 'review-board-applied') : null;
+  const applied = res.ok ? extractTagJson(res.result, 'docket-applied') : null;
   if (!applied?.done) {
     return updateEntry(key, { status: 'planned', error: applied?.error || res.error || E('applyUnknown'), applyRaw: res.result });
   }
   updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, appliedAt: Date.now(), applyRaw: res.result });
 }
 
-// mode: 'self' (セルフレビュー) / 'fix' (指摘への対応計画)
-function enqueueMine(key, mode) {
+// 対象外にした指摘を覚え、次の取得を待たずに一覧と件数から外す
+function skipThreads(key, triage) {
+  const keys = triage.filter((t) => t.verdict === 'skip').map(skipKey);
+  if (keys.length === 0) return;
+  const entry = state.mine[key];
+  const threads = (entry.threads || []).filter((t) => !keys.includes(skipKey(t)));
+  updateEntry(key, { skipped: [...(entry.skipped || []), ...keys], threads, pending: threads.filter((t) => t.kind !== 'comment').length });
+}
+
+// mode: 'self' (セルフレビュー) / 'fix' (指摘への対応計画。triage: 人の事前判断)
+function enqueueMine(key, mode, triage = null) {
   const entry = state.mine[key];
   const mapping = config.repos[entry.pr.repo];
   const cwd = mapping.cwd || config.workdir;
-  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }) : buildFixPlanPrompt(entry.pr, mapping);
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, config.reviewPrompt) : buildFixPlanPrompt(entry.pr, mapping, triage, config.fixPrompt);
   const runId = newRunId();
-  updateEntry(key, { status: 'queued', mode, runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
+  updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await runForTag(mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan', prompt, { key, cwd, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
+    finishMine(key, cwd, await runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, cwd, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
   } });
   pump();
 }
@@ -1163,8 +1274,8 @@ function readBody(req) {
 }
 
 // /api/board は 5 秒ごとに取られるので、Claude の出力は判断ダイアログを開ける状態のときだけ送る
-// postRaw・decisions は画面で使わない (判断の下書きはブラウザ側に持つ)
-function boardEntry(key, { postRaw, decisions, raw, applyRaw, findings, summary, ...e }) {
+// postRaw・decisions・triage は画面で使わない (判断の下書きはブラウザ側に持つ)
+function boardEntry(key, { postRaw, decisions, triage, raw, applyRaw, findings, summary, ...e }) {
   return { key, ...e, ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }) };
 }
 
@@ -1195,7 +1306,7 @@ async function handle(req, res) {
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
   // 他サイトからの CSRF 対策 (独自ヘッダーはプリフライトが必要になり、CORS を許可していないので弾かれる)
-  if (req.headers['x-review-board'] !== '1') return send(res, 403, { error: 'missing header' });
+  if (req.headers['x-docket'] !== '1') return send(res, 403, { error: 'missing header' });
 
   if (req.method === 'GET' && url.pathname === '/api/board') {
     if (url.searchParams.get('refresh') === '1') {
@@ -1272,7 +1383,16 @@ async function handle(req, res) {
       const skill = config.repos[mine.pr.repo]?.[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
       if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: E('skillMissing', { repo: mine.pr.repo }) });
       if (!['idle', 'planned'].includes(mine.status)) return send(res, 409, { error: E('running') });
-      enqueueMine(body.key, body.mode);
+      let triage = null;
+      if (body.mode === 'fix') {
+        triage = triageFrom(mine.threads, body.decisions);
+        if (!triage) return send(res, 400, { error: E('undecided') });
+        if (triage.some((t) => t.verdict === 'disagree' && !t.reason)) return send(res, 400, { error: E('reasonRequired') });
+        skipThreads(body.key, triage);
+        // すべて対象外なら AI は動かさず、覚えるだけで終わる
+        if (triageTargets(triage).length === 0) return send(res, 200, { ok: true });
+      }
+      enqueueMine(body.key, body.mode, triage);
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/apply') {
@@ -1383,9 +1503,9 @@ function main() {
 
   http
     .createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
-    .listen(PORT, '127.0.0.1', () => console.log(`Review Board: http://localhost:${PORT}`));
+    .listen(PORT, '127.0.0.1', () => console.log(`Docket: http://localhost:${PORT}`));
 }
 
 if (require.main === module) main();
 
-module.exports = { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

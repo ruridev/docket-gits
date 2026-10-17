@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -192,7 +192,7 @@ test('filterByAuthors: 指定した作成者だけ残し、[bot] 表記と大文
 });
 
 test('readRun: ファイルに書かれた claude の JSON を解析し、.log にまとめて元ファイルを消す', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'a.out'), [{ type: 'system' }, { type: 'result', result: 'done', session_id: 's1', is_error: false }].map((e) => JSON.stringify(e)).join('\n'));
   fs.writeFileSync(path.join(dir, 'a.err'), '');
   const res = readRun(dir, 'a', 0);
@@ -214,7 +214,7 @@ test('logLines: 発言とツール呼び出しだけを 1 行ずつにし、サ�
 });
 
 test('readRun: 途中で止まった出力や出力ファイルが無い場合は失敗にする', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'b.out'), '');
   fs.writeFileSync(path.join(dir, 'b.err'), 'killed');
   assert.equal(readRun(dir, 'b', null).ok, false);
@@ -222,7 +222,7 @@ test('readRun: 途中で止まった出力や出力ファイルが無い場合�
 });
 
 test('readRun: .log を書けなくても例外を投げず失敗にする (投げると close ハンドラ内でサーバーが落ちる)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'c.out'), '{"type":"result","result":"x"}\n');
   fs.writeFileSync(path.join(dir, 'c.err'), '');
   fs.mkdirSync(path.join(dir, 'c.log'));
@@ -241,8 +241,20 @@ const thread = (isResolved, login) => ({ isResolved, comments: { nodes: [{ autho
 
 test('pendingThreads: 未解決かつ最後の発言が自分以外のスレッドだけ数える', () => {
   const n = { reviewThreads: { nodes: [thread(false, 'bob'), thread(false, 'me'), thread(true, 'bob'), { isResolved: false, comments: { nodes: [] } }] } };
-  assert.equal(pendingThreads(n, 'me'), 2);
-  assert.equal(pendingThreads({}, 'me'), 0);
+  assert.equal(pendingThreads(n, 'me').length, 2);
+  assert.equal(pendingThreads({}, 'me').length, 0);
+});
+
+test('pendingThreads: 人が判断できるよう最初の指摘と、返信が続いていれば最新の発言を持つ', () => {
+  const c = (login, body, url) => ({ author: { login }, body, url });
+  const n = { reviewThreads: { nodes: [
+    { isResolved: false, path: 'a.rb', line: 3, root: { nodes: [c('bob', '直して', 'u1')] }, comments: { nodes: [c('bob', '直して', 'u1')] } },
+    { isResolved: false, path: null, line: null, root: { nodes: [c('amy', 'なぜ?', 'u2')] }, comments: { nodes: [c('amy', '再度確認を', 'u3')] } },
+  ] } };
+  const [a, b] = pendingThreads(n, 'me');
+  assert.deepEqual(a, { no: 1, author: 'bob', url: 'u1', path: 'a.rb', line: 3, comment: '直して', lastUrl: 'u1' });
+  assert.equal(b.no, 2);
+  assert.deepEqual(b.latest, { author: 'amy', body: '再度確認を' });
 });
 
 test('mergeMine: 状態を保持して未対応数を更新し、クローズされた PR は実行中のものだけ残す', () => {
@@ -276,11 +288,79 @@ test('mergeMine: Done に移した PR は新しい指摘が来たら外れる', 
   assert.equal(mine['mine:acme/api#2'].done, true);
 });
 
+const triage = [
+  { no: 1, author: 'bob', url: 'u1', path: 'a.rb', line: 3, comment: '直して', verdict: 'agree', reason: '' },
+  { no: 2, author: 'amy', url: 'u2', path: null, line: null, comment: 'なぜ?', verdict: 'disagree', reason: '仕様どおり' },
+  { no: 3, author: 'ci', url: 'u3', path: null, line: null, comment: 'Coverage 80%', verdict: 'skip', reason: '' },
+  { no: 4, kind: 'comment', author: 'amy', url: 'u4', path: null, line: null, comment: '全体的に命名を見直して', verdict: 'agree', reason: '' },
+];
+
+test('triageFrom: 全指摘に同意/非同意/対象外が付いたときだけ URL で判断を結び付ける', () => {
+  const threads = [{ no: 1, url: 'u1' }, { no: 2, url: 'u2' }, { no: 3, url: 'u3' }];
+  assert.equal(triageFrom(threads, { u1: { verdict: 'agree' }, u2: { verdict: 'skip' } }), null);
+  assert.deepEqual(triageFrom(threads, { u1: { verdict: 'agree' }, u2: { verdict: 'disagree', reason: ' 不要 ' }, u3: { verdict: 'skip' } }), [
+    { no: 1, url: 'u1', verdict: 'agree', reason: '' },
+    { no: 2, url: 'u2', verdict: 'disagree', reason: '不要' },
+    { no: 3, url: 'u3', verdict: 'skip', reason: '' },
+  ]);
+});
+
+test('triageTargets: 対象外以外 (同意・非同意) を AI の対象にする', () => {
+  assert.deepEqual(triageTargets(triage).map((t) => t.no), [1, 2, 4]);
+  assert.equal(triageTargets([triage[2]]).length, 0);
+});
+
+test('pendingComments: 自分が最後に PR 全体へ発言した後の、他の人の空でないコメントとレビュー本文を古い順に返す', () => {
+  const c = (login, body, url, createdAt) => ({ author: { login }, body, url, createdAt });
+  const r = (login, body, url, submittedAt) => ({ author: { login }, body, url, submittedAt });
+  const n = {
+    comments: { nodes: [c('bob', '古い', 'c1', '2026-01-01T00:00:00Z'), c('me', '対応しました', 'c2', '2026-01-02T00:00:00Z'), c('amy', '新しい', 'c3', '2026-01-04T00:00:00Z')] },
+    reviews: { nodes: [r('bob', '全体的に…', 'r1', '2026-01-03T00:00:00Z'), r('bob', '', 'r2', '2026-01-05T00:00:00Z'), r('bob', '下書き', 'r3', null)] },
+  };
+  assert.deepEqual(pendingComments(n, 'me'), [
+    { kind: 'comment', author: 'bob', url: 'r1', path: null, line: null, comment: '全体的に…', lastUrl: 'r1' },
+    { kind: 'comment', author: 'amy', url: 'c3', path: null, line: null, comment: '新しい', lastUrl: 'c3' },
+  ]);
+  assert.deepEqual(pendingComments({}, 'me'), []);
+});
+
+test('mergeMine: 対象外にした指摘は一覧と件数から外し、新しい発言が付いたらまた出す', () => {
+  const c = (login, url) => ({ author: { login }, body: 'x', url });
+  const t = (...cs) => ({ isResolved: false, root: { nodes: [cs[0]] }, comments: { nodes: [cs.at(-1)] } });
+  const prev = { 'mine:acme/api#1': { status: 'idle', skipped: ['u1 u1', 'u2 u2', 'gone gone'] } };
+  const n = { ...node(1), reviewThreads: { nodes: [t(c('bot', 'u1')), t(c('bob', 'u2'), c('bob', 'u3')), t(c('amy', 'u4'))] } };
+  const m = mergeMine(prev, [n], 'me')['mine:acme/api#1'];
+  assert.deepEqual(m.threads.map((x) => [x.no, x.url]), [[1, 'u2'], [2, 'u4']]);
+  assert.equal(m.pending, 2);
+  assert.deepEqual(m.skipped, ['u1 u1']);
+  const only = mergeMine(prev, [{ ...node(1), reviewThreads: { nodes: [t(c('bot', 'u1'))] } }], 'me')['mine:acme/api#1'];
+  assert.equal(only.pending, 0);
+});
+
+test('mergeMine: PR 全体へのコメントは判断対象に足すが、指摘ありの件数はスレッドだけで数える', () => {
+  const n = { ...node(1), reviewThreads: { nodes: [thread(false, 'bob')] }, comments: { nodes: [{ author: { login: 'ci' }, body: 'Coverage', url: 'c1', createdAt: '2026-01-01T00:00:00Z' }] } };
+  const m = mergeMine({}, [n], 'me')['mine:acme/api#1'];
+  assert.equal(m.pending, 1);
+  assert.deepEqual(m.threads.map((t) => [t.no, t.kind || 'thread']), [[1, 'thread'], [2, 'comment']]);
+});
+
+test('buildFixPlanPrompt: 事前判断した指摘だけを対象にし、理由ありの非同意には反論か返信案を返させる', () => {
+  const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix' }, triage);
+  assert.match(prompt, /- #1 @bob a\.rb:3 u1\n  指摘: 直して\n  同意 \/ 理由なし/);
+  assert.match(prompt, /- #2 @amy u2\n  指摘: なぜ\?\n  非同意 \/ 理由: 仕様どおり/);
+  assert.doesNotMatch(prompt, /#3/);
+  assert.match(prompt, /- #4 \[PR コメント\] @amy u4/);
+  assert.match(prompt, /引用 \(またはリンク\) した PR コメント/);
+  assert.match(prompt, /一覧にないスレッド・コメントは計画に含めない/);
+  assert.match(prompt, /category を rebut にし/);
+  assert.match(prompt, /"rebuttal"/);
+});
+
 test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信をさせず計画だけ返させる', () => {
-  const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix', fixArgs: '{pr-number} --repo {repo-name}' });
+  const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix', fixArgs: '{pr-number} --repo {repo-name}' }, triage);
   assert.match(prompt, /^\/review-fix 3 --repo api\n/);
   assert.match(prompt, /コミット・push・返信はまだ行わない/);
-  assert.match(prompt, /<review-board-fix-plan>/);
+  assert.match(prompt, /<docket-fix-plan>/);
   assert.match(prompt, /category を split にし/);
   assert.match(prompt, /category を followup にし/);
 });
@@ -294,11 +374,12 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済み
   assert.match(fix, /split に同意した指摘/);
   assert.match(fix, /Draft PR を作成する/);
   assert.match(fix, /sub-issue として紐付ける/);
-  assert.match(fix, /<review-board-applied>/);
+  assert.match(fix, /rebut \(AI の反論\)/);
+  assert.match(fix, /<docket-applied>/);
   const self = buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], { 1: { verdict: 'agree' } });
   assert.match(self, /event: COMMENT/);
   assert.match(self, /コミット SHA を含む返信/);
-  assert.match(self, /<review-board-applied>/);
+  assert.match(self, /<docket-applied>/);
 });
 
 test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として、承認済みで修正・push・返信させる', () => {
@@ -307,27 +388,27 @@ test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として�
   assert.match(prompt, /PR 作成者.*コメント/);
   assert.match(prompt, /承認/);
   assert.match(prompt, /force-push はしない/);
-  assert.match(prompt, /<review-board-applied>/);
+  assert.match(prompt, /<docket-applied>/);
 });
 
 test('runForTag: 最後のメッセージにタグが無ければ同じセッションを 1 回だけ再開して再出力させる', async () => {
   const usage = { tokens: 1, costUsd: 0.1 };
   const calls = [];
   const fake = (results) => async (prompt, opts) => (calls.push(opts), results.shift());
-  const tagged = '<review-board-findings>{"findings":[]}</review-board-findings>';
+  const tagged = '<docket-findings>{"findings":[]}</docket-findings>';
 
-  let res = await runForTag('review-board-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: '出力済みです', usage }, { ok: true, sessionId: 's', result: tagged, usage }]));
+  let res = await runForTag('docket-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: '出力済みです', usage }, { ok: true, sessionId: 's', result: tagged, usage }]));
   assert.equal(calls.length, 2);
   assert.deepEqual([calls[1].resume, calls[1].logName], ['s', 'a-retag']);
-  assert.deepEqual(extractTagJson(res.result, 'review-board-findings'), { findings: [] });
+  assert.deepEqual(extractTagJson(res.result, 'docket-findings'), { findings: [] });
   assert.deepEqual(res.usage, { tokens: 2, costUsd: 0.2 });
 
   calls.length = 0;
-  res = await runForTag('review-board-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: tagged, usage }]));
+  res = await runForTag('docket-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: tagged, usage }]));
   assert.equal(calls.length, 1);
 
   calls.length = 0;
-  res = await runForTag('review-board-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: 'x', usage }, { ok: false, error: 'e', usage }]));
+  res = await runForTag('docket-findings', 'p', { logName: 'a' }, fake([{ ok: true, sessionId: 's', result: 'x', usage }, { ok: false, error: 'e', usage }]));
   assert.equal(calls.length, 2);
   assert.equal(res.ok, true);
   assert.equal(res.result, 'x');
@@ -335,7 +416,7 @@ test('runForTag: 最後のメッセージにタグが無ければ同じセッシ
 
   // キャンセル済みなら再開しない
   calls.length = 0;
-  res = await runForTag('review-board-findings', 'p', { logName: 'a', cancelled: () => true }, fake([{ ok: true, sessionId: 's', result: 'x', usage }]));
+  res = await runForTag('docket-findings', 'p', { logName: 'a', cancelled: () => true }, fake([{ ok: true, sessionId: 's', result: 'x', usage }]));
   assert.equal(calls.length, 1);
   assert.equal(res.result, 'x');
 });
@@ -496,7 +577,7 @@ test('concurrencyLimit: 空・0・不正値は既定値、負数は 1 にする'
 });
 
 test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err は残す', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-prune-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-prune-'));
   const old = (Date.now() - 31 * 24 * 60 * 60 * 1000) / 1000;
   for (const name of ['old.log', 'new.log', 'run.out', 'run.err']) fs.writeFileSync(path.join(dir, name), '');
   for (const name of ['old.log', 'run.out', 'run.err']) fs.utimesSync(path.join(dir, name), old, old);
@@ -507,7 +588,7 @@ test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err
 });
 
 test('pruneLogs: 指定した期間より古い .log を消して件数・容量を返す。0 なら終わった .log をすべて消す', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-prune-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-prune-'));
   const day = 24 * 60 * 60 * 1000;
   const old = (Date.now() - 3 * day) / 1000;
   fs.writeFileSync(path.join(dir, 'old.log'), 'abc');
@@ -575,9 +656,46 @@ test('sanitizeConfig: 未知の項目と型が違う値を捨てる', () => {
 });
 
 test('readTail: 末尾だけ読み、途中で切れた先頭行は捨てる', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rb-tail-')), 'a.out');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-tail-')), 'a.out');
   fs.writeFileSync(file, 'line1\nline2\nline3\n');
   assert.equal(readTail(file), 'line1\nline2\nline3\n');
   assert.equal(readTail(file, 9), 'line3\n'); // "e2\nline3\n" の切れた 1 行目を捨てる
   fs.rmSync(path.dirname(file), { recursive: true });
+});
+
+test('buildReviewPrompt: スキル指定なら /skill で始める', () => {
+  const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: 'be-review', args: '{pr-number}' });
+  assert.match(prompt, /^\/be-review 1\n/);
+  assert.match(prompt, /<docket-findings>/);
+});
+
+test('buildReviewPrompt: (prompt) なら設定のプロンプトをテンプレート展開して使う', () => {
+  const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, '{pr-url} を見て');
+  assert.match(prompt, /^https:\/\/x\/1 を見て\n/);
+  assert.doesNotMatch(prompt, /^\//);
+  assert.match(prompt, /プレビューまでで止めて/);
+  assert.match(prompt, /<docket-findings>/);
+});
+
+test('buildReviewPrompt: 設定のプロンプトが空なら既定のプロンプトを使う', () => {
+  const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, '  ');
+  assert.match(prompt, /gh pr diff https:\/\/x\/1/);
+});
+
+test('投稿プロンプト: スキルに投稿手順がなくても gh api で投稿できる', () => {
+  assert.match(buildPostPrompt({ url: 'https://x/1' }, [], {}, false, false), /gh api/);
+  assert.match(buildSelfApplyPrompt({ url: 'https://x/1' }, [], {}), /gh api/);
+});
+
+test('buildFixPlanPrompt: (prompt) なら設定の対応プロンプトをテンプレート展開して使う', () => {
+  const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
+  const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, '{pr-url} に対応');
+  assert.match(prompt, /^https:\/\/x\/3 に対応\n/);
+  assert.match(prompt, /<docket-fix-plan>/);
+  assert.match(buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, ''), /gh pr checkout https:\/\/x\/3/);
+});
+
+test('対応の実行プロンプト: スキルがなくても最初の指示の手順で動かす', () => {
+  assert.match(buildFixApplyPrompt({ url: 'https://x/1' }, [], {}), /最初の指示/);
+  assert.match(buildCommentApplyPrompt({ url: 'https://x/1' }), /最初の指示/);
 });
