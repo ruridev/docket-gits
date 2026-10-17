@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { readTail, isClaudeRun, pruneLogs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -102,6 +102,7 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   assert.match(prompt, /- #2 非同意 \/ 理由: 件数が少ない\n/);
   assert.match(prompt, /- #3 非同意 \/ 理由なし/);
   assert.match(prompt, /event: APPROVE/);
+  assert.match(prompt, /繰り返さず、残りだけを行う/);
   assert.match(prompt, /🤔💭/);
   assert.match(prompt, /🤖: /);
   assert.match(prompt, /---/);
@@ -113,8 +114,8 @@ test('modelOptions: 指定したモデル・effort を渡し、サブエージ�
 });
 
 test('childEnv: 親 Claude Code セッションの環境変数を除き、それ以外は残す', () => {
-  const env = childEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_PID: '1', CLAUDE_CONFIG_DIR: '/c', PATH: '/bin', HOME: '/h' });
-  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', PATH: '/bin', HOME: '/h' });
+  const env = childEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_PID: '1', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
+  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
 });
 
 test('searchQueries: マージ済みは指定日数以内に絞り、0 日なら取得しない', () => {
@@ -293,6 +294,12 @@ test('runForTag: 最後のメッセージにタグが無ければ同じセッシ
   assert.equal(res.ok, true);
   assert.equal(res.result, 'x');
   assert.deepEqual(res.usage, { tokens: 2, costUsd: 0.2 });
+
+  // キャンセル済みなら再開しない
+  calls.length = 0;
+  res = await runForTag('review-board-findings', 'p', { logName: 'a', cancelled: () => true }, fake([{ ok: true, sessionId: 's', result: 'x', usage }]));
+  assert.equal(calls.length, 1);
+  assert.equal(res.result, 'x');
 });
 
 test('pollIntervalMs: 分をミリ秒にし、1 分未満や不正値は既定の 5 分に戻す', () => {
@@ -439,4 +446,63 @@ test('i18n: 各言語のキーがそろい、サーバーのエラーコード�
   for (const c of codes) assert.ok(keys.includes(c), c);
   const used = [...html.matchAll(/\btr\('([\w.]+)'/g)].map((m) => m[1]);
   for (const k of used) assert.ok(keys.includes(k), k);
+});
+
+test('concurrencyLimit: 空・0・不正値は既定値、負数は 1 にする', () => {
+  assert.equal(concurrencyLimit(3), 3);
+  assert.equal(concurrencyLimit('3'), 3);
+  assert.equal(concurrencyLimit(''), 2);
+  assert.equal(concurrencyLimit(0), 2);
+  assert.equal(concurrencyLimit(undefined), 2);
+  assert.equal(concurrencyLimit(-1), 1);
+});
+
+test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err は残す', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-prune-'));
+  const old = (Date.now() - 31 * 24 * 60 * 60 * 1000) / 1000;
+  for (const name of ['old.log', 'new.log', 'run.out', 'run.err']) fs.writeFileSync(path.join(dir, name), '');
+  for (const name of ['old.log', 'run.out', 'run.err']) fs.utimesSync(path.join(dir, name), old, old);
+  pruneLogs(dir, Date.now());
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['new.log', 'run.err', 'run.out']);
+  fs.rmSync(dir, { recursive: true });
+  pruneLogs(path.join(dir, 'missing'), Date.now()); // ディレクトリが無くても落ちない
+});
+
+test('isClaudeRun: 生きていても claude 以外のプロセスなら false', () => {
+  const sleep = require('node:child_process').spawn('sleep', ['5']);
+  try {
+    assert.equal(isAlive(sleep.pid), true);
+    assert.equal(isClaudeRun(sleep.pid), false);
+  } finally {
+    sleep.kill();
+  }
+  assert.equal(isClaudeRun(2 ** 22 + 12345), false);
+});
+
+test('normalizeNos: 番号が重複・欠落していれば 1 から振り直し、正しければそのまま返す', () => {
+  const ok = [{ no: 3 }, { no: 5 }];
+  assert.equal(normalizeNos(ok), ok);
+  assert.deepEqual(normalizeNos([{ no: 1, t: 'a' }, { no: 1, t: 'b' }, { t: 'c' }]).map((f) => [f.no, f.t]), [[1, 'a'], [2, 'b'], [3, 'c']]);
+  assert.equal(normalizeNos(undefined), null);
+});
+
+test('decisionLines: 要約があれば番号の後に添える', () => {
+  const prompt = buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1, comment: 'null を返す' }], { 1: { verdict: 'agree' } });
+  assert.match(prompt, /- #1「null を返す」 同意 \/ 理由なし/);
+});
+
+test('sanitizeConfig: 未知の項目と型が違う値を捨てる', () => {
+  assert.deepEqual(
+    sanitizeConfig({ maxConcurrent: 3, model: 'opus', authors: ['a'], repos: { 'o/r': {} }, unknown: 1, pollMinutes: 'x', projects: 'url', repos2: {}, refreshSeconds: NaN }),
+    { maxConcurrent: 3, model: 'opus', authors: ['a'], repos: { 'o/r': {} } },
+  );
+  assert.deepEqual(sanitizeConfig(null), {});
+});
+
+test('readTail: 末尾だけ読み、途中で切れた先頭行は捨てる', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rb-tail-')), 'a.out');
+  fs.writeFileSync(file, 'line1\nline2\nline3\n');
+  assert.equal(readTail(file), 'line1\nline2\nline3\n');
+  assert.equal(readTail(file, 9), 'line3\n'); // "e2\nline3\n" の切れた 1 行目を捨てる
+  fs.rmSync(path.dirname(file), { recursive: true });
 });

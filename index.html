@@ -79,7 +79,7 @@
   .rv { position: relative; }
   .rv .st { position: absolute; right: -4px; bottom: -4px; font-size: 10px; background: var(--panel); border-radius: 50%; line-height: 1; }
   .rv.pending img { opacity: .4; }
-  .actions { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; }
   .muted { color: var(--muted); font-size: 12px; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; max-width: calc(100vw - 32px); background: var(--danger); color: #fff; padding: 8px 16px; border-radius: 6px; white-space: pre-wrap; }
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; }
@@ -180,6 +180,9 @@
   .rm .bar .avatar { width: 16px; height: 16px; }
   .rm .bar.dim { opacity: .35; }
   @media (max-width: 700px) {
+    /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
+    .board-bar, header, .sp-row { flex-wrap: wrap; }
+    .board-bar > *, .sp-right { margin-bottom: 0; }
     .board { grid-auto-columns: 85vw; }
     .form-row { grid-template-columns: 1fr; }
     .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -239,10 +242,12 @@ const I18N = {
     'stackOrder': 'スタック順', 'stackOrder.title': '同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)',
     editLanes: 'レーン配置', laneSave: '配置を保存', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'Claude の出力',
     'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
+    // README がこの英語のレーン名で説明しているので、日本語でも英語のままにする
+    'lane.requested': 'Requested', 'lane.reviewing': 'Reviewing', 'lane.reviewed': 'Reviewed', 'lane.done': 'Done', 'lane.draft': 'Draft',
     'lane.mine': 'レビュー待ち', 'lane.pending': '指摘あり', 'lane.running': '実行中', 'lane.planned': '判断待ち', 'lane.mergeable': 'マージ可能',
     'rm.sprint': 'スプリント別', 'rm.period': '期間別',
     'ago.min': '{n}分前', 'ago.hour': '{n}時間前', 'ago.day': '{n}日前', fetchedAgo: '{ago}に更新', startedAgo: '({ago}に開始)',
-    refreshNow: '今すぐ更新', refetchTitle: 'GitHub から取り直す', fetchFailed: 'GitHub の取得に失敗しました: {msg}', lastFetched: '最終更新: {ago}',
+    refreshNow: '今すぐ更新', refetchTitle: 'GitHub から取り直す', fetchFailed: 'GitHub の取得に失敗しました: {msg}', truncated: 'GitHub の検索結果が 1 回の取得上限 (レビュー依頼 100 件・自分の PR 50 件) を超えたため、一部の PR を表示していません', lastFetched: '最終更新: {ago}',
     repo: 'リポジトリ', author: '作成者', all: 'すべて', none: 'なし',
     approved: 'Approve 済み', 'approved.only': 'のみ', 'approved.exclude': '除外', 'approved.title': '押すと すべて → のみ → 除外 の順に切り替え',
     'btn.review': 'レビューする', skillMissing: 'スキル未設定', skip: 'スキップ', 'skip.title': '投稿せずに Done へ移す',
@@ -292,7 +297,8 @@ const I18N = {
     'sp.barSet': '(設定: {start} – {end})', 'sp.unsetDate': '未設定', 'sp.noDates': '(日付未設定)',
     'period.week': '{date} からの週', 'period.2week': '{date} からの 2 週間',
     noOutputYet: 'まだ出力がありません', runEnded: '実行は終了しました',
-    confirmApplyComments: 'PR 上の自分のコメントを指示として修正・push・返信します。よろしいですか？',
+    confirmApplyComments: 'PR 上の自分のコメントを指示として修正・push・返信します。実行するには 5 秒以内にもう一度ドラッグしてください',
+    move: '移動…', applyComments: 'PR のコメントどおり対応', confirmRun: 'もう一度押すと実行',
     'err.projectUrlInvalid': 'プロジェクト URL を解析できません: {url}', 'err.sprintNotFound': 'スプリントが見つかりません',
     'err.periodInvalid': '期間の指定が不正です', 'err.noDateField': 'このプロジェクトには Date フィールドがありません',
     'err.claudeReadFailed': 'claude の出力を読めません: {message}', 'err.claudeParseFailed': 'claude の出力を解析できません (exit={code}): {stderr}',
@@ -312,10 +318,11 @@ const I18N = {
     'stackOrder': '스택 순', 'stackOrder.title': '같은 레인 안에서 스택의 부모 → 자식 → 손자 순으로 정렬 (다시 누르면 업데이트 순으로 돌아감)',
     editLanes: '레인 배치', laneSave: '배치 저장', cancel: '취소', close: '닫기', claudeOutput: 'Claude 출력',
     'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(rb-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
+    'lane.requested': '요청됨', 'lane.reviewing': '리뷰 중', 'lane.reviewed': '리뷰 완료', 'lane.done': '완료', 'lane.draft': '드래프트',
     'lane.mine': '리뷰 대기', 'lane.pending': '코멘트 있음', 'lane.running': '실행 중', 'lane.planned': '결정 대기', 'lane.mergeable': '머지 가능',
     'rm.sprint': '스프린트별', 'rm.period': '기간별',
     'ago.min': '{n}분 전', 'ago.hour': '{n}시간 전', 'ago.day': '{n}일 전', fetchedAgo: '{ago} 업데이트됨', startedAgo: '({ago} 시작)',
-    refreshNow: '지금 새로고침', refetchTitle: 'GitHub에서 다시 가져오기', fetchFailed: 'GitHub에서 가져오지 못했습니다: {msg}', lastFetched: '마지막 업데이트: {ago}',
+    refreshNow: '지금 새로고침', refetchTitle: 'GitHub에서 다시 가져오기', fetchFailed: 'GitHub에서 가져오지 못했습니다: {msg}', truncated: 'GitHub 검색 결과가 한 번에 가져올 수 있는 한도(리뷰 요청 100건, 내 PR 50건)를 넘어 일부 PR이 표시되지 않습니다', lastFetched: '마지막 업데이트: {ago}',
     repo: '저장소', author: '작성자', all: '전체', none: '없음',
     approved: 'Approve 완료', 'approved.only': '만 보기', 'approved.exclude': '제외', 'approved.title': '누를 때마다 전체 → 만 보기 → 제외 순으로 전환',
     'btn.review': '리뷰하기', skillMissing: '스킬 미설정', skip: '건너뛰기', 'skip.title': '게시하지 않고 Done으로 이동',
@@ -365,7 +372,8 @@ const I18N = {
     'sp.barSet': '(설정: {start} – {end})', 'sp.unsetDate': '미설정', 'sp.noDates': '(날짜 미설정)',
     'period.week': '{date}부터 1주', 'period.2week': '{date}부터 2주',
     noOutputYet: '아직 출력이 없습니다', runEnded: '실행이 끝났습니다',
-    confirmApplyComments: 'PR에 남긴 내 코멘트를 지시로 삼아 수정·push·답글을 진행합니다. 진행할까요?',
+    confirmApplyComments: 'PR에 남긴 내 코멘트를 지시로 삼아 수정·push·답글을 진행합니다. 실행하려면 5초 안에 한 번 더 드래그하세요',
+    move: '이동…', applyComments: 'PR 코멘트대로 반영', confirmRun: '한 번 더 누르면 실행',
     'err.projectUrlInvalid': '프로젝트 URL을 해석할 수 없습니다: {url}', 'err.sprintNotFound': '스프린트를 찾을 수 없습니다',
     'err.periodInvalid': '기간 지정이 올바르지 않습니다', 'err.noDateField': '이 프로젝트에는 Date 필드가 없습니다',
     'err.claudeReadFailed': 'claude 출력을 읽을 수 없습니다: {message}', 'err.claudeParseFailed': 'claude 출력을 해석할 수 없습니다 (exit={code}): {stderr}',
@@ -385,10 +393,11 @@ const I18N = {
     'stackOrder': 'Stack order', 'stackOrder.title': 'Sort cards in each lane by stack: parent → child → grandchild (click again to sort by last update)',
     editLanes: 'Arrange lanes', laneSave: 'Save layout', cancel: 'Cancel', close: 'Close', claudeOutput: 'Claude output',
     'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (rb-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
+    'lane.requested': 'Requested', 'lane.reviewing': 'Reviewing', 'lane.reviewed': 'Reviewed', 'lane.done': 'Done', 'lane.draft': 'Draft',
     'lane.mine': 'Awaiting review', 'lane.pending': 'Has comments', 'lane.running': 'Running', 'lane.planned': 'Needs decision', 'lane.mergeable': 'Ready to merge',
     'rm.sprint': 'By sprint', 'rm.period': 'By period',
     'ago.min': '{n}m ago', 'ago.hour': '{n}h ago', 'ago.day': '{n}d ago', fetchedAgo: 'Updated {ago}', startedAgo: '(started {ago})',
-    refreshNow: 'Refresh now', refetchTitle: 'Fetch again from GitHub', fetchFailed: 'Failed to fetch from GitHub: {msg}', lastFetched: 'Last updated: {ago}',
+    refreshNow: 'Refresh now', refetchTitle: 'Fetch again from GitHub', fetchFailed: 'Failed to fetch from GitHub: {msg}', truncated: 'GitHub returned more results than one fetch can hold (100 review requests / 50 of your PRs), so some PRs are not shown', lastFetched: 'Last updated: {ago}',
     repo: 'Repository', author: 'Author', all: 'All', none: 'None',
     approved: 'Approved', 'approved.only': 'Only', 'approved.exclude': 'Exclude', 'approved.title': 'Click to cycle All → Only → Exclude',
     'btn.review': 'Review', skillMissing: 'No skill set', skip: 'Skip', 'skip.title': 'Move to Done without posting',
@@ -438,7 +447,8 @@ const I18N = {
     'sp.barSet': '(set: {start} – {end})', 'sp.unsetDate': 'not set', 'sp.noDates': '(no dates)',
     'period.week': 'Week of {date}', 'period.2week': '2 weeks from {date}',
     noOutputYet: 'No output yet', runEnded: 'Run finished',
-    confirmApplyComments: 'Fix, push and reply using your own comments on the PR as instructions. Continue?',
+    confirmApplyComments: 'Fix, push and reply using your own comments on the PR as instructions. Drag again within 5 seconds to run',
+    move: 'Move…', applyComments: 'Follow PR comments', confirmRun: 'Click again to run',
     'err.projectUrlInvalid': "Can't parse project URL: {url}", 'err.sprintNotFound': 'Sprint not found',
     'err.periodInvalid': 'Invalid period', 'err.noDateField': 'This project has no Date field',
     'err.claudeReadFailed': "Can't read claude output: {message}", 'err.claudeParseFailed': "Can't parse claude output (exit={code}): {stderr}",
@@ -463,20 +473,20 @@ document.querySelectorAll('[data-i18n-title]').forEach((el) => (el.title = tr(el
 document.querySelectorAll('[data-i18n-html]').forEach((el) => (el.innerHTML = tr(el.dataset.i18nHtml)));
 
 const LANES = [
-  { id: 'requested', label: 'Requested', color: '#1a7f37', statuses: ['requested'], badge: true },
-  { id: 'reviewing', label: 'Reviewing', color: '#9a6700', statuses: ['queued', 'reviewing'], badge: true },
-  { id: 'reviewed', label: 'Reviewed', color: '#0969da', statuses: ['reviewed', 'posting'] },
-  { id: 'commented', label: 'Done', color: '#8250df', statuses: ['commented'] },
+  { id: 'requested', label: tr('lane.requested'), color: '#1a7f37', statuses: ['requested'], badge: true },
+  { id: 'reviewing', label: tr('lane.reviewing'), color: '#9a6700', statuses: ['queued', 'reviewing'], badge: true },
+  { id: 'reviewed', label: tr('lane.reviewed'), color: '#0969da', statuses: ['reviewed', 'posting'] },
+  { id: 'commented', label: tr('lane.done'), color: '#8250df', statuses: ['commented'] },
 ];
 // レビューを受ける (自分の PR)
 const MINE_LANES = [
-  { id: 'draft', label: 'Draft', color: '#8c959f', match: (e) => e.status === 'idle' && e.pr.isDraft && !e.done },
+  { id: 'draft', label: tr('lane.draft'), color: '#8c959f', match: (e) => e.status === 'idle' && e.pr.isDraft && !e.done },
   { id: 'mine', label: tr('lane.mine'), color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && !e.mergeReady && !e.done, badge: true },
   { id: 'pending', label: tr('lane.pending'), color: '#cf222e', match: (e) => e.status === 'idle' && !e.pr.isDraft && e.pending > 0, badge: true },
   { id: 'running', label: tr('lane.running'), color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status), badge: true },
   { id: 'planned', label: tr('lane.planned'), color: '#0969da', match: (e) => e.status === 'planned', badge: true },
   { id: 'mergeable', label: tr('lane.mergeable'), color: '#8250df', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && e.mergeReady && !e.done },
-  { id: 'done', label: 'Done', color: '#656d76', match: (e) => e.status === 'idle' && !e.pending && e.done },
+  { id: 'done', label: tr('lane.done'), color: '#656d76', match: (e) => e.status === 'idle' && !e.pending && e.done },
 ];
 // レーンの並び順はブラウザごとに保存する。「レーン配置」モード中だけドラッグで並び替えられる
 const laneOrderKey = (v) => `rb-lane-order:${v}`;
@@ -531,12 +541,15 @@ function toast(msg) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
-  document.body.append(el);
+  // モーダルの dialog は top layer に出るので、body に置くと裏に隠れる。開いている dialog の中に出す
+  (document.querySelector('dialog[open]') || document.body).append(el);
   setTimeout(() => el.remove(), 6000);
 }
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Claude の出力由来の URL も href に入るので、javascript: などを踏ませないよう https だけ通す
+const safeUrl = (u) => (/^https:\/\//i.test(u || '') ? u : '#');
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -549,29 +562,58 @@ async function api(path, opts = {}) {
   return json;
 }
 
+// 時刻が無い古いデータでも render 全体を落とさないよう空にする
 function ago(iso) {
   const min = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (Number.isNaN(min)) return '';
   if (min < 60) return tr('ago.min', { n: min });
   if (min < 60 * 24) return tr('ago.hour', { n: Math.round(min / 60) });
   return tr('ago.day', { n: Math.round(min / 1440) });
 }
 
+// 定期取得と操作後の取得が重なったとき、後から届いた古い応答で新しい表示を戻さないようにする
+let loadSeq = 0;
+let loadApplied = 0;
 async function load(refresh = false) {
+  const seq = ++loadSeq;
   try {
-    board = await api(`/api/board${refresh ? '?refresh=1' : ''}`);
+    const next = await api(`/api/board${refresh ? '?refresh=1' : ''}`);
+    if (seq < loadApplied) return;
+    loadApplied = seq;
+    board = next;
   } catch (e) {
     board.fetchError = e.message;
   }
   render();
 }
 
+// 押している間に再描画するとボタンが作り直され、離したときの click が消える。離したときに描き直す
+let pointerDown = false;
+let renderSkipped = false;
+document.addEventListener('pointerdown', () => (pointerDown = true), true);
+// 押したまま別のアプリへ移ると pointerup が来ないことがあるので、フォーカスが外れたときも離したとみなす
+const release = () => {
+  pointerDown = false;
+  if (renderSkipped) setTimeout(render); // click の処理が終わってから
+};
+for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, release, true);
+window.addEventListener('blur', release);
+document.addEventListener('focusout', () => renderSkipped && setTimeout(render));
+
 function render() {
   if (dragging || laneDrag) return; // 再描画するとドラッグが途切れる
+  // 開いている選択欄を作り直すと閉じてしまう
+  if (pointerDown || document.activeElement?.matches('#board select')) return void (renderSkipped = true);
+  renderSkipped = false;
   $('#viewer').innerHTML = board.viewer ? `<img class="avatar" src="${esc(board.viewer.avatarUrl)}" alt=""> ${esc(board.viewer.login)}` : '';
   // 取得時刻を兼ねた手動更新ボタン (ロードマップの spRefetch と同じ見た目)
   $('#refresh').innerHTML = `<span class="hint">↻ </span>${board.lastFetchedAt ? tr('fetchedAgo', { ago: ago(board.lastFetchedAt) }) : tr('refreshNow')}`;
   $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString(lang)} — ` : ''}${tr('refetchTitle')}`;
-  $('#banner').innerHTML = board.fetchError ? `<div class="banner">${tr('fetchFailed', { msg: esc(board.fetchError) })}</div>` : '';
+  // 別のタブを見ていても、判断待ち (Reviewed / 判断待ち) が出たことをブラウザのタブ名で分かるようにする
+  const waiting = board.prs.filter((p) => p.status === 'reviewed').length + board.mine.filter((p) => p.status === 'planned').length;
+  document.title = `${waiting ? `(${waiting}) ` : ''}Review Board`;
+  $('#banner').innerHTML = (board.fetchError ? `<div class="banner">${tr('fetchFailed', { msg: esc(board.fetchError) })}</div>` : '')
+    + (board.truncated ? `<div class="banner" style="border-color:var(--warn);color:var(--warn)">${tr('truncated')}</div>` : '');
 
   const mine = view() === 'receive';
   document.querySelectorAll('nav.tabs a[data-view]').forEach((a) => {
@@ -632,7 +674,12 @@ function render() {
   const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
   if (!(approved in APPROVED)) approved = '';
   const approvedSeg = '<span class="sep"></span>' + field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${tr('approved.title')}">${APPROVED[approved]}</button>`);
+  // 定期再描画で検索欄の入力中のフォーカスが外れないよう、作り直した欄に戻す
+  const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
+  const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
   $('#repo-filter').innerHTML = repoSelect + authorSelect + approvedSeg;
+  const nq = qAt && $(`#repo-filter [data-ms="${qAt[0]}"] [data-ms-q]`);
+  if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
   const prs = all.filter((p) => !hidden.includes(p.pr.repo) && !hiddenAuthors.includes(p.pr.author?.login)
     && (approved === 'only' ? isApproved(p) : approved === 'exclude' ? !isApproved(p) : true)).sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
   $('#edit-lanes').hidden = !!laneEdit;
@@ -669,13 +716,13 @@ function cardHtml(e) {
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewing') {
-    action = `<span class="muted"><span class="spin"></span> ${tr('reviewing')} ${tr('startedAgo', { ago: ago(new Date(e.startedAt).toISOString()) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('reviewing')} ${tr('startedAgo', { ago: ago(e.startedAt) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewed') {
     action = `<span>${e.findings ? tr('findingsDecide', { n: e.findings.length }) : tr('checkRaw')}</span>`;
   } else if (e.status === 'posting') {
     action = `<span class="muted"><span class="spin"></span> ${tr('posting')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   } else if (e.status === 'commented') {
-    action = `${e.postedUrl ? `<a href="${esc(e.postedUrl)}" target="rb-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
+    action = `${e.postedUrl ? `<a href="${esc(safeUrl(e.postedUrl))}" target="rb-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
   }
 
   const clickable = e.status === 'reviewed';
@@ -695,11 +742,11 @@ function mineCardHtml(e) {
       mapping.fixSkill && `<button ${e.pending ? 'class="primary"' : ''} data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">${tr('fixComments')}</button>`,
     ].filter(Boolean);
     action = buttons.length ? `<span>${buttons.join(' ')}</span>` : `<a href="#" data-settings>${tr('skillMissing')}</a>`;
-    if (e.appliedAt) action += `<span class="muted">${tr('appliedAgo', { ago: ago(new Date(e.appliedAt).toISOString()) })}</span>`;
+    if (e.appliedAt) action += `<span class="muted">${tr('appliedAgo', { ago: ago(e.appliedAt) })}</span>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span>${cancel}`;
   } else if (e.status === 'running') {
-    action = `<span class="muted"><span class="spin"></span> ${MINE_RUNNING[e.mode]} ${tr('startedAgo', { ago: ago(new Date(e.startedAt).toISOString()) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button>${cancel}`;
+    action = `<span class="muted"><span class="spin"></span> ${MINE_RUNNING[e.mode]} ${tr('startedAgo', { ago: ago(e.startedAt) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button>${cancel}`;
   } else if (e.status === 'planned') {
     action = `<span>${e.findings ? tr('findingsDecide', { n: e.findings.length }) : tr('checkRaw')}</span>`;
   } else if (e.status === 'applying') {
@@ -708,6 +755,10 @@ function mineCardHtml(e) {
   const clickable = e.status === 'planned';
   // 自分の PR ⇄ マージ可能 ⇄ Done の D&D で手動で移す。判断待ちは実行中に移すと PR 上のコメントどおりに対応する
   const dragFrom = e.status === 'planned' && e.sessionId ? 'planned' : e.status === 'idle' && !e.pending && (e.done || !e.pr.isDraft) ? (e.done ? 'done' : e.mergeReady ? 'mergeable' : 'mine') : null;
+  // ドラッグできない環境 (キーボード・タッチ) 向けに、同じ移動を選択欄でもできるようにする
+  if (e.status === 'idle' && dragFrom) {
+    action += `<select data-mine-move="${esc(e.key)}"><option value="">${tr('move')}</option>${DROP_TO[dragFrom].map((id) => `<option value="${id}">${MINE_LANES.find((l) => l.id === id).label}</option>`).join('')}</select>`;
+  }
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open-mine="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'planned');
 }
 
@@ -743,7 +794,7 @@ function stackHtml(pr) {
   const parents = same.filter((p) => p.head === pr.base);
   const children = same.filter((p) => p.base === pr.head);
   if (!parents.length && !children.length) return '';
-  const links = (ps) => ps.map((p) => `<a href="${esc(p.url)}" target="rb-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
+  const links = (ps) => ps.map((p) => `<a href="${esc(safeUrl(p.url))}" target="rb-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
   return `<div class="stack">${tr('stack')}${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
 }
 
@@ -785,7 +836,7 @@ function cardShell(e, action, attrs, showError) {
   return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}${viewing === prId(pr) ? ' viewing' : ''}`)}>
     <div class="top">
       ${view() === 'receive' ? '' : `<img class="avatar" src="${esc(pr.author?.avatarUrl)}" alt="" title="${esc(pr.author?.login)}">`}
-      <span class="grow"><a href="${esc(pr.url)}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
+      <span class="grow"><a href="${esc(safeUrl(pr.url))}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
       <span>${ago(pr.updatedAt)}</span>
     </div>
     <div class="title">${esc(pr.title)}</div>
@@ -800,9 +851,9 @@ function cardShell(e, action, attrs, showError) {
       ${pr.labels.map((l) => `<span class="chip" style="border-color:#${esc(l.color)}">${esc(l.name)}</span>`).join('')}
     </div>
     ${stackHtml(pr)}
-    ${pr.issues.map((i) => `<a class="issue" href="${esc(i.url)}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
+    ${pr.issues.map((i) => `<a class="issue" href="${esc(safeUrl(i.url))}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
     <div class="reviewers">${reviewers}</div>
-    ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}</div>` : ''}
+    ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}${e.lastLog && !e.run ? ` <button data-log="${esc(e.key)}">${tr('log')}</button>` : ''}</div>` : ''}
     <div class="actions">${action}</div>
   </article>`;
 }
@@ -829,7 +880,7 @@ function openReview(key) {
     const ready = findings && decided === findings.length;
     dlg.innerHTML = `
       <div class="dlg-head">
-        <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <h3><a href="${esc(safeUrl(e.pr.url))}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
         <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
@@ -841,6 +892,8 @@ function openReview(key) {
       </div>
       <div class="dlg-foot">
         <button data-rereview>${tr('rereview')}</button>
+        <button data-skip-dlg title="${tr('skip.title')}">${tr('skip')}</button>
+        ${e.lastLog ? `<button data-log="${esc(key)}">${tr('log')}</button>` : ''}
         <span style="flex:1"></span>
         ${findings ? `<span class="muted">${tr('decided', { n: decided, total: findings.length })}</span>` : ''}
         <label title="${tr('humanRead.title')}"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('humanRead')}</label>
@@ -852,6 +905,7 @@ function openReview(key) {
   dlg.onclick = async (ev) => {
     const t = ev.target;
     if (t.matches('[data-close]')) return dlg.close();
+    if (t.matches('[data-log]')) return openLog(key);
     if (t.matches('[data-verdict]')) {
       const no = t.dataset.no;
       draft.decisions[no] = { ...draft.decisions[no], verdict: t.dataset.verdict };
@@ -866,6 +920,17 @@ function openReview(key) {
     if (t.matches('[data-approve]')) {
       draft.approve = t.checked;
       saveDraft(key, draft);
+      return;
+    }
+    if (t.matches('[data-skip-dlg]')) {
+      try {
+        await api('/api/skip', { method: 'POST', body: { key } });
+        saveDraft(key, {});
+        dlg.close();
+        load();
+      } catch (err) {
+        toast(err.message);
+      }
       return;
     }
     if (t.matches('[data-rereview]')) {
@@ -904,7 +969,7 @@ function findingHtml(f, d, placeholders = REVIEW_PLACEHOLDER) {
   const placeholder = d.verdict === 'disagree' ? placeholders.disagree : placeholders.agree;
   return `<div class="finding ${esc(d.verdict || '')}">
     <div class="head"><strong>#${esc(f.no)}</strong>${f.severity ? `<span class="chip">${esc(f.severity)}</span>` : ''}<span class="grow">${esc(f.title)}</span></div>
-    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(f.url)}" target="rb-viewer">${tr('origComment')}</a>` : ''}</div>` : ''}
+    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(safeUrl(f.url))}" target="rb-viewer">${tr('origComment')}</a>` : ''}</div>` : ''}
     <pre>${esc(f.body)}</pre>
     <div class="verdict">
       <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">${tr('agree')}</button>
@@ -944,7 +1009,7 @@ function openMine(key) {
     const ready = findings && decided === findings.length && draft.confirmed;
     dlg.innerHTML = `
       <div class="dlg-head">
-        <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
+        <h3><a href="${esc(safeUrl(e.pr.url))}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
         <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
@@ -958,6 +1023,8 @@ function openMine(key) {
       </div>
       <div class="dlg-foot">
         <button data-rerun>${runLabel}</button>
+        ${e.sessionId ? `<button data-apply-comments>${tr('applyComments')}</button>` : ''}
+        ${e.lastLog ? `<button data-log="${esc(key)}">${tr('log')}</button>` : ''}
         <span style="flex:1"></span>
         ${findings ? `<span class="muted">${tr('decided', { n: decided, total: findings.length })}</span>` : ''}
         <label><input type="checkbox" data-confirmed ${draft.confirmed ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('confirmed')}</label>
@@ -968,6 +1035,7 @@ function openMine(key) {
   dlg.onclick = async (ev) => {
     const t = ev.target;
     if (t.matches('[data-close]')) return dlg.close();
+    if (t.matches('[data-log]')) return openLog(key);
     if (t.matches('[data-verdict]')) {
       const no = t.dataset.no;
       draft.decisions[no] = { ...draft.decisions[no], verdict: t.dataset.verdict };
@@ -978,6 +1046,17 @@ function openMine(key) {
       draft.confirmed = t.checked;
       saveDraft(key, draft);
       return renderDlg();
+    }
+    if (t.matches('[data-apply-comments]')) {
+      if (!confirmTwice(t, `apply-comments-btn:${key}`, tr('confirmRun'))) return;
+      try {
+        await applyComments(key);
+        dlg.close();
+        load();
+      } catch (err) {
+        toast(err.message);
+      }
+      return;
     }
     if (t.matches('[data-rerun]')) {
       if (!confirmTwice(t, `rerun:${key}`, tr('confirmRerun'))) return;
@@ -1154,7 +1233,12 @@ async function openSettings() {
     }
     if (t.matches('[data-close]')) return dlg.close();
     if (t.matches('[data-save]')) {
-      await api('/api/config', { method: 'PUT', body: cfg });
+      // 失敗したらダイアログを閉じず、入力を残したまま知らせる
+      try {
+        await api('/api/config', { method: 'PUT', body: cfg });
+      } catch (err) {
+        return toast(err.message);
+      }
       dlg.close();
       if (uiLang !== lang) {
         try { localStorage.setItem('rb-lang', uiLang); } catch {}
@@ -1375,7 +1459,7 @@ function roadmapHtml({ sprint, roots }, empty) {
         cells.push(`<div class="bar ext ${stCls}" style="grid-row:${row};grid-column:${col(n.end) + 1} / ${(n.rawEnd > last ? col(last) : col(n.rawEnd)) + 1}"></div>`);
       }
       const avatars = n.assignees.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('');
-      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${toggle}${avatars}<a class="t" href="${esc(n.url)}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span></div>`);
+      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span></div>`);
     });
     r += rows.length;
   }
@@ -1438,9 +1522,21 @@ $('#sprint').addEventListener('change', (ev) => {
 
 // ---------- イベント ----------
 
+// 自分の PR を レビュー待ち / マージ可能 / Done の間で移す (ドラッグと選択欄の共通処理)
+function moveMine(key, lane) {
+  if (lane === 'done') return api('/api/mine/done', { method: 'POST', body: { key, done: true } });
+  return api('/api/mine/merge-ready', { method: 'POST', body: { key, ready: lane === 'mergeable' } });
+}
+
+async function applyComments(key) {
+  await api('/api/mine/apply-comments', { method: 'POST', body: { key } });
+  saveDraft(key, {});
+}
+
 async function runMine(key, mode) {
   try {
     await api('/api/mine/run', { method: 'POST', body: { key, mode } });
+    saveDraft(key, {}); // 前回の判断が新しい結果の同じ番号に付かないようにする
   } catch (e) {
     toast(e.message);
   }
@@ -1471,6 +1567,7 @@ async function openLog(key) {
 async function review(key) {
   try {
     await api('/api/review', { method: 'POST', body: { key } });
+    saveDraft(key, {}); // 前回の判断が新しい指摘の同じ番号に付かないようにする
   } catch (e) {
     toast(e.message);
   }
@@ -1508,7 +1605,11 @@ $('#board').addEventListener('click', async (ev) => {
     return load();
   }
   if (t.matches('[data-dismiss]')) {
-    await api('/api/dismiss', { method: 'POST', body: { key: t.dataset.dismiss } });
+    try {
+      await api('/api/dismiss', { method: 'POST', body: { key: t.dataset.dismiss } });
+    } catch (e) {
+      toast(e.message);
+    }
     return load();
   }
   if (t.matches('[data-log]')) return openLog(t.dataset.log);
@@ -1526,6 +1627,18 @@ $('#board').addEventListener('click', async (ev) => {
   if (card) return openReview(card.dataset.open);
   const mineCard = t.closest('[data-open-mine]');
   if (mineCard) openMine(mineCard.dataset.openMine);
+});
+
+$('#board').addEventListener('change', async (ev) => {
+  const t = ev.target;
+  if (!t.matches('[data-mine-move]') || !t.value) return;
+  t.blur();
+  try {
+    await moveMine(t.dataset.mineMove, t.value);
+  } catch (e) {
+    toast(e.message);
+  }
+  load();
 });
 
 let dragging = null;
@@ -1576,12 +1689,16 @@ $('#board').addEventListener('drop', async (ev) => {
     if (lane.dataset.lane === 'commented') await api('/api/skip', { method: 'POST', body: { key } });
     else if (from === 'reviewing') await api('/api/cancel', { method: 'POST', body: { key } });
     else if (from === 'planned') {
-      if (!confirm(tr('confirmApplyComments'))) return;
-      await api('/api/mine/apply-comments', { method: 'POST', body: { key } });
-      saveDraft(key, {});
+      // confirm() は内蔵ブラウザで使えないので、ボタンの confirmTwice と同じく 2 回目のドラッグで実行する
+      const id = `apply-comments:${key}`;
+      if (armed?.id !== id || Date.now() >= armed.until) {
+        armed = { id, until: Date.now() + CONFIRM_MS };
+        return toast(tr('confirmApplyComments'));
+      }
+      armed = null;
+      await applyComments(key);
     }
-    else if (lane.dataset.lane === 'done') await api('/api/mine/done', { method: 'POST', body: { key, done: true } });
-    else await api('/api/mine/merge-ready', { method: 'POST', body: { key, ready: lane.dataset.lane === 'mergeable' } });
+    else await moveMine(key, lane.dataset.lane);
   } catch (e) {
     toast(e.message);
   }

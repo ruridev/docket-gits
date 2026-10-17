@@ -4,7 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFile, spawn } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = process.env.REVIEW_BOARD_DATA || path.join(__dirname, 'data');
@@ -15,7 +15,7 @@ const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
 
 const DEFAULT_CONFIG = {
   workdir: os.homedir(),
-  claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(rm:*),Bash(cat:*),Bash(ls:*),Bash(yarn:*)',
+  claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(cat:*),Bash(ls:*)',
   // 空なら claude の既定。model はサブエージェントにも使わせる
   model: '',
   effort: '',
@@ -52,9 +52,9 @@ const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
 
 const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
   viewer { login avatarUrl }
-  open: search(query: $open, type: ISSUE, first: 100) { nodes { ...pr } }
-  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { nodes { ...pr } }
-  mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...pr ... on PullRequest {
+  open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...pr } }
+  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...pr } }
+  mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...pr ... on PullRequest {
     reviewThreads(first: 100) { nodes { isResolved comments(last: 1) { nodes { author { login } } } } }
   } } }
 }
@@ -75,7 +75,9 @@ fragment pr on PullRequest {
 
 function searchQueries(mergedDays, now) {
   const base = 'is:pr archived:false user-review-requested:@me';
-  const since = new Date(now - mergedDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // 日付はローカル時刻で数える (UTC だと JST の朝 9 時前は 1 日ずれる)
+  const from = now - mergedDays * 24 * 60 * 60 * 1000;
+  const since = new Date(from - new Date(from).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open' };
 }
 
@@ -201,6 +203,9 @@ function buildReviewPrompt(pr, mapping) {
 </review-board-findings>`;
 }
 
+// 前回の投稿・対応が途中で失敗した後のやり直しでも、同じものを二重に投稿・返信しないようにする
+const NO_DUPLICATE = '始める前に PR の既存のレビュー・コメント・コミットを確認し、前回の実行で既に投稿・返信・push 済みのものは繰り返さず、残りだけを行う。';
+
 function buildPostPrompt(pr, findings, decisions, approve, humanRead) {
   return `レビューボードでユーザーが各指摘を判断しました。以下に従って、このスキルの投稿手順 (Reviews API・インラインコメント・失敗時のフォールバック) で PR ${pr.url} に投稿してください。これがユーザーの投稿承認であり、追加の確認は不要です。
 
@@ -221,6 +226,7 @@ ${decisionLines(findings, decisions)}
   - 2 段落目: 「🤔💭 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 投稿しない。
 - 投稿対象が 0 件で、Approve もコード確認の表明もない場合は何も投稿しない。
+- ${NO_DUPLICATE}
 - 完了後、最終回答の末尾に次を必ず出力する。投稿に失敗した場合は posted を false にし、error に理由を入れる。
 
 <review-board-posted>
@@ -228,12 +234,14 @@ ${decisionLines(findings, decisions)}
 </review-board-posted>`;
 }
 
+// 番号だけだと振り直した場合に取り違えるので、指摘の要約も添える
 function decisionLines(items, decisions) {
   return items.map((f) => {
     const d = decisions[f.no] || {};
     const verdict = d.verdict === 'agree' ? '同意' : '非同意';
     const reason = d.reason?.trim() ? `理由: ${d.reason.trim()}` : '理由なし';
-    return `- #${f.no} ${verdict} / ${reason}`;
+    const title = f.title || f.comment;
+    return `- #${f.no}${title ? `「${title}」` : ''} ${verdict} / ${reason}`;
   }).join('\n');
 }
 
@@ -281,6 +289,7 @@ ${decisionLines(items, decisions)}
   2. この PR が Closes する issue の sub-issue として紐付ける。
   3. 元のスレッドに、作成した issue の URL を含めて返信する。
 - 計画にない指摘には触れない。resolve はしない。force-push はしない。
+- ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
 }
 
@@ -300,6 +309,7 @@ ${decisionLines(findings, decisions)}
 ## ルール
 - 非同意の指摘は投稿も修正もしない。
 - 同意が 0 件なら何もしない。
+- ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
 }
 
@@ -311,6 +321,7 @@ function buildCommentApplyPrompt(pr) {
 - ユーザーのコメントで指示された内容だけ対応する。指示が無いスレッドには触れない。
 - 返信はユーザーのコメントと重複させず、対応したコミット SHA を含める。
 - resolve はしない。force-push はしない。
+- ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
 }
 
@@ -339,9 +350,9 @@ function extractTagJson(text, tag) {
 }
 
 // Claude Code のセッション内でサーバーを起動した場合、親セッションの環境変数を引き継ぐと
-// 入れ子起動として拒否されるため取り除く (CLAUDE_CONFIG_DIR はユーザー設定なので残す)
+// 入れ子起動として拒否されるため取り除く (CLAUDE_CONFIG_DIR と Bedrock / Vertex などの接続先指定はユーザー設定なので残す)
 function childEnv(env) {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR'));
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_USE_')));
 }
 
 // 未指定だとサブエージェント (Explore など) は Haiku で動くので、設定のモデルに揃える
@@ -359,6 +370,14 @@ function splitArgs(str) {
   let m;
   while ((m = re.exec(str || ''))) out.push(m[1] ?? m[2] ?? m[3]);
   return out;
+}
+
+// 判断は no をキーに保存するので、Claude が番号を重複・欠落させたら 1 から振り直す
+function normalizeNos(items) {
+  if (!Array.isArray(items)) return null;
+  const nos = items.map((f) => f.no);
+  if (nos.every((n) => n != null && n !== '') && new Set(nos.map(String)).size === nos.length) return items;
+  return items.map((f, i) => ({ ...f, no: i + 1 }));
 }
 
 function canDecideAll(findings, decisions) {
@@ -521,6 +540,8 @@ async function refreshFromGitHub() {
   // 個人リポジトリなどを混ぜないよう、設定に登録したリポジトリの PR だけ扱う (未登録なら全件)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
   state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n.number && registered(n)), data.viewer.login);
+  // ponytail: ページングせず 1 ページだけ取る。上限を超えたら画面で知らせる (超えるようなら after でページングする)
+  state.truncated = ['open', 'merged', 'mine'].some((k) => data[k] && data[k].issueCount > data[k].nodes.length);
   state.lastFetchedAt = Date.now();
   state.fetchError = null;
   saveState();
@@ -679,10 +700,21 @@ async function periodIssues(url, from, refresh) {
   ));
 }
 
+// 設定として知っている項目だけを、既定値と同じ型のときに受け付ける (型違いで後の処理が落ちないように)
+function sanitizeConfig(body) {
+  const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
+  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v))));
+}
+
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
 function pollIntervalMs(minutes) {
   const m = Number(minutes);
   return (m >= 1 ? m : DEFAULT_CONFIG.pollMinutes) * 60 * 1000;
+}
+
+// 設定欄を空にすると 0 になり、キューが二度と動かなくなるので既定値に戻す
+function concurrencyLimit(n) {
+  return Math.max(1, Math.floor(Number(n)) || DEFAULT_CONFIG.maxConcurrent);
 }
 
 // 開始 > 終了なら日をまたぐ時間帯 (例: 22〜6) として扱う
@@ -732,6 +764,21 @@ function logLines(text, limit = 50) {
   return lines.slice(-limit);
 }
 
+// ログ画面は直近の行しか出さないので、3 秒ごとにファイル全体を読まないよう末尾だけ読む (途中で切れた先頭行は捨てる)
+function readTail(file, bytes = 1024 * 1024) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const { size } = fs.fstatSync(fd);
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    const text = buf.toString('utf8');
+    return start ? text.slice(text.indexOf('\n') + 1) : text;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 // stdout/stderr をファイルに書き出した claude の結果を読む。合わせて .log にまとめ、元ファイルは消す
 function readRun(dir, logName, code) {
   const base = path.join(dir, logName);
@@ -752,6 +799,21 @@ function readRun(dir, logName, code) {
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
 }
 
+// 終わった実行の .log は溜まり続けるので古いものを消す (実行中の .out / .err は触らない)
+const LOG_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+function pruneLogs(dir, now) {
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const file = path.join(dir, name);
+    if (name.endsWith('.log') && now - fs.statSync(file).mtimeMs > LOG_KEEP_MS) fs.rmSync(file, { force: true });
+  }
+}
+
 function isAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -761,11 +823,30 @@ function isAlive(pid) {
   }
 }
 
-// ponytail: PID が再利用されると無関係なプロセスの終了まで待つ。問題になったら開始時刻も照合する
+// サーバー・マシンの再起動後は保存した PID が別のプロセスに再利用されていることがある。
+// 無関係なプロセスの終了を待ったり止めたりしないよう、まだ claude であることも確かめる
+function isClaudeRun(pid) {
+  if (!isAlive(pid)) return false;
+  try {
+    return /claude/.test(execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }));
+  } catch {
+    return false;
+  }
+}
+
+// detached で起動した claude はプロセスグループのリーダーなので、グループごと止めて Bash ツールの子プロセスも残さない
+function killRun(pid) {
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    process.kill(pid, 'SIGTERM');
+  }
+}
+
 function waitForExit(pid) {
   return new Promise((resolve) => {
     const timer = setInterval(() => {
-      if (isAlive(pid)) return;
+      if (isClaudeRun(pid)) return;
       clearInterval(timer);
       resolve();
     }, 5000);
@@ -785,7 +866,8 @@ function runClaude(prompt, { key, cwd, resume, logName }) {
     const child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
     fs.closeSync(out);
     fs.closeSync(err);
-    if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd } });
+    // lastLog: 実行が終わった後も画面からログを見られるよう残す (タグの再出力はおまけなので本体のログを残す)
+    if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
     child.on('error', (e) => resolve({ ok: false, error: e.message }));
     child.on('close', (code) => resolve(readRun(LOG_DIR, logName, code)));
   });
@@ -793,9 +875,10 @@ function runClaude(prompt, { key, cwd, resume, logName }) {
 
 // claude -p の result は最後のメッセージだけなので、サブエージェントの完了通知などで回答が続くと
 // 先に出力したタグが落ちる。その場合は同じセッションを 1 回だけ再開してタグを再出力させる
+// opts.cancelled: 最初の実行中にキャンセルされたら再開しない
 async function runForTag(tag, prompt, opts, run = runClaude) {
   const res = await run(prompt, opts);
-  if (!res.ok || !res.sessionId || extractTagJson(res.result, tag)) return res;
+  if (!res.ok || !res.sessionId || extractTagJson(res.result, tag) || opts.cancelled?.()) return res;
   const retry = await run(`直前までに出力した <${tag}> ブロックを、内容を変えずにもう一度そのまま出力してください。まだ出力していなければ、指示どおりの形式で出力してください。`, {
     ...opts,
     resume: res.sessionId,
@@ -806,12 +889,14 @@ async function runForTag(tag, prompt, opts, run = runClaude) {
   return { ...res, usage, sessionId: retry.sessionId || res.sessionId, result: `${res.result}\n\n${retry.result}` };
 }
 
+const newRunId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 function logName(key, kind) {
   return `${key.replace(/[^\w.-]+/g, '_')}-${kind}-${Date.now()}`;
 }
 
 function pump() {
-  for (let i = 0; i < queue.length && running < config.maxConcurrent; ) {
+  for (let i = 0; i < queue.length && running < concurrencyLimit(config.maxConcurrent); ) {
     const job = queue[i];
     if (job.repo && busyRepos.has(job.repo)) {
       i++;
@@ -828,11 +913,13 @@ function pump() {
   }
 }
 
-function finishReview(key, cwd, res) {
+// キャンセル後にやり直した場合、前の実行の結果で新しい実行の状態を上書きしないよう runId で見分ける
+function finishReview(key, cwd, res, runId) {
+  const stale = runId && state.prs[key]?.runId !== runId;
   // キャンセル・失敗時も消費したトークンは計上する
-  updateEntry(key, { run: null, usage: addUsage(state.prs[key]?.usage, res.usage) });
+  updateEntry(key, { ...(!stale && { run: null }), usage: addUsage(state.prs[key]?.usage, res.usage) });
   // キャンセル済みなら結果を捨てる
-  if (state.prs[key]?.status !== 'reviewing') return;
+  if (stale || state.prs[key]?.status !== 'reviewing') return;
   if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || E('reviewFailed') });
   const parsed = extractTagJson(res.result, 'review-board-findings');
   updateEntry(key, {
@@ -841,7 +928,7 @@ function finishReview(key, cwd, res) {
     cwd,
     raw: res.result,
     summary: parsed?.summary || null,
-    findings: Array.isArray(parsed?.findings) ? parsed.findings : null,
+    findings: normalizeNos(parsed?.findings),
     error: parsed ? null : E('findingsParseFailed'),
     reviewedAt: Date.now(),
   });
@@ -860,10 +947,11 @@ function enqueueReview(key) {
   const entry = state.prs[key];
   const mapping = config.repos[entry.pr.repo];
   const cwd = mapping.cwd || config.workdir;
-  updateEntry(key, { status: 'queued', error: null, findings: null, summary: null, raw: null, decisions: {} });
+  const runId = newRunId();
+  updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await runForTag('review-board-findings', buildReviewPrompt(entry.pr, mapping), { key, cwd, logName: logName(key, 'review') }));
+    finishReview(key, cwd, await runForTag('review-board-findings', buildReviewPrompt(entry.pr, mapping), { key, cwd, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
   } });
   pump();
 }
@@ -888,7 +976,7 @@ function cancelReview(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
   const pid = state.prs[key]?.run?.pid;
-  if (pid && isAlive(pid)) process.kill(pid, 'SIGTERM');
+  if (pid && isClaudeRun(pid)) killRun(pid);
   updateEntry(key, { status: 'requested', error: null });
 }
 
@@ -909,11 +997,12 @@ function enqueuePost(key, decisions, approve, humanRead) {
 
 // ---------- 自分の PR (レビューを受ける) ----------
 
-function finishMine(key, cwd, res) {
-  updateEntry(key, { run: null, usage: addUsage(state.mine[key]?.usage, res.usage) });
+function finishMine(key, cwd, res, runId) {
+  const stale = runId && state.mine[key]?.runId !== runId;
+  updateEntry(key, { ...(!stale && { run: null }), usage: addUsage(state.mine[key]?.usage, res.usage) });
   const entry = state.mine[key];
   // キャンセル済みなら結果を捨てる
-  if (entry?.status !== 'running') return;
+  if (stale || entry?.status !== 'running') return;
   if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || E('runFailed') });
   const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan');
   const items = entry.mode === 'self' ? parsed?.findings : parsed?.items;
@@ -923,7 +1012,7 @@ function finishMine(key, cwd, res) {
     cwd,
     raw: res.result,
     summary: parsed?.summary || null,
-    findings: Array.isArray(items) ? items : null,
+    findings: normalizeNos(items),
     error: parsed ? null : E('resultParseFailed'),
   });
 }
@@ -943,10 +1032,11 @@ function enqueueMine(key, mode) {
   const mapping = config.repos[entry.pr.repo];
   const cwd = mapping.cwd || config.workdir;
   const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }) : buildFixPlanPrompt(entry.pr, mapping);
-  updateEntry(key, { status: 'queued', mode, error: null, findings: null, summary: null, raw: null, decisions: {} });
+  const runId = newRunId();
+  updateEntry(key, { status: 'queued', mode, runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await runForTag(mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan', prompt, { key, cwd, logName: logName(key, mode) }));
+    finishMine(key, cwd, await runForTag(mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan', prompt, { key, cwd, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
   } });
   pump();
 }
@@ -967,7 +1057,7 @@ function cancelMine(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
   const pid = state.mine[key]?.run?.pid;
-  if (pid && isAlive(pid)) process.kill(pid, 'SIGTERM');
+  if (pid && isClaudeRun(pid)) killRun(pid);
   updateEntry(key, { status: 'idle', error: null });
 }
 
@@ -1016,6 +1106,7 @@ function boardPayload() {
     viewer: state.viewer,
     lastFetchedAt: state.lastFetchedAt,
     fetchError: state.fetchError,
+    truncated: state.truncated,
     prs: Object.entries(state.prs).map(([key, e]) => ({ key, ...e })),
     mine: Object.entries(state.mine).map(([key, e]) => ({ key, ...e })),
     config,
@@ -1048,10 +1139,13 @@ async function handle(req, res) {
   }
   if (req.method === 'GET' && url.pathname === '/api/log') {
     const key = url.searchParams.get('key');
-    const run = (state.prs[key] || state.mine[key])?.run;
+    const entry = state.prs[key] || state.mine[key];
+    const run = entry?.run;
+    // 実行中は書き込み途中の .out、終わった後は readRun がまとめた .log を読む
+    const file = run ? `${run.logName}.out` : entry?.lastLog ? `${entry.lastLog}.log` : null;
     let text = '';
     try {
-      if (run) text = fs.readFileSync(path.join(LOG_DIR, `${run.logName}.out`), 'utf8');
+      if (file) text = readTail(path.join(LOG_DIR, file));
     } catch {}
     return send(res, 200, { running: !!run, lines: logLines(text) });
   }
@@ -1082,7 +1176,7 @@ async function handle(req, res) {
 
   const body = await readBody(req);
   if (req.method === 'PUT' && url.pathname === '/api/config') {
-    config = { ...config, ...body };
+    config = { ...config, ...sanitizeConfig(body) };
     writeJson(CONFIG_FILE, config);
     pump();
     schedulePoll();
@@ -1157,6 +1251,8 @@ async function handle(req, res) {
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/dismiss') {
+    // 実行中に消すと claude は動き続け、投稿中なら結果も記録されない
+    if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: E('running') });
     delete state.prs[body.key];
     saveState();
     return send(res, 200, { ok: true });
@@ -1172,7 +1268,7 @@ function main() {
   const requeue = [];
   for (const [key, e] of Object.entries(state.prs)) {
     if ((e.status === 'reviewing' || e.status === 'posting') && e.run) {
-      recoverRun(e.run, (res) => (e.status === 'reviewing' ? finishReview(key, e.run.cwd, res) : finishPost(key, res)));
+      recoverRun(e.run, (res) => (e.status === 'reviewing' ? finishReview(key, e.run.cwd, res, e.runId) : finishPost(key, res)));
       continue;
     }
     if (e.status === 'queued' || e.status === 'reviewing') {
@@ -1183,7 +1279,7 @@ function main() {
   }
   for (const [key, e] of Object.entries(state.mine)) {
     if ((e.status === 'running' || e.status === 'applying') && e.run) {
-      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.cwd, res) : finishApply(key, res)), e.pr.repo);
+      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.cwd, res, e.runId) : finishApply(key, res)), e.pr.repo);
       continue;
     }
     if (e.status === 'queued' || e.status === 'running') {
@@ -1200,6 +1296,8 @@ function main() {
     state.fetchError = e.message;
   });
   schedulePoll();
+  pruneLogs(LOG_DIR, Date.now());
+  setInterval(() => pruneLogs(LOG_DIR, Date.now()), 24 * 60 * 60 * 1000);
 
   http
     .createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
@@ -1208,4 +1306,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { readTail, isClaudeRun, pruneLogs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
