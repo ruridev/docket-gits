@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS } = require('./server');
+const { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -242,6 +242,8 @@ test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信�
   assert.match(prompt, /^\/review-fix 3 --repo api\n/);
   assert.match(prompt, /コミット・push・返信はまだ行わない/);
   assert.match(prompt, /<review-board-fix-plan>/);
+  assert.match(prompt, /category を split にし/);
+  assert.match(prompt, /category を followup にし/);
 });
 
 test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済みとして push・返信させる', () => {
@@ -250,6 +252,9 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済み
   assert.match(fix, /- #1 同意 \/ 理由なし/);
   assert.match(fix, /- #2 非同意 \/ 理由: 仕様どおり/);
   assert.match(fix, /確認ゲートの承認/);
+  assert.match(fix, /split に同意した指摘/);
+  assert.match(fix, /Draft PR を作成する/);
+  assert.match(fix, /sub-issue として紐付ける/);
   assert.match(fix, /<review-board-applied>/);
   const self = buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], { 1: { verdict: 'agree' } });
   assert.match(self, /event: COMMENT/);
@@ -294,6 +299,19 @@ test('pollIntervalMs: 分をミリ秒にし、1 分未満や不正値は既定�
   assert.equal(pollIntervalMs(10), 10 * 60 * 1000);
   assert.equal(pollIntervalMs('2'), 2 * 60 * 1000);
   for (const v of [0, -1, '', undefined, 'abc']) assert.equal(pollIntervalMs(v), 5 * 60 * 1000);
+});
+
+test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎと終日も扱う', () => {
+  const at = (h) => new Date(2026, 9, 16, h, 30);
+  assert.equal(inPollHours(at(8), 9, 19), false);
+  assert.equal(inPollHours(at(9), 9, 19), true);
+  assert.equal(inPollHours(at(18), 9, 19), true);
+  assert.equal(inPollHours(at(19), 9, 19), false);
+  assert.equal(inPollHours(at(23), 22, 6), true);
+  assert.equal(inPollHours(at(5), 22, 6), true);
+  assert.equal(inPollHours(at(12), 22, 6), false);
+  assert.equal(inPollHours(at(3), 0, 0), true);
+  assert.equal(inPollHours(at(3), '9', '19'), false);
 });
 
 const { parseProjectUrl, detectFields, barRange, sprintTree } = require('./server');
@@ -373,3 +391,32 @@ test('pickIterations: 現在と前後 N 個に絞り、未来は issue がある
   // 件数を数える前は未来をすべて候補にする
   assert.deepEqual(pickIterations(all.map((i) => ({ ...i, count: undefined })), '2026-10-16', { past: 2, future: Infinity }).map((i) => i.id), ['f3', 'f2', 'f1', 'now', 'p1', 'p2']);
 });
+
+const { periodAt, periodWindows, periodQueries } = require('./server');
+
+test('periodAt: 週は月曜始まり、2 週は 2024-01-01 起点、月はカレンダーどおり', () => {
+  assert.deepEqual(periodAt('2026-10-16', 'week'), { id: '2026-10-12', title: '10/12 からの週', startDate: '2026-10-12', endDate: '2026-10-18' });
+  assert.equal(periodAt('2026-10-12', 'week').startDate, '2026-10-12');
+  assert.equal(periodAt('2026-10-18', 'week').startDate, '2026-10-12');
+  // 2026-10-12 は 2024-01-01 から 1015 日 (= 14 × 72 + 7) なので、2 週の区切りは 10/5 – 10/18
+  assert.deepEqual([periodAt('2026-10-16', '2week').startDate, periodAt('2026-10-16', '2week').endDate], ['2026-10-05', '2026-10-18']);
+  assert.equal(periodAt('2023-12-31', '2week').startDate, '2023-12-18');
+  assert.deepEqual(periodAt('2026-02-10', 'month'), { id: '2026-02-01', title: '2026年2月', startDate: '2026-02-01', endDate: '2026-02-28' });
+  assert.equal(periodAt('2026-12-31', 'month').endDate, '2026-12-31');
+});
+
+test('periodWindows: 未来 → 今 → 過去 の順に並べる', () => {
+  assert.deepEqual(periodWindows('2026-01-15', 'month', { past: 2, future: 1 }).map((p) => p.id), ['2026-02-01', '2026-01-01', '2025-12-01', '2025-11-01']);
+  assert.deepEqual(periodWindows('2026-10-16', 'week', { past: 1, future: 0 }).map((p) => p.id), ['2026-10-12', '2026-10-05']);
+});
+
+test('periodQueries: 期間と重なるもの、片方の日付だけ期間内のもの', () => {
+  const p = { startDate: '2026-10-01', endDate: '2026-10-31' };
+  assert.deepEqual(periodQueries('開始日', '終了日', p), [
+    '"開始日":<=2026-10-31 "終了日":>=2026-10-01',
+    'no:"開始日" "終了日":2026-10-01..2026-10-31',
+    'no:"終了日" "開始日":2026-10-01..2026-10-31',
+  ]);
+  assert.deepEqual(periodQueries(null, '期限', p), ['"期限":2026-10-01..2026-10-31']);
+});
+

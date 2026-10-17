@@ -20,6 +20,9 @@ const DEFAULT_CONFIG = {
   model: '',
   effort: '',
   pollMinutes: 5,
+  // GitHub の自動取得はこの時間帯 (開始時 <= 時 < 終了時) だけ行う。同じ値なら終日
+  pollStartHour: 9,
+  pollEndHour: 19,
   // ブラウザが /api/board を取り直す間隔
   refreshSeconds: 5,
   // マージ済みでも自分のレビュー依頼が残っている PR を何日前まで表示するか (0 で非表示)
@@ -30,11 +33,13 @@ const DEFAULT_CONFIG = {
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
   // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
   repos: {},
-  // スプリント画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
+  // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
   projects: [],
   // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
   sprintPast: 1,
   sprintFuture: 1,
+  // ロードマップの期間別の 1 区切り: week / 2week / month
+  roadmapPeriod: 'month',
 };
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
@@ -242,10 +247,12 @@ function buildFixPlanPrompt(pr, mapping) {
 - 対象PR: ${pr.url}
 - ユーザーへの確認・質問はできません。この実行では指摘の取得・ブランチのチェックアウト・分類までを行い、コードの修正・コミット・push・返信はまだ行わないでください。
 - 最終回答の末尾に、指摘ごとの対応計画を次の形式で必ず出力してください。未対応の指摘が 0 件なら items は空配列にしてください。
+- レビュアーが別 PR への分割を求めた、または了承した指摘は category を split にし、plan に「この PR から取り除く変更 (なければ なし)」「新しい PR の内容」「新しいブランチの base (この PR の base か、この PR のブランチか)」を書いてください。
+- この PR では対応せず後続で対応することにレビュアーが同意した、または求めた指摘 (この PR の変更は不要) は category を followup にし、plan に後続 issue のタイトルと内容を書いてください。
 - 結果として読み取るのは最後のメッセージだけです。サブエージェントの完了通知などで回答が続いた場合も、最後のメッセージにこのブロックを省略せず再掲してください。
 
 <review-board-fix-plan>
-{"summary":"全体の対応方針(1〜3文)","items":[{"no":1,"category":"fix / reply / defer","author":"指摘者の login","url":"元コメントの URL","path":"ファイルパス or null","line":行番号 or null,"comment":"指摘内容の要約","plan":"修正内容 (fix のみ。それ以外は null)","reply":"返信文ドラフト(Markdown)"}]}
+{"summary":"全体の対応方針(1〜3文)","items":[{"no":1,"category":"fix / reply / defer / split / followup","author":"指摘者の login","url":"元コメントの URL","path":"ファイルパス or null","line":行番号 or null,"comment":"指摘内容の要約","plan":"修正内容 (fix / split / followup のみ。それ以外は null)","reply":"返信文ドラフト(Markdown)"}]}
 </review-board-fix-plan>`;
 }
 
@@ -259,6 +266,15 @@ ${decisionLines(items, decisions)}
 - 同意: 計画どおり修正・返信する。理由が書かれていれば、その内容を反映する。
 - 非同意 (理由あり): 計画どおりには対応しない。理由に沿って対応を決め直す (修正方針の変更、または返信のみ)。返信はユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 修正も返信もしない。
+- split に同意した指摘は次の順に行う。
+  1. この PR に取り除く変更があれば取り除き、コミットして push する。
+  2. 計画の base から新しいブランチを切り、新しい PR の内容を実装してコミットし push する。
+  3. 対象リポジトリの AGENTS.md の規約に従い、Draft PR を作成する。issue の作成・既存 issue との紐付けも規約に従う。
+  4. 元のスレッドに、新しい PR の URL (と 1 のコミット SHA) を含めて返信する。
+- followup に同意した指摘は、コードを変更せず次を行う。
+  1. 対象リポジトリの AGENTS.md の規約に従い、後続 issue を作成する (本文に元の指摘とこの PR の URL を含める)。
+  2. この PR が Closes する issue の sub-issue として紐付ける。
+  3. 元のスレッドに、作成した issue の URL を含めて返信する。
 - 計画にない指摘には触れない。resolve はしない。force-push はしない。
 - ${APPLIED_TAG}`;
 }
@@ -362,6 +378,39 @@ function pickIterations(iterations, today, { past, future }) {
     ...asc.filter((i) => i.startDate <= today && today <= i.endDate),
     ...asc.filter((i) => i.startDate > today && i.count !== 0).slice(0, future),
   ].reverse();
+}
+
+// 期間別の区切り。週は月曜始まり、2 週は 2024-01-01 (月曜) から 2 週ずつ、月はカレンダーどおり
+const PERIOD_UNITS = { week: 7, '2week': 14, month: 0 };
+function periodAt(date, unit) {
+  const [y, m] = date.split('-').map(Number);
+  if (!PERIOD_UNITS[unit]) {
+    const startDate = `${date.slice(0, 7)}-01`;
+    return { id: startDate, title: `${y}年${m}月`, startDate, endDate: addDays(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10), -1) };
+  }
+  const days = Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse('2024-01-01T00:00:00Z')) / 86400000);
+  const startDate = addDays('2024-01-01', days - (((days % PERIOD_UNITS[unit]) + PERIOD_UNITS[unit]) % PERIOD_UNITS[unit]));
+  const [, sm, sd] = startDate.split('-').map(Number);
+  return { id: startDate, title: `${sm}/${sd} からの${unit === 'week' ? '週' : ' 2 週間'}`, startDate, endDate: addDays(startDate, PERIOD_UNITS[unit] - 1) };
+}
+
+// 今日を含む区切りと、過去 past 個・未来 future 個を新しい順に並べる
+function periodWindows(today, unit, { past, future }) {
+  const list = [periodAt(today, unit)];
+  for (let i = 0; i < past; i++) list.push(periodAt(addDays(list.at(-1).startDate, -1), unit));
+  for (let i = 0; i < future; i++) list.unshift(periodAt(addDays(list[0].endDate, 1), unit));
+  return list;
+}
+
+// 期間と重なる issue の検索条件。日付が片方しかない issue はその日付が期間内なら含める
+function periodQueries(start, end, { startDate, endDate }) {
+  const f = JSON.stringify;
+  if (!start || !end) return [`${f(start || end)}:${startDate}..${endDate}`];
+  return [
+    `${f(start)}:<=${endDate} ${f(end)}:>=${startDate}`,
+    `no:${f(start)} ${f(end)}:${startDate}..${endDate}`,
+    `no:${f(end)} ${f(start)}:${startDate}..${endDate}`,
+  ];
 }
 
 // 日付が未設定・スプリント外なら、スプリントの開始日・終了日として扱う (YYYY-MM-DD は文字列比較できる)
@@ -540,55 +589,79 @@ async function projectMeta(url, refresh) {
 }
 
 const SUB_DEPTH = 6;
-async function sprintIssues(url, iterationId, refresh) {
-  const meta = await projectMeta(url, refresh);
-  const sprint = meta.iterations.find((i) => i.id === iterationId);
-  if (!sprint) throw new Error('スプリントが見つかりません');
-  return cached(`sprint:${url}:${iterationId}`, refresh, async () => {
-    const p = parseProjectUrl(url);
-    const names = { sprint: meta.sprint, start: meta.start || '-', end: meta.end || '-' };
-    const issues = new Map();
-    const sprintIds = [];
+// queries のどれかに当たる issue と、その sub issue を SUB_DEPTH 階層まで集めて sprintTree にする
+async function issueTree(url, meta, queries, range) {
+  const p = parseProjectUrl(url);
+  const names = { sprint: meta.sprint || '-', start: meta.start || '-', end: meta.end || '-' };
+  const issues = new Map();
+  const ids = [];
+  for (const q of queries) {
     let after = null;
     do {
       const data = await ghql(`query($login: String!, $number: Int!, $q: String!, $after: String, $sprint: String!, $start: String!, $end: String!) { ${projectRoot(p)} {
         items(first: 50, after: $after, query: $q) { pageInfo { hasNextPage endCursor } nodes { content { ...iss } } }
       } } }
-      ${ISSUE_FIELDS}`, { login: p.login, number: p.number, q: filterQuery(meta.sprint, sprint.title), ...(after && { after }), ...names });
+      ${ISSUE_FIELDS}`, { login: p.login, number: p.number, q, ...(after && { after }), ...names });
       const page = data[p.owner].projectV2.items;
       for (const n of page.nodes) {
-        if (!n.content?.id) continue; // Draft issue・PR は対象外
+        if (!n.content?.id || issues.has(n.content.id)) continue; // Draft issue・PR は対象外
         issues.set(n.content.id, normIssue(n.content, meta.id));
-        sprintIds.push(n.content.id);
+        ids.push(n.content.id);
       }
       after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
     } while (after);
+  }
+  return expandTree(ids, issues, names, meta.id, range);
+}
 
-    // sub issue を 1 階層ずつまとめて取る
-    let frontier = [...issues.values()].filter((i) => i.subCount > 0).map((i) => i.id);
-    for (let depth = 0; depth < SUB_DEPTH && frontier.length; depth++) {
-      const next = [];
-      for (let i = 0; i < frontier.length; i += 30) {
-        const ids = frontier.slice(i, i + 30);
-        const data = await ghql(`query($sprint: String!, $start: String!, $end: String!) {
-          nodes(ids: ${JSON.stringify(ids)}) { ... on Issue { id subIssues(first: 100) { nodes { ...iss } } } }
-        }
-        ${ISSUE_FIELDS}`, names);
-        for (const parent of data.nodes) {
-          if (!parent) continue;
-          issues.get(parent.id).childIds = parent.subIssues.nodes.map((c) => c.id);
-          for (const c of parent.subIssues.nodes) {
-            if (issues.has(c.id)) continue;
-            const child = normIssue(c, meta.id);
-            issues.set(c.id, child);
-            if (child.subCount > 0) next.push(c.id);
-          }
+// ids の issue に sub issue を SUB_DEPTH 階層まで足して sprintTree にする
+async function expandTree(ids, issues, names, projectId, range) {
+  // sub issue を 1 階層ずつまとめて取る
+  let frontier = [...issues.values()].filter((i) => i.subCount > 0).map((i) => i.id);
+  for (let depth = 0; depth < SUB_DEPTH && frontier.length; depth++) {
+    const next = [];
+    for (let i = 0; i < frontier.length; i += 30) {
+      const chunk = frontier.slice(i, i + 30);
+      const data = await ghql(`query($sprint: String!, $start: String!, $end: String!) {
+        nodes(ids: ${JSON.stringify(chunk)}) { ... on Issue { id subIssues(first: 100) { nodes { ...iss } } } }
+      }
+      ${ISSUE_FIELDS}`, names);
+      for (const parent of data.nodes) {
+        if (!parent) continue;
+        issues.get(parent.id).childIds = parent.subIssues.nodes.map((c) => c.id);
+        for (const c of parent.subIssues.nodes) {
+          if (issues.has(c.id)) continue;
+          const child = normIssue(c, projectId);
+          issues.set(c.id, child);
+          if (child.subCount > 0) next.push(c.id);
         }
       }
-      frontier = next;
     }
-    return { sprint, roots: sprintTree(sprintIds, issues, sprint), fetchedAt: Date.now() };
-  });
+    frontier = next;
+  }
+  return sprintTree(ids, issues, range);
+}
+
+async function sprintIssues(url, iterationId, refresh) {
+  const meta = await projectMeta(url, refresh);
+  const sprint = meta.iterations.find((i) => i.id === iterationId);
+  if (!sprint) throw new Error('スプリントが見つかりません');
+  return cached(`sprint:${url}:${iterationId}`, refresh, async () => (
+    { sprint, roots: await issueTree(url, meta, [filterQuery(meta.sprint, sprint.title)], sprint), fetchedAt: Date.now() }
+  ));
+}
+
+const periodRange = () => ({ unit: PERIOD_UNITS[config.roadmapPeriod] !== undefined ? config.roadmapPeriod : 'month', past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) });
+
+async function periodIssues(url, from, refresh) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw new Error('期間の指定が不正です');
+  const meta = await projectMeta(url, refresh);
+  if (!meta.start && !meta.end) throw new Error('このプロジェクトには Date フィールドがありません');
+  const { unit } = periodRange();
+  const period = periodAt(from, unit);
+  return cached(`period:${url}:${unit}:${period.id}`, refresh, async () => (
+    { sprint: period, roots: await issueTree(url, meta, periodQueries(meta.start, meta.end, period), period), fetchedAt: Date.now() }
+  ));
 }
 
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
@@ -597,12 +670,20 @@ function pollIntervalMs(minutes) {
   return (m >= 1 ? m : DEFAULT_CONFIG.pollMinutes) * 60 * 1000;
 }
 
+// 開始 > 終了なら日をまたぐ時間帯 (例: 22〜6) として扱う
+function inPollHours(date, start, end) {
+  const h = date.getHours(), s = Number(start), e = Number(end);
+  if (s === e) return true;
+  return s < e ? h >= s && h < e : h >= s || h < e;
+}
+
 let pollTimer = null;
 function schedulePoll() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => refreshFromGitHub().catch((e) => {
-    state.fetchError = e.message;
-  }), pollIntervalMs(config.pollMinutes));
+  pollTimer = setInterval(() => {
+    if (!inPollHours(new Date(), config.pollStartHour, config.pollEndHour)) return;
+    refreshFromGitHub().catch((e) => { state.fetchError = e.message; });
+  }, pollIntervalMs(config.pollMinutes));
 }
 
 // ---------- claude 実行 ----------
@@ -968,8 +1049,15 @@ async function handle(req, res) {
     const project = url.searchParams.get('project');
     const iteration = url.searchParams.get('iteration');
     const refresh = url.searchParams.get('refresh') === '1';
-    if (!config.projects.includes(project)) return send(res, 404, { error: 'プロジェクトが設定にありません' });
     try {
+      if (!config.projects.includes(project)) return send(res, 404, { error: 'プロジェクトが設定にありません' });
+      if (url.searchParams.get('mode') === 'period') {
+        const id = url.searchParams.get('id');
+        if (id) return send(res, 200, await periodIssues(project, id, refresh));
+        const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        const { unit, ...range } = periodRange();
+        return send(res, 200, { meta: await projectMeta(project, refresh), periods: periodWindows(today, unit, range) });
+      }
       if (!iteration) return send(res, 200, { meta: await projectMeta(project, refresh) });
       return send(res, 200, await sprintIssues(project, iteration, refresh));
     } catch (e) {
@@ -1105,4 +1193,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };
+module.exports = { periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS };
