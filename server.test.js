@@ -395,13 +395,13 @@ test('pickIterations: 現在と前後 N 個に絞り、未来は issue がある
 const { periodAt, periodWindows, periodQueries } = require('./server');
 
 test('periodAt: 週は月曜始まり、2 週は 2024-01-01 起点、月はカレンダーどおり', () => {
-  assert.deepEqual(periodAt('2026-10-16', 'week'), { id: '2026-10-12', title: '10/12 からの週', startDate: '2026-10-12', endDate: '2026-10-18' });
+  assert.deepEqual(periodAt('2026-10-16', 'week'), { id: '2026-10-12', startDate: '2026-10-12', endDate: '2026-10-18' });
   assert.equal(periodAt('2026-10-12', 'week').startDate, '2026-10-12');
   assert.equal(periodAt('2026-10-18', 'week').startDate, '2026-10-12');
   // 2026-10-12 は 2024-01-01 から 1015 日 (= 14 × 72 + 7) なので、2 週の区切りは 10/5 – 10/18
   assert.deepEqual([periodAt('2026-10-16', '2week').startDate, periodAt('2026-10-16', '2week').endDate], ['2026-10-05', '2026-10-18']);
   assert.equal(periodAt('2023-12-31', '2week').startDate, '2023-12-18');
-  assert.deepEqual(periodAt('2026-02-10', 'month'), { id: '2026-02-01', title: '2026年2月', startDate: '2026-02-01', endDate: '2026-02-28' });
+  assert.deepEqual(periodAt('2026-02-10', 'month'), { id: '2026-02-01', startDate: '2026-02-01', endDate: '2026-02-28' });
   assert.equal(periodAt('2026-12-31', 'month').endDate, '2026-12-31');
 });
 
@@ -420,3 +420,23 @@ test('periodQueries: 期間と重なるもの、片方の日付だけ期間内�
   assert.deepEqual(periodQueries(null, '期限', p), ['"期限":2026-10-01..2026-10-31']);
 });
 
+
+const { withOutputLang } = require('./server');
+
+test('withOutputLang: 書かせる文章の言語を指示し、未知の言語は日本語にする', () => {
+  assert.match(withOutputLang('p', 'ko'), /^p\n[\s\S]*すべて韓国語で書く/);
+  assert.match(withOutputLang('p', 'en'), /すべて英語で書く/);
+  assert.match(withOutputLang('p', undefined), /すべて日本語で書く/);
+});
+
+test('i18n: 各言語のキーがそろい、サーバーのエラーコードがすべて翻訳されている', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const I18N = new Function(`return ${/const I18N = (\{[\s\S]*?\n\});/.exec(html)[1]}`)();
+  const keys = Object.keys(I18N.ja).sort();
+  for (const l of ['ko', 'en']) assert.deepEqual(Object.keys(I18N[l]).sort(), keys, l);
+  const codes = [...fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8').matchAll(/\bE\('(\w+)'/g)].map((m) => `err.${m[1]}`);
+  assert.ok(codes.length > 20);
+  for (const c of codes) assert.ok(keys.includes(c), c);
+  const used = [...html.matchAll(/\btr\('([\w.]+)'/g)].map((m) => m[1]);
+  for (const k of used) assert.ok(keys.includes(k), k);
+});

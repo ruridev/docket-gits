@@ -34,8 +34,8 @@
   header h1 { font-size: 18px; margin: 0; }
   header .grow { flex: 1; }
   nav.tabs { display: flex; gap: 4px; }
-  nav.tabs a { padding: 4px 12px; border-radius: 6px; color: var(--text); white-space: nowrap; }
-  nav.tabs a.on { background: var(--accent); color: var(--accent-text); }
+  nav.tabs a { padding: 4px 12px; border-bottom: 2px solid transparent; color: var(--text); white-space: nowrap; }
+  nav.tabs a.on { border-bottom-color: var(--accent); }
   nav.tabs a:hover { text-decoration: none; }
   nav.tabs .badge { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; color: #fff; }
   nav.tabs small { opacity: .75; }
@@ -106,6 +106,14 @@
   table.repos input, table.repos select { width: 100%; }
   .form-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
   .form-row input, .form-row textarea, .form-row select { width: 100%; }
+  .settings-body { display: grid; grid-template-columns: 180px 1fr; height: min(640px, calc(100vh - 140px)); }
+  .settings-nav { border-right: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .settings-nav button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 6px; color: var(--muted); }
+  .settings-nav button.on { background: var(--bg); color: var(--text); font-weight: 600; }
+  .settings-pane { overflow: auto; padding: 12px 16px; }
+  .settings-pane:not(.on) { display: none; }
+  .settings-pane h4 { margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .settings-pane > h4:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
   .tip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
   .tip summary { cursor: pointer; font-weight: 600; }
   /* スプリント */
@@ -174,25 +182,27 @@
   @media (max-width: 700px) {
     .board { grid-auto-columns: 85vw; }
     .form-row { grid-template-columns: 1fr; }
+    .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
   }
 </style>
 </head>
 <body>
 <header>
   <h1>Review Board</h1>
-  <nav class="tabs"><a href="#review" data-view="review">レビューする<span class="badges"></span></a><a href="#receive" data-view="receive">レビューを受ける<span class="badges"></span></a><a href="#sprint" data-view="sprint">ロードマップ<small></small></a></nav>
+  <nav class="tabs"><a href="#review" data-view="review"><span data-i18n="tab.review"></span><span class="badges"></span></a><a href="#receive" data-view="receive"><span data-i18n="tab.receive"></span><span class="badges"></span></a><a href="#sprint" data-view="sprint"><span data-i18n="tab.roadmap"></span><small></small></a></nav>
   <span class="grow"></span>
   <span id="viewer"></span>
   <button id="open-tips">Tip</button>
-  <button id="open-settings">設定</button>
+  <button id="open-settings" data-i18n="settings"></button>
 </header>
 <div id="banner"></div>
 <div class="board-bar" id="board-bar">
   <div id="repo-filter" class="sp-people" hidden></div>
-  <button id="stack-order" title="同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)">スタック順</button>
-  <button id="edit-lanes">レーン配置</button>
-  <button id="lane-save" class="primary" hidden>配置を保存</button>
-  <button id="lane-cancel" hidden>キャンセル</button>
+  <button id="stack-order" data-i18n="stackOrder" data-i18n-title="stackOrder.title"></button>
+  <button id="edit-lanes" data-i18n="editLanes"></button>
+  <button id="lane-save" class="primary" hidden data-i18n="laneSave"></button>
+  <button id="lane-cancel" hidden data-i18n="cancel"></button>
   <span style="flex:1"></span>
   <button id="refresh" class="refetch"></button>
 </div>
@@ -202,26 +212,256 @@
 <dialog id="review-dlg"></dialog>
 <dialog id="settings-dlg"></dialog>
 <dialog id="log-dlg">
-  <form method="dialog" class="dlg-head"><h3>Claude の出力</h3><button>閉じる</button></form>
+  <form method="dialog" class="dlg-head"><h3 data-i18n="claudeOutput"></h3><button data-i18n="close"></button></form>
   <pre class="dlg-body log"></pre>
 </dialog>
 <dialog id="tips-dlg">
-  <form method="dialog" class="dlg-head"><h3>Tip</h3><button>閉じる</button></form>
+  <form method="dialog" class="dlg-head"><h3>Tip</h3><button data-i18n="close"></button></form>
   <div class="dlg-body">
-    <details class="tip">
-      <summary>GitHub のページを右側に固定して開く</summary>
-      <p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p>
-      <ol>
-        <li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li>
-        <li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li>
-        <li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li>
-      </ol>
-      <p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>
-    </details>
+    <details class="tip" data-i18n-html="tips.html"></details>
   </div>
 </dialog>
 
 <script>
+// ---------- 多言語 ----------
+// 画面の言語はブラウザごとに保存する (未設定ならブラウザの言語)。切り替えたら再読み込みする
+// 値は HTML としてそのまま入れるので、ユーザーデータは呼び出し側でエスケープして params に渡す
+const LANGS = { ja: '日本語', ko: '한국어', en: 'English' };
+const lang = (() => {
+  try { const saved = localStorage.getItem('rb-lang'); if (LANGS[saved]) return saved; } catch {}
+  const nav = (navigator.language || '').slice(0, 2);
+  return LANGS[nav] ? nav : 'en';
+})();
+document.documentElement.lang = lang;
+const I18N = {
+  ja: {
+    'tab.review': 'レビューする', 'tab.receive': 'レビューを受ける', 'tab.roadmap': 'ロードマップ', settings: '設定',
+    'stackOrder': 'スタック順', 'stackOrder.title': '同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)',
+    editLanes: 'レーン配置', laneSave: '配置を保存', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'Claude の出力',
+    'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
+    'lane.mine': 'レビュー待ち', 'lane.pending': '指摘あり', 'lane.running': '実行中', 'lane.planned': '判断待ち', 'lane.mergeable': 'マージ可能',
+    'rm.sprint': 'スプリント別', 'rm.period': '期間別',
+    'ago.min': '{n}分前', 'ago.hour': '{n}時間前', 'ago.day': '{n}日前', fetchedAgo: '{ago}に更新', startedAgo: '({ago}に開始)',
+    refreshNow: '今すぐ更新', refetchTitle: 'GitHub から取り直す', fetchFailed: 'GitHub の取得に失敗しました: {msg}', lastFetched: '最終更新: {ago}',
+    repo: 'リポジトリ', author: '作成者', all: 'すべて', none: 'なし',
+    approved: 'Approve 済み', 'approved.only': 'のみ', 'approved.exclude': '除外', 'approved.title': '押すと すべて → のみ → 除外 の順に切り替え',
+    'btn.review': 'レビューする', skillMissing: 'スキル未設定', skip: 'スキップ', 'skip.title': '投稿せずに Done へ移す',
+    queued: '待機中…', confirmCancel: '本当にキャンセルしますか？', reviewing: 'レビュー中…', log: 'ログ',
+    findingsDecide: '指摘 {n} 件 — 判断する', checkRaw: '原文を確認する', posting: '投稿中…', postedReview: '投稿したレビュー',
+    skipped: 'スキップ済み', posted: '投稿済み', 'dismiss.title': 'ボードから消す',
+    'running.self': 'セルフレビュー中…', 'running.fix': '指摘を確認中…', selfReview: 'セルフレビュー', fixComments: '指摘に対応',
+    appliedAgo: '対応済み {ago}', applying: '修正・push・返信中…', stack: 'スタック: ',
+    'rv.pending': 'レビュー待ち', requestRemoved: '依頼解除済み', pending: '未対応の指摘 {n}', 'pending.title': '未解決スレッドのうち、最後の発言が自分以外のもの',
+    'usage.title': 'このPRで使ったトークン (キャッシュ込み) と費用の累計', error: 'エラー',
+    search: '検索', selectAll: 'すべて選択', clearAll: 'すべて解除',
+    noFindings: '指摘はありません。', noOutput: '(出力なし)', agentRaw: 'エージェントの原文', rereview: '再レビュー', decided: '{n} / {total} 判断済み',
+    'humanRead.title': 'AI 任せのノールックレビューを防ぐため、自分でもコードを読んだらチェックしてください', humanRead: 'コードを読みました',
+    approve: 'Approve する', submit: 'コメントする',
+    confirmRereview: 'もう一度押すと判断を破棄して再レビュー', confirmApprove: 'もう一度押すと Approve で投稿', confirmPost: 'もう一度押すと投稿',
+    'ph.agree': '理由・補足 (任意・コメント本文に反映されます)', 'ph.disagree': '非同意の理由 (任意・書くと 🤔💭 付きで投稿されます)',
+    origComment: '元コメント', agree: '同意', disagree: '非同意',
+    'ph.self.agree': '補足 (任意・投稿と修正に反映されます)', 'ph.self.disagree': '非同意の指摘は投稿も修正もしません (メモ欄)',
+    'ph.fix.agree': '補足 (任意・修正と返信に反映されます)', 'ph.fix.disagree': '非同意の理由 (任意・書くとその内容で対応を決め直します。空なら修正も返信もしません)',
+    planFix: '【修正】', planReply: '【返信】', rerunSelf: 'セルフレビューをやり直す', rerunFix: '計画を作り直す',
+    'desc.self': 'セルフレビュー: 同意した指摘を PR に投稿し、修正・push してから、その指摘に返信します。', 'desc.fix': '指摘への対応計画: 同意した計画どおりに修正・push・返信します。',
+    noMineFindings: '対応する指摘はありません。', prevApplyRaw: '前回の対応の原文', confirmed: '指摘内容を確認しました',
+    confirmRerun: 'もう一度押すと判断を破棄してやり直す', confirmPush: 'もう一度押すと push・コメント',
+    unset: '(未設定)', skillPh: '(スキル)', default: '既定', defaultParen: '(既定)', save: '保存',
+    's.repoSkills': 'リポジトリとスキルの対応',
+    's.repoSkills.help': '引数テンプレートで使える値: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}。作業ディレクトリが空なら上の既定値で claude を起動します。スキル一覧は ~/.claude/skills と各作業ディレクトリの .claude/skills から探します。',
+    'th.skill': 'スキル', 'th.args': '引数テンプレート', workdir: '作業ディレクトリ', 'th.fix': '指摘への対応',
+    's.mine': 'レビューを受ける (自分の PR) のスキル',
+    's.mine.help': 'スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;review-board-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。',
+    's.uiLang': '画面の言語', 's.outLang': 'Claude の出力言語', 's.outLang.title': 'Claude が PR に書くコメント・返信や、ボードに出す指摘の言語',
+    's.model': 'モデル', 's.model.title': '空なら claude の既定。サブエージェントも同じモデルで動きます', 's.claudeArgs': 'claude 追加引数',
+    's.mergedDays': 'マージ済み PR の表示日数', 's.refresh': '画面の更新間隔 (秒)', 's.poll': 'GitHub の取得間隔 (分)',
+    's.pollHours': 'GitHub を自動取得する時間帯 (時)', 's.pollHours.title': 'この時間帯の外では GitHub を自動取得しません (手動の更新は可)。開始と終了が同じなら終日',
+    's.concurrent': '同時実行数', 's.authors': 'PR 作成者 (1 行 1 人、空なら全員)', 's.projects': 'ロードマップ画面の GitHub Projects (1 行 1 つ)',
+    's.sprintPast': 'ロードマップに出す過去のスプリント・期間の数', 's.sprintRange.title': '期間別でも同じ数だけ過去・未来の区切りを出します',
+    's.period': 'ロードマップの期間別の区切り', 'unit.week': '1 週', 'unit.2week': '2 週', 'unit.month': '1 か月',
+    's.sprintFuture': '未来のスプリント・期間の数 (スプリントは issue があるものだけ)', 's.repos': 'リポジトリ (1 行 1 つ、owner/name)',
+    'nav.claude': 'Claude の実行', 'nav.github': 'GitHub と作業対象', 'nav.refresh': '更新間隔', 'nav.lang': '言語',
+    'sec.board': 'PR ボード', 'sec.repos': 'リポジトリ', 'sec.screen': '画面', 'sec.fetch': 'GitHub の取得',
+    'sp.noProjects': '設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。', 'sp.count': '{n} 件',
+    future: '未来', current: '現在', past: '過去',
+    'sp.noIteration': 'このプロジェクトには Iteration フィールドがありません。',
+    'sp.emptyPeriod': 'この期間に開始日・終了日が入った issue はありません。', 'sp.emptySprint': 'このスプリントの issue はありません。',
+    loading: '読み込み中…', 'sp.openAll': '▸ すべて開く', 'sp.foldAll': '▾ すべて畳む',
+    'sp.project': 'プロジェクト', 'sp.view': '表示', 'sp.period': '期間', 'sp.sprint': 'スプリント',
+    'sp.refetchTitle': 'キャッシュ (24 時間) を使わず GitHub から取り直す', 'sp.assignee': '担当者', 'sp.rootOnly': '親 issue の担当者で絞る',
+    'sp.barSet': '(設定: {start} – {end})', 'sp.unsetDate': '未設定', 'sp.noDates': '(日付未設定)',
+    'period.week': '{date} からの週', 'period.2week': '{date} からの 2 週間',
+    noOutputYet: 'まだ出力がありません', runEnded: '実行は終了しました',
+    confirmApplyComments: 'PR 上の自分のコメントを指示として修正・push・返信します。よろしいですか？',
+    'err.projectUrlInvalid': 'プロジェクト URL を解析できません: {url}', 'err.sprintNotFound': 'スプリントが見つかりません',
+    'err.periodInvalid': '期間の指定が不正です', 'err.noDateField': 'このプロジェクトには Date フィールドがありません',
+    'err.claudeReadFailed': 'claude の出力を読めません: {message}', 'err.claudeParseFailed': 'claude の出力を解析できません (exit={code}): {stderr}',
+    'err.reviewFailed': 'レビューに失敗しました', 'err.findingsParseFailed': '指摘一覧 (JSON) を取得できませんでした。原文を確認してください',
+    'err.postUnknown': '投稿結果を確認できませんでした', 'err.runFailed': '実行に失敗しました',
+    'err.resultParseFailed': '結果 (JSON) を取得できませんでした。原文を確認してください', 'err.applyUnknown': '対応結果を確認できませんでした。PR を確認してください',
+    'err.projectNotConfigured': 'プロジェクトが設定にありません', 'err.skillMissing': '{repo} のスキルが未設定です', 'err.running': '実行中です',
+    'err.cannotApply': '対応できる状態ではありません', 'err.confirmRequired': '「指摘内容を確認しました」にチェックしてください',
+    'err.undecided': '未判断の指摘があります', 'err.cannotMove': '移動できる状態ではありません', 'err.cannotCancel': 'キャンセルできる状態ではありません',
+    'err.cannotPost': '投稿できる状態ではありません', 'err.cannotSkip': 'スキップできる状態ではありません',
+    'err.restartInterrupted': 'サーバー再起動により中断されました',
+    'err.restartPostInterrupted': 'サーバー再起動により投稿が中断されました。PR を確認してから再実行してください',
+    'err.restartApplyInterrupted': 'サーバー再起動により対応が中断されました。PR を確認してから再実行してください',
+  },
+  ko: {
+    'tab.review': '리뷰하기', 'tab.receive': '리뷰 받기', 'tab.roadmap': '로드맵', settings: '설정',
+    'stackOrder': '스택 순', 'stackOrder.title': '같은 레인 안에서 스택의 부모 → 자식 → 손자 순으로 정렬 (다시 누르면 업데이트 순으로 돌아감)',
+    editLanes: '레인 배치', laneSave: '배치 저장', cancel: '취소', close: '닫기', claudeOutput: 'Claude 출력',
+    'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(rb-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
+    'lane.mine': '리뷰 대기', 'lane.pending': '코멘트 있음', 'lane.running': '실행 중', 'lane.planned': '결정 대기', 'lane.mergeable': '머지 가능',
+    'rm.sprint': '스프린트별', 'rm.period': '기간별',
+    'ago.min': '{n}분 전', 'ago.hour': '{n}시간 전', 'ago.day': '{n}일 전', fetchedAgo: '{ago} 업데이트됨', startedAgo: '({ago} 시작)',
+    refreshNow: '지금 새로고침', refetchTitle: 'GitHub에서 다시 가져오기', fetchFailed: 'GitHub에서 가져오지 못했습니다: {msg}', lastFetched: '마지막 업데이트: {ago}',
+    repo: '저장소', author: '작성자', all: '전체', none: '없음',
+    approved: 'Approve 완료', 'approved.only': '만 보기', 'approved.exclude': '제외', 'approved.title': '누를 때마다 전체 → 만 보기 → 제외 순으로 전환',
+    'btn.review': '리뷰하기', skillMissing: '스킬 미설정', skip: '건너뛰기', 'skip.title': '게시하지 않고 Done으로 이동',
+    queued: '대기 중…', confirmCancel: '정말 취소할까요?', reviewing: '리뷰 중…', log: '로그',
+    findingsDecide: '리뷰 의견 {n}건 — 검토하기', checkRaw: '원문 확인하기', posting: '게시 중…', postedReview: '게시한 리뷰',
+    skipped: '건너뜀', posted: '게시 완료', 'dismiss.title': '보드에서 제거',
+    'running.self': '셀프 리뷰 중…', 'running.fix': '코멘트 확인 중…', selfReview: '셀프 리뷰', fixComments: '코멘트 반영',
+    appliedAgo: '반영 완료 {ago}', applying: '수정·push·답글 중…', stack: '스택: ',
+    'rv.pending': '리뷰 대기', requestRemoved: '리뷰 요청 취소됨', pending: '미반영 코멘트 {n}', 'pending.title': '미해결 스레드 중 마지막 발언이 내가 아닌 것',
+    'usage.title': '이 PR에서 사용한 토큰(캐시 포함)과 비용 누계', error: '오류',
+    search: '검색', selectAll: '모두 선택', clearAll: '모두 해제',
+    noFindings: '리뷰 의견이 없습니다.', noOutput: '(출력 없음)', agentRaw: '에이전트 원문', rereview: '다시 리뷰', decided: '{n} / {total} 결정 완료',
+    'humanRead.title': '코드를 보지 않고 AI에만 맡기는 리뷰를 막기 위해, 직접 코드를 읽었다면 체크하세요', humanRead: '코드를 읽었습니다',
+    approve: 'Approve하기', submit: '코멘트하기',
+    confirmRereview: '한 번 더 누르면 선택을 초기화하고 다시 리뷰', confirmApprove: '한 번 더 누르면 Approve로 게시', confirmPost: '한 번 더 누르면 게시',
+    'ph.agree': '이유·추가 설명 (선택, 코멘트 본문에 반영됨)', 'ph.disagree': '동의하지 않는 이유 (선택, 쓰면 🤔💭와 함께 게시됨)',
+    origComment: '원래 코멘트', agree: '동의', disagree: '동의 안 함',
+    'ph.self.agree': '추가 설명 (선택, 게시와 수정에 반영됨)', 'ph.self.disagree': '동의하지 않은 의견은 게시도 수정도 하지 않습니다 (메모)',
+    'ph.fix.agree': '추가 설명 (선택, 수정과 답글에 반영됨)', 'ph.fix.disagree': '동의하지 않는 이유 (선택, 쓰면 그 내용으로 계획을 다시 세웁니다. 비우면 수정도 답글도 하지 않습니다)',
+    planFix: '【수정】', planReply: '【답글】', rerunSelf: '셀프 리뷰 다시 하기', rerunFix: '계획 다시 만들기',
+    'desc.self': '셀프 리뷰: 동의한 의견을 PR에 게시하고, 수정·push한 뒤 해당 코멘트에 답글을 답니다.', 'desc.fix': '코멘트 반영 계획: 동의한 계획대로 수정·push·답글을 진행합니다.',
+    noMineFindings: '반영할 코멘트가 없습니다.', prevApplyRaw: '이전 반영 원문', confirmed: '리뷰 의견을 확인했습니다',
+    confirmRerun: '한 번 더 누르면 선택을 초기화하고 다시 실행', confirmPush: '한 번 더 누르면 push·코멘트',
+    unset: '(미설정)', skillPh: '(스킬)', default: '기본값', defaultParen: '(기본값)', save: '저장',
+    's.repoSkills': '저장소와 스킬 매핑',
+    's.repoSkills.help': '인자 템플릿에서 쓸 수 있는 값: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. 작업 디렉터리가 비어 있으면 위의 기본값에서 claude를 실행합니다. 스킬 목록은 ~/.claude/skills와 각 작업 디렉터리의 .claude/skills에서 찾습니다.',
+    'th.skill': '스킬', 'th.args': '인자 템플릿', workdir: '작업 디렉터리', 'th.fix': '코멘트 반영',
+    's.mine': '리뷰 받기(내 PR) 스킬',
+    's.mine.help': '스킬이 비어 있으면 해당 버튼을 표시하지 않습니다. 셀프 리뷰용 스킬은 <code>&lt;review-board-findings&gt;</code> 형식의 리뷰 의견 목록을, 반영용 스킬(예: review-fix)은 코멘트별 반영 계획을 반환하도록 지시해서 실행합니다.',
+    's.uiLang': '화면 언어', 's.outLang': 'Claude 출력 언어', 's.outLang.title': 'Claude가 PR에 쓰는 코멘트·답글과 보드에 표시하는 리뷰 의견의 언어',
+    's.model': '모델', 's.model.title': '비우면 claude 기본값. 서브에이전트도 같은 모델로 동작합니다', 's.claudeArgs': 'claude 추가 인자',
+    's.mergedDays': '머지된 PR 표시 일수', 's.refresh': '화면 갱신 간격(초)', 's.poll': 'GitHub 가져오기 간격(분)',
+    's.pollHours': 'GitHub 자동 가져오기 시간대(시)', 's.pollHours.title': '이 시간대 밖에서는 GitHub를 자동으로 가져오지 않습니다(수동 갱신은 가능). 시작과 끝이 같으면 하루 종일',
+    's.concurrent': '동시 실행 수', 's.authors': 'PR 작성자 (한 줄에 한 명, 비우면 전원)', 's.projects': '로드맵 화면의 GitHub Projects (한 줄에 하나)',
+    's.sprintPast': '로드맵에 표시할 과거 스프린트·기간 수', 's.sprintRange.title': '기간별에서도 같은 수만큼 과거·미래 구간을 표시합니다',
+    's.period': '로드맵 기간별 구간', 'unit.week': '1주', 'unit.2week': '2주', 'unit.month': '1개월',
+    's.sprintFuture': '미래 스프린트·기간 수 (스프린트는 issue가 있는 것만)', 's.repos': '저장소 (한 줄에 하나, owner/name)',
+    'nav.claude': 'Claude 실행', 'nav.github': 'GitHub·작업 대상', 'nav.refresh': '갱신 간격', 'nav.lang': '언어',
+    'sec.board': 'PR 보드', 'sec.repos': '저장소', 'sec.screen': '화면', 'sec.fetch': 'GitHub 가져오기',
+    'sp.noProjects': '설정의 "로드맵 화면의 GitHub Projects"에 프로젝트 URL을 추가하세요.', 'sp.count': '{n}건',
+    future: '미래', current: '현재', past: '과거',
+    'sp.noIteration': '이 프로젝트에는 Iteration 필드가 없습니다.',
+    'sp.emptyPeriod': '이 기간에 시작일·종료일이 들어간 issue가 없습니다.', 'sp.emptySprint': '이 스프린트의 issue가 없습니다.',
+    loading: '불러오는 중…', 'sp.openAll': '▸ 모두 펼치기', 'sp.foldAll': '▾ 모두 접기',
+    'sp.project': '프로젝트', 'sp.view': '표시', 'sp.period': '기간', 'sp.sprint': '스프린트',
+    'sp.refetchTitle': '캐시(24시간)를 쓰지 않고 GitHub에서 다시 가져오기', 'sp.assignee': '담당자', 'sp.rootOnly': '부모 issue 담당자로 필터',
+    'sp.barSet': '(설정: {start} – {end})', 'sp.unsetDate': '미설정', 'sp.noDates': '(날짜 미설정)',
+    'period.week': '{date}부터 1주', 'period.2week': '{date}부터 2주',
+    noOutputYet: '아직 출력이 없습니다', runEnded: '실행이 끝났습니다',
+    confirmApplyComments: 'PR에 남긴 내 코멘트를 지시로 삼아 수정·push·답글을 진행합니다. 진행할까요?',
+    'err.projectUrlInvalid': '프로젝트 URL을 해석할 수 없습니다: {url}', 'err.sprintNotFound': '스프린트를 찾을 수 없습니다',
+    'err.periodInvalid': '기간 지정이 올바르지 않습니다', 'err.noDateField': '이 프로젝트에는 Date 필드가 없습니다',
+    'err.claudeReadFailed': 'claude 출력을 읽을 수 없습니다: {message}', 'err.claudeParseFailed': 'claude 출력을 해석할 수 없습니다 (exit={code}): {stderr}',
+    'err.reviewFailed': '리뷰에 실패했습니다', 'err.findingsParseFailed': '리뷰 의견 목록(JSON)을 가져오지 못했습니다. 원문을 확인하세요',
+    'err.postUnknown': '게시 결과를 확인하지 못했습니다', 'err.runFailed': '실행에 실패했습니다',
+    'err.resultParseFailed': '결과(JSON)를 가져오지 못했습니다. 원문을 확인하세요', 'err.applyUnknown': '반영 결과를 확인하지 못했습니다. PR을 확인하세요',
+    'err.projectNotConfigured': '프로젝트가 설정에 없습니다', 'err.skillMissing': '{repo}의 스킬이 설정되지 않았습니다', 'err.running': '실행 중입니다',
+    'err.cannotApply': '반영할 수 있는 상태가 아닙니다', 'err.confirmRequired': '"리뷰 의견을 확인했습니다"에 체크하세요',
+    'err.undecided': '결정하지 않은 의견이 있습니다', 'err.cannotMove': '이동할 수 있는 상태가 아닙니다', 'err.cannotCancel': '취소할 수 있는 상태가 아닙니다',
+    'err.cannotPost': '게시할 수 있는 상태가 아닙니다', 'err.cannotSkip': '건너뛸 수 있는 상태가 아닙니다',
+    'err.restartInterrupted': '서버 재시작으로 중단되었습니다',
+    'err.restartPostInterrupted': '서버 재시작으로 게시가 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
+    'err.restartApplyInterrupted': '서버 재시작으로 반영이 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
+  },
+  en: {
+    'tab.review': 'Review', 'tab.receive': 'Get reviewed', 'tab.roadmap': 'Roadmap', settings: 'Settings',
+    'stackOrder': 'Stack order', 'stackOrder.title': 'Sort cards in each lane by stack: parent → child → grandchild (click again to sort by last update)',
+    editLanes: 'Arrange lanes', laneSave: 'Save layout', cancel: 'Cancel', close: 'Close', claudeOutput: 'Claude output',
+    'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (rb-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
+    'lane.mine': 'Awaiting review', 'lane.pending': 'Has comments', 'lane.running': 'Running', 'lane.planned': 'Needs decision', 'lane.mergeable': 'Ready to merge',
+    'rm.sprint': 'By sprint', 'rm.period': 'By period',
+    'ago.min': '{n}m ago', 'ago.hour': '{n}h ago', 'ago.day': '{n}d ago', fetchedAgo: 'Updated {ago}', startedAgo: '(started {ago})',
+    refreshNow: 'Refresh now', refetchTitle: 'Fetch again from GitHub', fetchFailed: 'Failed to fetch from GitHub: {msg}', lastFetched: 'Last updated: {ago}',
+    repo: 'Repository', author: 'Author', all: 'All', none: 'None',
+    approved: 'Approved', 'approved.only': 'Only', 'approved.exclude': 'Exclude', 'approved.title': 'Click to cycle All → Only → Exclude',
+    'btn.review': 'Review', skillMissing: 'No skill set', skip: 'Skip', 'skip.title': 'Move to Done without posting',
+    queued: 'Queued…', confirmCancel: 'Really cancel?', reviewing: 'Reviewing…', log: 'Log',
+    findingsDecide: 'Decide on findings ({n})', checkRaw: 'View raw output', posting: 'Posting…', postedReview: 'Posted review',
+    skipped: 'Skipped', posted: 'Posted', 'dismiss.title': 'Remove from board',
+    'running.self': 'Self-reviewing…', 'running.fix': 'Checking comments…', selfReview: 'Self-review', fixComments: 'Address comments',
+    appliedAgo: 'Addressed {ago}', applying: 'Fixing, pushing, replying…', stack: 'Stack: ',
+    'rv.pending': 'Review pending', requestRemoved: 'Request removed', pending: '{n} unaddressed', 'pending.title': "Unresolved threads whose last comment isn't yours",
+    'usage.title': 'Total tokens (incl. cache) and cost spent on this PR', error: 'Error',
+    search: 'Search', selectAll: 'Select all', clearAll: 'Clear all',
+    noFindings: 'No findings.', noOutput: '(no output)', agentRaw: "Agent's raw output", rereview: 'Re-review', decided: '{n} / {total} decided',
+    'humanRead.title': "To avoid rubber-stamping AI reviews, check this once you've read the code yourself", humanRead: 'I read the code',
+    approve: 'Approve', submit: 'Comment',
+    confirmRereview: 'Click again to discard decisions and re-review', confirmApprove: 'Click again to post with Approve', confirmPost: 'Click again to post',
+    'ph.agree': 'Reason or notes (optional, reflected in the comment)', 'ph.disagree': 'Reason for disagreeing (optional, posted with 🤔💭 if written)',
+    origComment: 'Original comment', agree: 'Agree', disagree: 'Disagree',
+    'ph.self.agree': 'Notes (optional, reflected in the post and fix)', 'ph.self.disagree': 'Disagreed findings are neither posted nor fixed (notes only)',
+    'ph.fix.agree': 'Notes (optional, reflected in the fix and reply)', 'ph.fix.disagree': 'Reason for disagreeing (optional: if given, the plan is revised accordingly; if empty, no fix or reply)',
+    planFix: '[Fix]', planReply: '[Reply]', rerunSelf: 'Redo self-review', rerunFix: 'Redo plan',
+    'desc.self': 'Self-review: posts agreed findings to the PR, fixes and pushes, then replies to those findings.', 'desc.fix': 'Plan for review comments: fixes, pushes and replies as per the agreed plan.',
+    noMineFindings: 'Nothing to address.', prevApplyRaw: 'Raw output of the last run', confirmed: "I've reviewed the findings",
+    confirmRerun: 'Click again to discard decisions and redo', confirmPush: 'Click again to push and comment',
+    unset: '(not set)', skillPh: '(skill)', default: 'Default', defaultParen: '(default)', save: 'Save',
+    's.repoSkills': 'Repository skills',
+    's.repoSkills.help': 'Values usable in argument templates: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. If the working directory is empty, claude starts in the default above. Skills are looked up in ~/.claude/skills and each working directory\'s .claude/skills.',
+    'th.skill': 'Skill', 'th.args': 'Argument template', workdir: 'Working directory', 'th.fix': 'Address comments',
+    's.mine': 'Skills for "Get reviewed" (my PRs)',
+    's.mine.help': 'If a skill is empty, its button is hidden. The self-review skill is told to return findings in <code>&lt;review-board-findings&gt;</code> format, and the fix skill (e.g. review-fix) to return a plan for each review comment.',
+    's.uiLang': 'Display language', 's.outLang': 'Output language', 's.outLang.title': 'Language Claude uses for PR comments, replies and the findings shown on the board',
+    's.model': 'Model', 's.model.title': "Empty uses claude's default. Subagents run on the same model", 's.claudeArgs': 'Extra claude args',
+    's.mergedDays': 'Days to show merged PRs', 's.refresh': 'Screen refresh interval (s)', 's.poll': 'GitHub fetch interval (min)',
+    's.pollHours': 'GitHub auto-fetch hours', 's.pollHours.title': "GitHub isn't fetched automatically outside these hours (manual refresh still works). Same start and end means all day",
+    's.concurrent': 'Max concurrent runs', 's.authors': 'PR authors (one per line, empty = everyone)', 's.projects': 'GitHub Projects for the roadmap (one per line)',
+    's.sprintPast': 'Past sprints / periods on the roadmap', 's.sprintRange.title': 'The same number of past / future periods is used in "By period"',
+    's.period': 'Roadmap period length', 'unit.week': '1 week', 'unit.2week': '2 weeks', 'unit.month': '1 month',
+    's.sprintFuture': 'Future sprints / periods (only sprints with issues)', 's.repos': 'Repositories (one per line, owner/name)',
+    'nav.claude': 'Claude', 'nav.github': 'GitHub & targets', 'nav.refresh': 'Refresh', 'nav.lang': 'Language',
+    'sec.board': 'PR board', 'sec.repos': 'Repositories', 'sec.screen': 'Screen', 'sec.fetch': 'GitHub fetch',
+    'sp.noProjects': 'Add a project URL to "GitHub Projects for the roadmap" in Settings.', 'sp.count': '{n} issue(s)',
+    future: 'Upcoming', current: 'Current', past: 'Past',
+    'sp.noIteration': 'This project has no Iteration field.',
+    'sp.emptyPeriod': 'No issues with start / end dates in this period.', 'sp.emptySprint': 'No issues in this sprint.',
+    loading: 'Loading…', 'sp.openAll': '▸ Expand all', 'sp.foldAll': '▾ Collapse all',
+    'sp.project': 'Project', 'sp.view': 'View', 'sp.period': 'Period', 'sp.sprint': 'Sprint',
+    'sp.refetchTitle': 'Fetch again from GitHub, bypassing the 24h cache', 'sp.assignee': 'Assignee', 'sp.rootOnly': 'Filter by parent issue assignee',
+    'sp.barSet': '(set: {start} – {end})', 'sp.unsetDate': 'not set', 'sp.noDates': '(no dates)',
+    'period.week': 'Week of {date}', 'period.2week': '2 weeks from {date}',
+    noOutputYet: 'No output yet', runEnded: 'Run finished',
+    confirmApplyComments: 'Fix, push and reply using your own comments on the PR as instructions. Continue?',
+    'err.projectUrlInvalid': "Can't parse project URL: {url}", 'err.sprintNotFound': 'Sprint not found',
+    'err.periodInvalid': 'Invalid period', 'err.noDateField': 'This project has no Date field',
+    'err.claudeReadFailed': "Can't read claude output: {message}", 'err.claudeParseFailed': "Can't parse claude output (exit={code}): {stderr}",
+    'err.reviewFailed': 'Review failed', 'err.findingsParseFailed': "Couldn't get the findings (JSON). Check the raw output",
+    'err.postUnknown': "Couldn't confirm the post result", 'err.runFailed': 'Run failed',
+    'err.resultParseFailed': "Couldn't get the result (JSON). Check the raw output", 'err.applyUnknown': "Couldn't confirm the result. Check the PR",
+    'err.projectNotConfigured': "Project isn't in settings", 'err.skillMissing': 'No skill set for {repo}', 'err.running': 'Already running',
+    'err.cannotApply': "Can't apply in this state", 'err.confirmRequired': 'Check "I\'ve reviewed the findings"',
+    'err.undecided': 'Some findings are undecided', 'err.cannotMove': "Can't move in this state", 'err.cannotCancel': "Can't cancel in this state",
+    'err.cannotPost': "Can't post in this state", 'err.cannotSkip': "Can't skip in this state",
+    'err.restartInterrupted': 'Interrupted by a server restart',
+    'err.restartPostInterrupted': 'Posting was interrupted by a server restart. Check the PR before retrying',
+    'err.restartApplyInterrupted': 'Applying was interrupted by a server restart. Check the PR before retrying',
+  },
+};
+// {name} を params で埋める。{pr-number} のように \w 以外を含むものは置き換えない
+const tr = (key, params = {}) => (I18N[lang][key] ?? I18N.ja[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => (k in params ? params[k] : m));
+// サーバーのエラーは { code, params } (旧データや GitHub・claude 由来は文字列)
+const errText = (err) => (err && typeof err === 'object' ? tr(`err.${err.code}`, err.params) : err || '');
+document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = tr(el.dataset.i18n)));
+document.querySelectorAll('[data-i18n-title]').forEach((el) => (el.title = tr(el.dataset.i18nTitle)));
+document.querySelectorAll('[data-i18n-html]').forEach((el) => (el.innerHTML = tr(el.dataset.i18nHtml)));
+
 const LANES = [
   { id: 'requested', label: 'Requested', color: '#1a7f37', statuses: ['requested'], badge: true },
   { id: 'reviewing', label: 'Reviewing', color: '#9a6700', statuses: ['queued', 'reviewing'], badge: true },
@@ -231,11 +471,11 @@ const LANES = [
 // レビューを受ける (自分の PR)
 const MINE_LANES = [
   { id: 'draft', label: 'Draft', color: '#8c959f', match: (e) => e.status === 'idle' && e.pr.isDraft && !e.done },
-  { id: 'mine', label: 'レビュー待ち', color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && !e.mergeReady && !e.done, badge: true },
-  { id: 'pending', label: '指摘あり', color: '#cf222e', match: (e) => e.status === 'idle' && !e.pr.isDraft && e.pending > 0, badge: true },
-  { id: 'running', label: '実行中', color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status), badge: true },
-  { id: 'planned', label: '判断待ち', color: '#0969da', match: (e) => e.status === 'planned', badge: true },
-  { id: 'mergeable', label: 'マージ可能', color: '#8250df', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && e.mergeReady && !e.done },
+  { id: 'mine', label: tr('lane.mine'), color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && !e.mergeReady && !e.done, badge: true },
+  { id: 'pending', label: tr('lane.pending'), color: '#cf222e', match: (e) => e.status === 'idle' && !e.pr.isDraft && e.pending > 0, badge: true },
+  { id: 'running', label: tr('lane.running'), color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status), badge: true },
+  { id: 'planned', label: tr('lane.planned'), color: '#0969da', match: (e) => e.status === 'planned', badge: true },
+  { id: 'mergeable', label: tr('lane.mergeable'), color: '#8250df', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && e.mergeReady && !e.done },
   { id: 'done', label: 'Done', color: '#656d76', match: (e) => e.status === 'idle' && !e.pending && e.done },
 ];
 // レーンの並び順はブラウザごとに保存する。「レーン配置」モード中だけドラッグで並び替えられる
@@ -256,7 +496,7 @@ function hiddenOf(kind, v) {
 }
 let laneDrag = null;
 // ロードマップ (内部では sprint ビュー) は hash で表示方法を切り替える
-const RM_MODES = { sprint: 'スプリント別', period: '期間別' };
+const RM_MODES = { sprint: tr('rm.sprint'), period: tr('rm.period') };
 if (['#milestone', '#repo'].includes(location.hash)) location.replace('#sprint'); // 廃止した Milestone別 / リポジトリ別 のブックマーク
 const rmMode = () => (RM_MODES[location.hash.slice(1)] ? location.hash.slice(1) : null);
 const view = () => (location.hash === '#receive' ? 'receive' : rmMode() ? 'sprint' : 'review');
@@ -305,15 +545,15 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error || res.statusText);
+  if (!res.ok) throw new Error(errText(json.error) || res.statusText);
   return json;
 }
 
 function ago(iso) {
   const min = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (min < 60) return `${min}分前`;
-  if (min < 60 * 24) return `${Math.round(min / 60)}時間前`;
-  return `${Math.round(min / 1440)}日前`;
+  if (min < 60) return tr('ago.min', { n: min });
+  if (min < 60 * 24) return tr('ago.hour', { n: Math.round(min / 60) });
+  return tr('ago.day', { n: Math.round(min / 1440) });
 }
 
 async function load(refresh = false) {
@@ -329,9 +569,9 @@ function render() {
   if (dragging || laneDrag) return; // 再描画するとドラッグが途切れる
   $('#viewer').innerHTML = board.viewer ? `<img class="avatar" src="${esc(board.viewer.avatarUrl)}" alt=""> ${esc(board.viewer.login)}` : '';
   // 取得時刻を兼ねた手動更新ボタン (ロードマップの spRefetch と同じ見た目)
-  $('#refresh').innerHTML = `<span class="hint">↻ </span>${board.lastFetchedAt ? `${ago(board.lastFetchedAt)}取得` : '今すぐ更新'}`;
-  $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString()} — ` : ''}GitHub から取り直す`;
-  $('#banner').innerHTML = board.fetchError ? `<div class="banner">GitHub の取得に失敗しました: ${esc(board.fetchError)}</div>` : '';
+  $('#refresh').innerHTML = `<span class="hint">↻ </span>${board.lastFetchedAt ? tr('fetchedAgo', { ago: ago(board.lastFetchedAt) }) : tr('refreshNow')}`;
+  $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString(lang)} — ` : ''}${tr('refetchTitle')}`;
+  $('#banner').innerHTML = board.fetchError ? `<div class="banner">${tr('fetchFailed', { msg: esc(board.fetchError) })}</div>` : '';
 
   const mine = view() === 'receive';
   document.querySelectorAll('nav.tabs a[data-view]').forEach((a) => {
@@ -345,7 +585,7 @@ function render() {
       return a.classList.toggle('on', v === view());
     }
     if (board.lastFetchedAt && (v === view() || seenSig[v] === undefined)) seenSig[v] = tabSig(v);
-    a.title = board.lastFetchedAt ? `最終取得: ${ago(board.lastFetchedAt)}` : '';
+    a.title = board.lastFetchedAt ? tr('lastFetched', { ago: ago(board.lastFetchedAt) }) : '';
     a.classList.toggle('on', v === view());
     a.classList.toggle('changed', seenSig[v] !== undefined && seenSig[v] !== tabSig(v));
     // 残作業の件数をレーンの色で表示 (0 件は出さない)
@@ -368,20 +608,20 @@ function render() {
   $('#repo-filter').hidden = !repos.length;
   const shown = repos.filter((r) => !hidden.includes(r));
   // 両方組み立ててから入れる (先に入れると後のドロップダウンの開閉状態が消える)
-  const repoSelect = multiSelect('repos', 'リポジトリ',
-    `${shown.length === repos.length ? 'すべて' : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : 'なし'}`,
+  const repoSelect = multiSelect('repos', tr('repo'),
+    `${shown.length === repos.length ? tr('all') : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : tr('none')}`,
     [...new Set([...order, ...repos])].map((r) => ({ value: r, text: r.split('/')[1], disabled: !repos.includes(r) })),
     (r) => !hidden.includes(r));
   // レビューする側だけ PR 作成者でも絞る。受ける側は全部自分なので、レイアウトを揃えるため自分で固定した無効状態で出す
   let authorSelect = '';
   if (mine) {
     const me = board.viewer;
-    authorSelect = '<span class="sep"></span>' + field('作成者', `<details class="ms ms-fixed"><summary tabindex="-1">${me ? `<img class="avatar" src="${esc(me.avatarUrl)}" alt="" title="${esc(me.login)}">` : ''}</summary></details>`);
+    authorSelect = '<span class="sep"></span>' + field(tr('author'), `<details class="ms ms-fixed"><summary tabindex="-1">${me ? `<img class="avatar" src="${esc(me.avatarUrl)}" alt="" title="${esc(me.login)}">` : ''}</summary></details>`);
   } else {
     const authors = [...new Map(all.filter((p) => p.pr.author).map((p) => [p.pr.author.login, p.pr.author])).values()].sort((a, b) => a.login.localeCompare(b.login));
     const on = authors.filter((a) => !hiddenAuthors.includes(a.login));
-    authorSelect = '<span class="sep"></span>' + multiSelect('authors', '作成者',
-      `${on.length === authors.length ? 'すべて' : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : 'なし'}`,
+    authorSelect = '<span class="sep"></span>' + multiSelect('authors', tr('author'),
+      `${on.length === authors.length ? tr('all') : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : tr('none')}`,
       authors.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !hiddenAuthors.includes(l));
   }
   // 1 人以上に approve された PR だけ / それ以外だけ に絞れる (latestReviews なので今も approve のまま)。タブごとに保存
@@ -389,9 +629,9 @@ function render() {
   try { approved = localStorage.getItem(`rb-approved:${view()}`) || ''; } catch {}
   const isApproved = (p) => p.pr.reviews.some((r) => r.state === 'APPROVED');
   // 押すたびに すべて → のみ → 除外 と切り替わる 1 つのボタン
-  const APPROVED = { '': 'すべて', only: 'のみ', exclude: '除外' };
+  const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
   if (!(approved in APPROVED)) approved = '';
-  const approvedSeg = '<span class="sep"></span>' + field('approved', `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="押すと すべて → のみ → 除外 の順に切り替え">${APPROVED[approved]}</button>`);
+  const approvedSeg = '<span class="sep"></span>' + field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${tr('approved.title')}">${APPROVED[approved]}</button>`);
   $('#repo-filter').innerHTML = repoSelect + authorSelect + approvedSeg;
   const prs = all.filter((p) => !hidden.includes(p.pr.repo) && !hiddenAuthors.includes(p.pr.author?.login)
     && (approved === 'only' ? isApproved(p) : approved === 'exclude' ? !isApproved(p) : true)).sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
@@ -404,7 +644,7 @@ function render() {
     if (stackOrder) cards = stackSort(cards);
     return `<section class="lane" data-lane="${lane.id}" ${laneEdit ? 'draggable="true"' : ''}>
       <h2><span class="dot" style="border-color:${lane.color}"></span>${lane.label}<span class="count">${cards.length}</span></h2>
-      ${cards.map(mine ? mineCardHtml : cardHtml).join('') || '<div class="muted" style="padding:4px">なし</div>'}
+      ${cards.map(mine ? mineCardHtml : cardHtml).join('') || `<div class="muted" style="padding:4px">${tr('none')}</div>`}
     </section>`;
   }).join('');
 
@@ -423,19 +663,19 @@ function cardHtml(e) {
   let action = '';
   if (e.status === 'requested') {
     action = mapping?.skill
-      ? `<button class="primary" data-review="${esc(e.key)}">レビューする</button><span class="muted">${esc(mapping.skill)}</span>`
-      : `<button disabled>レビューする</button><a href="#" data-settings>スキル未設定</a>`;
-    action += `<button data-skip="${esc(e.key)}" title="投稿せずに Done へ移す">スキップ</button>`;
+      ? `<button class="primary" data-review="${esc(e.key)}">${tr('btn.review')}</button><span class="muted">${esc(mapping.skill)}</span>`
+      : `<button disabled>${tr('btn.review')}</button><a href="#" data-settings>${tr('skillMissing')}</a>`;
+    action += `<button data-skip="${esc(e.key)}" title="${tr('skip.title')}">${tr('skip')}</button>`;
   } else if (e.status === 'queued') {
-    action = `<span class="muted"><span class="spin"></span> 待機中…</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewing') {
-    action = `<span class="muted"><span class="spin"></span> レビュー中… (${ago(new Date(e.startedAt).toISOString())}に開始)</span><button data-log="${esc(e.key)}">ログ</button><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('reviewing')} ${tr('startedAgo', { ago: ago(new Date(e.startedAt).toISOString()) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewed') {
-    action = `<span>${e.findings ? `指摘 ${e.findings.length} 件 — 判断する` : '原文を確認する'}</span>`;
+    action = `<span>${e.findings ? tr('findingsDecide', { n: e.findings.length }) : tr('checkRaw')}</span>`;
   } else if (e.status === 'posting') {
-    action = `<span class="muted"><span class="spin"></span> 投稿中…</span><button data-log="${esc(e.key)}">ログ</button>`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('posting')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   } else if (e.status === 'commented') {
-    action = `${e.postedUrl ? `<a href="${esc(e.postedUrl)}" target="rb-viewer">投稿したレビュー</a>` : `<span class="muted">${e.skipped ? 'スキップ済み' : '投稿済み'}</span>`}<button data-dismiss="${esc(e.key)}" title="ボードから消す">×</button>`;
+    action = `${e.postedUrl ? `<a href="${esc(e.postedUrl)}" target="rb-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
   }
 
   const clickable = e.status === 'reviewed';
@@ -444,26 +684,26 @@ function cardHtml(e) {
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'reviewed');
 }
 
-const MINE_RUNNING = { self: 'セルフレビュー中…', fix: '指摘を確認中…' };
+const MINE_RUNNING = { self: tr('running.self'), fix: tr('running.fix') };
 function mineCardHtml(e) {
   const mapping = board.config.repos[e.pr.repo] || {};
-  const cancel = `<button data-mine-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, 'キャンセル', '本当にキャンセル？')}</button>`;
+  const cancel = `<button data-mine-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   let action = '';
   if (e.status === 'idle') {
     const buttons = [
-      mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(mapping.selfSkill)}">セルフレビュー</button>`,
-      mapping.fixSkill && `<button ${e.pending ? 'class="primary"' : ''} data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">指摘に対応</button>`,
+      mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(mapping.selfSkill)}">${tr('selfReview')}</button>`,
+      mapping.fixSkill && `<button ${e.pending ? 'class="primary"' : ''} data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">${tr('fixComments')}</button>`,
     ].filter(Boolean);
-    action = buttons.length ? `<span>${buttons.join(' ')}</span>` : '<a href="#" data-settings>スキル未設定</a>';
-    if (e.appliedAt) action += `<span class="muted">対応済み ${ago(new Date(e.appliedAt).toISOString())}</span>`;
+    action = buttons.length ? `<span>${buttons.join(' ')}</span>` : `<a href="#" data-settings>${tr('skillMissing')}</a>`;
+    if (e.appliedAt) action += `<span class="muted">${tr('appliedAgo', { ago: ago(new Date(e.appliedAt).toISOString()) })}</span>`;
   } else if (e.status === 'queued') {
-    action = `<span class="muted"><span class="spin"></span> 待機中…</span>${cancel}`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span>${cancel}`;
   } else if (e.status === 'running') {
-    action = `<span class="muted"><span class="spin"></span> ${MINE_RUNNING[e.mode]} (${ago(new Date(e.startedAt).toISOString())}に開始)</span><button data-log="${esc(e.key)}">ログ</button>${cancel}`;
+    action = `<span class="muted"><span class="spin"></span> ${MINE_RUNNING[e.mode]} ${tr('startedAgo', { ago: ago(new Date(e.startedAt).toISOString()) })}</span><button data-log="${esc(e.key)}">${tr('log')}</button>${cancel}`;
   } else if (e.status === 'planned') {
-    action = `<span>${e.findings ? `指摘 ${e.findings.length} 件 — 判断する` : '原文を確認する'}</span>`;
+    action = `<span>${e.findings ? tr('findingsDecide', { n: e.findings.length }) : tr('checkRaw')}</span>`;
   } else if (e.status === 'applying') {
-    action = `<span class="muted"><span class="spin"></span> 修正・push・返信中…</span><button data-log="${esc(e.key)}">ログ</button>`;
+    action = `<span class="muted"><span class="spin"></span> ${tr('applying')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   }
   const clickable = e.status === 'planned';
   // 自分の PR ⇄ マージ可能 ⇄ Done の D&D で手動で移す。判断待ちは実行中に移すと PR 上のコメントどおりに対応する
@@ -481,9 +721,9 @@ function multiSelect(key, label, summary, items, isOn, extra = '') {
   const open = document.querySelector(`details.ms[data-ms="${key}"]`)?.open;
   const q = (msQuery[key] || '').toLowerCase();
   return field(label, `<details class="ms" data-ms="${key}"${open ? ' open' : ''}><summary>${summary}</summary><div class="ms-pop">
-    <input type="search" data-ms-q placeholder="検索" value="${esc(msQuery[key] || '')}">
+    <input type="search" data-ms-q placeholder="${tr('search')}" value="${esc(msQuery[key] || '')}">
     <div class="ms-list">${items.map((i) => `<label data-ms-text="${esc(i.text.toLowerCase())}"${i.text.toLowerCase().includes(q) ? '' : ' hidden'} title="${esc(i.value)}"${i.disabled ? ' class="off"' : ''}><input type="checkbox" data-ms-value="${esc(i.value)}"${i.disabled ? ' disabled' : isOn(i.value) ? ' checked' : ''}>${i.img ? `<img class="avatar" src="${esc(i.img)}" alt="">` : ''}${esc(i.text)}</label>`).join('')}</div>
-    <div class="ms-bulk"><button data-ms-bulk="all">すべて選択</button><button data-ms-bulk="none">すべて解除</button></div>${extra}</div></details>`);
+    <div class="ms-bulk"><button data-ms-bulk="all">${tr('selectAll')}</button><button data-ms-bulk="none">${tr('clearAll')}</button></div>${extra}</div></details>`);
 }
 document.addEventListener('input', (ev) => {
   if (!ev.target.matches('[data-ms-q]')) return;
@@ -504,7 +744,7 @@ function stackHtml(pr) {
   const children = same.filter((p) => p.base === pr.head);
   if (!parents.length && !children.length) return '';
   const links = (ps) => ps.map((p) => `<a href="${esc(p.url)}" target="rb-viewer" data-jump="${esc(prId(p))}" title="${esc(p.title)}">#${p.number}</a>`).join(', ');
-  return `<div class="stack">スタック: ${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
+  return `<div class="stack">${tr('stack')}${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
 }
 
 // レーン内のカードをスタックごとにまとめ、親 → 子 → 孫 の順にする。親がレーン内にないカードを起点に、更新順を保って辿る
@@ -540,7 +780,7 @@ function cardShell(e, action, attrs, showError) {
   const reviewed = new Set(pr.reviews.map((r) => r.login));
   const reviewers = [
     ...pr.reviews.map((r) => `<span class="rv" title="${esc(r.login)}: ${esc(r.state)}"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""><span class="st">${REVIEW_ICON[r.state] || ''}</span></span>`),
-    ...pr.requested.filter((r) => !reviewed.has(r.login)).map((r) => `<span class="rv pending" title="${esc(r.login)}: レビュー待ち"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""></span>`),
+    ...pr.requested.filter((r) => !reviewed.has(r.login)).map((r) => `<span class="rv pending" title="${esc(r.login)}: ${tr('rv.pending')}"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""></span>`),
   ].join('');
   return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}${viewing === prId(pr) ? ' viewing' : ''}`)}>
     <div class="top">
@@ -551,18 +791,18 @@ function cardShell(e, action, attrs, showError) {
     <div class="title">${esc(pr.title)}</div>
     ${pr.base ? `<div class="branch" title="base ← head">${esc(pr.base)} ← ${esc(pr.head)}</div>` : ''}
     <div class="chips">
-      ${pr.state === 'MERGED' ? `<span class="chip merged" title="${esc(new Date(pr.mergedAt).toLocaleString())}">Merged</span>` : ''}
+      ${pr.state === 'MERGED' ? `<span class="chip merged" title="${esc(new Date(pr.mergedAt).toLocaleString(lang))}">Merged</span>` : ''}
       ${pr.isDraft ? '<span class="chip draft">Draft</span>' : ''}
-      ${e.active === false ? '<span class="chip off">依頼解除済み</span>' : ''}
-      ${e.pending ? `<span class="chip pending" title="未解決スレッドのうち、最後の発言が自分以外のもの">未対応の指摘 ${e.pending}</span>` : ''}
-      ${e.usage ? `<span class="chip" title="このPRで使ったトークン (キャッシュ込み) と費用の累計">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
-      ${e.error ? `<span class="chip err" title="${esc(e.error)}">エラー</span>` : ''}
+      ${e.active === false ? `<span class="chip off">${tr('requestRemoved')}</span>` : ''}
+      ${e.pending ? `<span class="chip pending" title="${tr('pending.title')}">${tr('pending', { n: e.pending })}</span>` : ''}
+      ${e.usage ? `<span class="chip" title="${tr('usage.title')}">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
+      ${e.error ? `<span class="chip err" title="${esc(errText(e.error))}">${tr('error')}</span>` : ''}
       ${pr.labels.map((l) => `<span class="chip" style="border-color:#${esc(l.color)}">${esc(l.name)}</span>`).join('')}
     </div>
     ${stackHtml(pr)}
     ${pr.issues.map((i) => `<a class="issue" href="${esc(i.url)}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
     <div class="reviewers">${reviewers}</div>
-    ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(e.error)}</div>` : ''}
+    ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}</div>` : ''}
     <div class="actions">${action}</div>
   </article>`;
 }
@@ -590,22 +830,22 @@ function openReview(key) {
     dlg.innerHTML = `
       <div class="dlg-head">
         <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
-        <button data-close>閉じる</button>
+        <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
-        ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(e.error)}</div>` : ''}
+        ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(errText(e.error))}</div>` : ''}
         ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
-        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {})).join('') : '<p class="muted">指摘はありません。</p>')
-          : `<pre class="raw">${esc(e.raw || '(出力なし)')}</pre>`}
-        ${findings && e.raw ? `<details><summary class="muted">エージェントの原文</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
+        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {})).join('') : `<p class="muted">${tr('noFindings')}</p>`)
+          : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
+        ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
       </div>
       <div class="dlg-foot">
-        <button data-rereview>再レビュー</button>
+        <button data-rereview>${tr('rereview')}</button>
         <span style="flex:1"></span>
-        ${findings ? `<span class="muted">${decided} / ${findings.length} 判断済み</span>` : ''}
-        <label title="AI 任せのノールックレビューを防ぐため、自分でもコードを読んだらチェックしてください"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> コードを読みました</label>
-        <label><input type="checkbox" data-approve ${draft.approve ? 'checked' : ''} ${findings ? '' : 'disabled'}> Approve する</label>
-        <button class="primary" data-submit ${ready ? '' : 'disabled'}>コメントする</button>
+        ${findings ? `<span class="muted">${tr('decided', { n: decided, total: findings.length })}</span>` : ''}
+        <label title="${tr('humanRead.title')}"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('humanRead')}</label>
+        <label><input type="checkbox" data-approve ${draft.approve ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('approve')}</label>
+        <button class="primary" data-submit ${ready ? '' : 'disabled'}>${tr('submit')}</button>
       </div>`;
   };
 
@@ -629,13 +869,13 @@ function openReview(key) {
       return;
     }
     if (t.matches('[data-rereview]')) {
-      if (!confirmTwice(t, `rereview:${key}`, 'もう一度押すと判断を破棄して再レビュー')) return;
+      if (!confirmTwice(t, `rereview:${key}`, tr('confirmRereview'))) return;
       saveDraft(key, {});
       dlg.close();
       return review(key);
     }
     if (t.matches('[data-submit]')) {
-      const label = draft.approve ? 'もう一度押すと Approve で投稿' : 'もう一度押すと投稿';
+      const label = draft.approve ? tr('confirmApprove') : tr('confirmPost');
       if (!confirmTwice(t, `submit:${key}`, label)) return;
       try {
         await api('/api/post', { method: 'POST', body: { key, decisions: draft.decisions, approve: draft.approve, humanRead: draft.humanRead } });
@@ -658,17 +898,17 @@ function openReview(key) {
   dlg.showModal();
 }
 
-const REVIEW_PLACEHOLDER = { agree: '理由・補足 (任意・コメント本文に反映されます)', disagree: '非同意の理由 (任意・書くと 🤔💭 付きで投稿されます)' };
+const REVIEW_PLACEHOLDER = { agree: tr('ph.agree'), disagree: tr('ph.disagree') };
 function findingHtml(f, d, placeholders = REVIEW_PLACEHOLDER) {
   const loc = f.path ? `${f.path}${f.line ? `:${f.line}` : ''}` : '';
   const placeholder = d.verdict === 'disagree' ? placeholders.disagree : placeholders.agree;
   return `<div class="finding ${esc(d.verdict || '')}">
     <div class="head"><strong>#${esc(f.no)}</strong>${f.severity ? `<span class="chip">${esc(f.severity)}</span>` : ''}<span class="grow">${esc(f.title)}</span></div>
-    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(f.url)}" target="rb-viewer">元コメント</a>` : ''}</div>` : ''}
+    ${loc || f.url ? `<div class="muted">${esc(loc)} ${f.url ? `<a href="${esc(f.url)}" target="rb-viewer">${tr('origComment')}</a>` : ''}</div>` : ''}
     <pre>${esc(f.body)}</pre>
     <div class="verdict">
-      <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">同意</button>
-      <button class="disagree ${d.verdict === 'disagree' ? 'on' : ''}" data-verdict="disagree" data-no="${esc(f.no)}">非同意</button>
+      <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">${tr('agree')}</button>
+      <button class="disagree ${d.verdict === 'disagree' ? 'on' : ''}" data-verdict="disagree" data-no="${esc(f.no)}">${tr('disagree')}</button>
       <textarea data-reason data-no="${esc(f.no)}" placeholder="${placeholder}">${esc(d.reason || '')}</textarea>
     </div>
   </div>`;
@@ -677,8 +917,8 @@ function findingHtml(f, d, placeholders = REVIEW_PLACEHOLDER) {
 // ---------- 自分の PR の判断ダイアログ ----------
 
 const MINE_PLACEHOLDER = {
-  self: { agree: '補足 (任意・投稿と修正に反映されます)', disagree: '非同意の指摘は投稿も修正もしません (メモ欄)' },
-  fix: { agree: '補足 (任意・修正と返信に反映されます)', disagree: '非同意の理由 (任意・書くとその内容で対応を決め直します。空なら修正も返信もしません)' },
+  self: { agree: tr('ph.self.agree'), disagree: tr('ph.self.disagree') },
+  fix: { agree: tr('ph.fix.agree'), disagree: tr('ph.fix.disagree') },
 };
 
 // review-fix の対応計画を指摘カードの形にそろえる
@@ -687,7 +927,7 @@ function planToFinding(item) {
     ...item,
     severity: item.category,
     title: `${item.author ? `@${item.author}: ` : ''}${item.comment || ''}`,
-    body: [item.plan && `【修正】\n${item.plan}`, item.reply && `【返信】\n${item.reply}`].filter(Boolean).join('\n\n'),
+    body: [item.plan && `${tr('planFix')}\n${item.plan}`, item.reply && `${tr('planReply')}\n${item.reply}`].filter(Boolean).join('\n\n'),
   };
 }
 
@@ -697,7 +937,7 @@ function openMine(key) {
   const draft = { decisions: {}, confirmed: false, ...loadDraft(key) };
   const dlg = $('#review-dlg');
   const findings = e.findings && (e.mode === 'fix' ? e.findings.map(planToFinding) : e.findings);
-  const runLabel = e.mode === 'self' ? 'セルフレビューをやり直す' : '計画を作り直す';
+  const runLabel = e.mode === 'self' ? tr('rerunSelf') : tr('rerunFix');
 
   const renderDlg = () => {
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
@@ -705,23 +945,23 @@ function openMine(key) {
     dlg.innerHTML = `
       <div class="dlg-head">
         <h3><a href="${esc(e.pr.url)}" target="rb-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
-        <button data-close>閉じる</button>
+        <button data-close>${tr('close')}</button>
       </div>
       <div class="dlg-body">
-        <p class="muted">${e.mode === 'self' ? 'セルフレビュー: 同意した指摘を PR に投稿し、修正・push してから、その指摘に返信します。' : '指摘への対応計画: 同意した計画どおりに修正・push・返信します。'}</p>
-        ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(e.error)}</div>` : ''}
+        <p class="muted">${e.mode === 'self' ? tr('desc.self') : tr('desc.fix')}</p>
+        ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(errText(e.error))}</div>` : ''}
         ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
-        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, MINE_PLACEHOLDER[e.mode])).join('') : '<p class="muted">対応する指摘はありません。</p>')
-          : `<pre class="raw">${esc(e.raw || '(出力なし)')}</pre>`}
-        ${findings && e.raw ? `<details><summary class="muted">エージェントの原文</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
-        ${e.applyRaw ? `<details><summary class="muted">前回の対応の原文</summary><pre class="raw">${esc(e.applyRaw)}</pre></details>` : ''}
+        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, MINE_PLACEHOLDER[e.mode])).join('') : `<p class="muted">${tr('noMineFindings')}</p>`)
+          : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
+        ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
+        ${e.applyRaw ? `<details><summary class="muted">${tr('prevApplyRaw')}</summary><pre class="raw">${esc(e.applyRaw)}</pre></details>` : ''}
       </div>
       <div class="dlg-foot">
         <button data-rerun>${runLabel}</button>
         <span style="flex:1"></span>
-        ${findings ? `<span class="muted">${decided} / ${findings.length} 判断済み</span>` : ''}
-        <label><input type="checkbox" data-confirmed ${draft.confirmed ? 'checked' : ''} ${findings ? '' : 'disabled'}> 指摘内容を確認しました</label>
-        <button class="primary" data-submit ${ready ? '' : 'disabled'}>コメントする</button>
+        ${findings ? `<span class="muted">${tr('decided', { n: decided, total: findings.length })}</span>` : ''}
+        <label><input type="checkbox" data-confirmed ${draft.confirmed ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('confirmed')}</label>
+        <button class="primary" data-submit ${ready ? '' : 'disabled'}>${tr('submit')}</button>
       </div>`;
   };
 
@@ -740,13 +980,13 @@ function openMine(key) {
       return renderDlg();
     }
     if (t.matches('[data-rerun]')) {
-      if (!confirmTwice(t, `rerun:${key}`, 'もう一度押すと判断を破棄してやり直す')) return;
+      if (!confirmTwice(t, `rerun:${key}`, tr('confirmRerun'))) return;
       saveDraft(key, {});
       dlg.close();
       return runMine(key, e.mode);
     }
     if (t.matches('[data-submit]')) {
-      if (!confirmTwice(t, `submit:${key}`, 'もう一度押すと push・コメント')) return;
+      if (!confirmTwice(t, `submit:${key}`, tr('confirmPush'))) return;
       try {
         await api('/api/mine/apply', { method: 'POST', body: { key, decisions: draft.decisions, confirmed: draft.confirmed } });
         saveDraft(key, {});
@@ -773,6 +1013,7 @@ function openMine(key) {
 async function openSettings() {
   const dlg = $('#settings-dlg');
   const cfg = structuredClone(board.config);
+  let uiLang = lang;
   const fetchSkills = async () => {
     const dirs = [cfg.workdir, ...Object.values(cfg.repos).map((m) => m.cwd)].filter(Boolean);
     return (await api(`/api/skills?${new URLSearchParams(dirs.map((d) => ['dir', d]))}`)).skills;
@@ -783,7 +1024,7 @@ async function openSettings() {
 
   const skillOptions = (current) => {
     const list = skills.includes(current) || !current ? skills : [current, ...skills];
-    return `<option value="">(未設定)</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    return `<option value="">${tr('unset')}</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
   };
   // 引数テンプレートを例の PR で展開し、実際に渡るコマンドを入力欄の下に出す
   const ARG_SKILL = { args: 'skill', selfArgs: 'selfSkill', fixArgs: 'fixSkill' };
@@ -796,7 +1037,7 @@ async function openSettings() {
       .replaceAll('{repo-name}', name)
       .replaceAll('{owner-name}', owner)
       .replaceAll('{full-repo-name}', r);
-    return `→ /${m[ARG_SKILL[field]] || '(スキル)'} ${filled}`;
+    return `→ /${m[ARG_SKILL[field]] || tr('skillPh')} ${filled}`;
   };
   const argInput = (r, field) => `<input data-repo="${esc(r)}" data-field="${field}" value="${esc(cfg.repos[r]?.[field] || '{pr-number}')}">`
     + `<div class="muted" data-preview="${esc(r)}|${field}">${esc(preview(r, field))}</div>`;
@@ -804,10 +1045,10 @@ async function openSettings() {
   const repoTables = () => {
     const repos = Object.keys(cfg.repos);
     return `
-        <h4>リポジトリとスキルの対応</h4>
-        <p class="muted">引数テンプレートで使える値: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}。作業ディレクトリが空なら上の既定値で claude を起動します。スキル一覧は ~/.claude/skills と各作業ディレクトリの .claude/skills から探します。</p>
+        <h4>${tr('s.repoSkills')}</h4>
+        <p class="muted">${tr('s.repoSkills.help')}</p>
         <table class="repos">
-          <thead><tr><th>リポジトリ</th><th>スキル</th><th>引数テンプレート</th><th>作業ディレクトリ</th></tr></thead>
+          <thead><tr><th>${tr('repo')}</th><th>${tr('th.skill')}</th><th>${tr('th.args')}</th><th>${tr('workdir')}</th></tr></thead>
           <tbody>
             ${repos.map((r) => {
               const m = cfg.repos[r] || {};
@@ -815,15 +1056,15 @@ async function openSettings() {
                 <td>${esc(r)}</td>
                 <td><select data-repo="${esc(r)}" data-field="skill">${skillOptions(m.skill)}</select></td>
                 <td>${argInput(r, 'args')}</td>
-                <td><input data-repo="${esc(r)}" data-field="cwd" value="${esc(m.cwd || '')}" placeholder="既定"></td>
+                <td><input data-repo="${esc(r)}" data-field="cwd" value="${esc(m.cwd || '')}" placeholder="${tr('default')}"></td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
-        <h4>レビューを受ける (自分の PR) のスキル</h4>
-        <p class="muted">スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;review-board-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。</p>
+        <h4>${tr('s.mine')}</h4>
+        <p class="muted">${tr('s.mine.help')}</p>
         <table class="repos">
-          <thead><tr><th>リポジトリ</th><th>セルフレビュー</th><th>引数テンプレート</th><th>指摘への対応</th><th>引数テンプレート</th></tr></thead>
+          <thead><tr><th>${tr('repo')}</th><th>${tr('selfReview')}</th><th>${tr('th.args')}</th><th>${tr('th.fix')}</th><th>${tr('th.args')}</th></tr></thead>
           <tbody>
             ${repos.map((r) => {
               const m = cfg.repos[r] || {};
@@ -838,32 +1079,52 @@ async function openSettings() {
           </tbody>
         </table>`;
   };
+  const PANES = ['claude', 'github', 'refresh', 'lang'];
+  let pane = PANES[0];
   const renderDlg = () => {
     dlg.innerHTML = `
-      <div class="dlg-head"><h3>設定</h3><button data-close>閉じる</button></div>
-      <div class="dlg-body">
-        <div class="form-row"><label>作業ディレクトリ</label><input data-cfg="workdir" value="${esc(cfg.workdir)}"></div>
-        <div class="form-row"><label title="空なら claude の既定。サブエージェントも同じモデルで動きます">モデル</label><input data-cfg="model" list="model-list" placeholder="opus" value="${esc(cfg.model || '')}"><datalist id="model-list"><option value="opus"><option value="sonnet"><option value="haiku"></datalist></div>
-        <div class="form-row"><label>effort</label><select data-cfg="effort">${['', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}" ${(cfg.effort || '') === v ? 'selected' : ''}>${v || '(既定)'}</option>`).join('')}</select></div>
-        <div class="form-row"><label>claude 追加引数</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
-        <div class="form-row"><label>マージ済み PR の表示日数</label><input data-cfg="mergedDays" type="number" min="0" value="${esc(cfg.mergedDays)}"></div>
-        <div class="form-row"><label>画面の更新間隔 (秒)</label><input data-cfg="refreshSeconds" type="number" min="1" value="${esc(cfg.refreshSeconds)}"></div>
-        <div class="form-row"><label>GitHub の取得間隔 (分)</label><input data-cfg="pollMinutes" type="number" min="1" value="${esc(cfg.pollMinutes)}"></div>
-        <div class="form-row"><label title="この時間帯の外では GitHub を自動取得しません (手動の更新は可)。開始と終了が同じなら終日">GitHub を自動取得する時間帯 (時)</label><span><input data-cfg="pollStartHour" type="number" min="0" max="23" style="width:5em" value="${esc(cfg.pollStartHour ?? 9)}"> 〜 <input data-cfg="pollEndHour" type="number" min="0" max="24" style="width:5em" value="${esc(cfg.pollEndHour ?? 19)}"></span></div>
-        <div class="form-row"><label>同時実行数</label><input data-cfg="maxConcurrent" type="number" min="1" value="${esc(cfg.maxConcurrent)}"></div>
-        <div class="form-row"><label>PR 作成者 (1 行 1 人、空なら全員)</label><textarea data-cfg="authors" rows="5" placeholder="alice&#10;dependabot[bot]">${esc((cfg.authors || []).join('\n'))}</textarea></div>
-        <div class="form-row"><label>ロードマップ画面の GitHub Projects (1 行 1 つ)</label><textarea data-cfg="projects" rows="3" placeholder="https://github.com/orgs/docket/projects/76">${esc((cfg.projects || []).join('\n'))}</textarea></div>
-        <div class="form-row"><label title="期間別でも同じ数だけ過去・未来の区切りを出します">ロードマップに出す過去のスプリント・期間の数</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
-        <div class="form-row"><label>ロードマップの期間別の区切り</label><select data-cfg="roadmapPeriod">${[['week', '1 週'], ['2week', '2 週'], ['month', '1 か月']].map(([v, l]) => `<option value="${v}" ${(cfg.roadmapPeriod || 'month') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-        <div class="form-row"><label title="期間別でも同じ数だけ過去・未来の区切りを出します">未来のスプリント・期間の数 (スプリントは issue があるものだけ)</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
-        <div class="form-row"><label>リポジトリ (1 行 1 つ、owner/name)</label><textarea data-cfg="repos" rows="4" placeholder="docket/webapp">${esc(Object.keys(cfg.repos).join('\n'))}</textarea></div>
-        <div data-repo-tables>${repoTables()}</div>
+      <div class="dlg-head"><h3>${tr('settings')}</h3><button data-close>${tr('close')}</button></div>
+      <div class="settings-body">
+        <nav class="settings-nav">${PANES.map((p) => `<button data-pane="${p}" class="${p === pane ? 'on' : ''}">${tr(`nav.${p}`)}</button>`).join('')}</nav>
+        <div class="settings-pane" data-pane-body="claude">
+          <div class="form-row"><label>${tr('workdir')}</label><input data-cfg="workdir" value="${esc(cfg.workdir)}"></div>
+          <div class="form-row"><label title="${tr('s.model.title')}">${tr('s.model')}</label><input data-cfg="model" list="model-list" placeholder="opus" value="${esc(cfg.model || '')}"><datalist id="model-list"><option value="opus"><option value="sonnet"><option value="haiku"></datalist></div>
+          <div class="form-row"><label>effort</label><select data-cfg="effort">${['', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}" ${(cfg.effort || '') === v ? 'selected' : ''}>${v || tr('defaultParen')}</option>`).join('')}</select></div>
+          <div class="form-row"><label>${tr('s.claudeArgs')}</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
+          <div class="form-row"><label>${tr('s.concurrent')}</label><input data-cfg="maxConcurrent" type="number" min="1" value="${esc(cfg.maxConcurrent)}"></div>
+        </div>
+        <div class="settings-pane" data-pane-body="github">
+          <h4>${tr('sec.board')}</h4>
+          <div class="form-row"><label>${tr('s.mergedDays')}</label><input data-cfg="mergedDays" type="number" min="0" value="${esc(cfg.mergedDays)}"></div>
+          <div class="form-row"><label>${tr('s.authors')}</label><textarea data-cfg="authors" rows="5" placeholder="alice&#10;dependabot[bot]">${esc((cfg.authors || []).join('\n'))}</textarea></div>
+          <h4>${tr('tab.roadmap')}</h4>
+          <div class="form-row"><label>${tr('s.projects')}</label><textarea data-cfg="projects" rows="3" placeholder="https://github.com/orgs/docket/projects/76">${esc((cfg.projects || []).join('\n'))}</textarea></div>
+          <div class="form-row"><label title="${tr('s.sprintRange.title')}">${tr('s.sprintPast')}</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
+          <div class="form-row"><label>${tr('s.period')}</label><select data-cfg="roadmapPeriod">${['week', '2week', 'month'].map((v) => [v, tr(`unit.${v}`)]).map(([v, l]) => `<option value="${v}" ${(cfg.roadmapPeriod || 'month') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="form-row"><label title="${tr('s.sprintRange.title')}">${tr('s.sprintFuture')}</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
+          <h4>${tr('sec.repos')}</h4>
+          <div class="form-row"><label>${tr('s.repos')}</label><textarea data-cfg="repos" rows="4" placeholder="docket/webapp">${esc(Object.keys(cfg.repos).join('\n'))}</textarea></div>
+          <div data-repo-tables>${repoTables()}</div>
+        </div>
+        <div class="settings-pane" data-pane-body="refresh">
+          <h4>${tr('sec.screen')}</h4>
+          <div class="form-row"><label>${tr('s.refresh')}</label><input data-cfg="refreshSeconds" type="number" min="1" value="${esc(cfg.refreshSeconds)}"></div>
+          <h4>${tr('sec.fetch')}</h4>
+          <div class="form-row"><label>${tr('s.poll')}</label><input data-cfg="pollMinutes" type="number" min="1" value="${esc(cfg.pollMinutes)}"></div>
+          <div class="form-row"><label title="${tr('s.pollHours.title')}">${tr('s.pollHours')}</label><span><input data-cfg="pollStartHour" type="number" min="0" max="23" style="width:5em" value="${esc(cfg.pollStartHour ?? 9)}"> – <input data-cfg="pollEndHour" type="number" min="0" max="24" style="width:5em" value="${esc(cfg.pollEndHour ?? 19)}"></span></div>
+        </div>
+        <div class="settings-pane" data-pane-body="lang">
+          <div class="form-row"><label>${tr('s.uiLang')}</label><select data-ui-lang>${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${uiLang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="form-row"><label title="${tr('s.outLang.title')}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'ja') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        </div>
       </div>
-      <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-save>保存</button></div>`;
+      <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-save>${tr('save')}</button></div>`;
+    dlg.querySelector(`[data-pane-body="${pane}"]`).classList.add('on');
   };
 
   dlg.oninput = (ev) => {
     const t = ev.target;
+    if (t.matches('[data-ui-lang]')) uiLang = t.value;
     if (t.dataset.cfg === 'repos') {
       const names = t.value.split('\n').map((s) => s.trim()).filter((s) => /^[\w.-]+\/[\w.-]+$/.test(s));
       Object.assign(known, cfg.repos);
@@ -885,10 +1146,20 @@ async function openSettings() {
   };
   dlg.onclick = async (ev) => {
     const t = ev.target;
+    // 再描画すると入力途中のテキストエリアが整形されるので、表示の切り替えだけにする
+    if (t.dataset.pane) {
+      pane = t.dataset.pane;
+      for (const el of dlg.querySelectorAll('[data-pane], [data-pane-body]')) el.classList.toggle('on', (el.dataset.pane || el.dataset.paneBody) === pane);
+      return;
+    }
     if (t.matches('[data-close]')) return dlg.close();
     if (t.matches('[data-save]')) {
       await api('/api/config', { method: 'PUT', body: cfg });
       dlg.close();
+      if (uiLang !== lang) {
+        try { localStorage.setItem('rb-lang', uiLang); } catch {}
+        return location.reload();
+      }
       await load();
       if (view() === 'sprint') loadSprint();
     }
@@ -910,7 +1181,14 @@ const spProject = () => {
   return list.includes(spGet('project')) ? spGet('project') : list[0];
 };
 const spDay = (d, n = 0) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
-const spFmt = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+const spFmt = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+// 期間別の区切り名は長さ (7 / 14 日 / それ以外は月) から作る
+const spTitle = (i) => {
+  if (rmMode() !== 'period') return i.title;
+  const days = (Date.parse(i.endDate) - Date.parse(i.startDate)) / 86400000 + 1;
+  if (days === 7 || days === 14) return tr(days === 7 ? 'period.week' : 'period.2week', { date: spFmt(i.startDate) });
+  return new Date(`${i.startDate}T00:00:00Z`).toLocaleDateString(lang, { year: 'numeric', month: 'long', timeZone: 'UTC' });
+};
 const spToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 // スプリントに出てくる担当者 (子孫も含む)
@@ -988,7 +1266,7 @@ function renderSprint() {
   const el = $('#sprint');
   const projects = board.config.projects || [];
   if (!projects.length) {
-    el.innerHTML = '<p class="muted">設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。</p>';
+    el.innerHTML = `<p class="muted">${tr('sp.noProjects')}</p>`;
     return;
   }
   const url = spProject();
@@ -999,29 +1277,29 @@ function renderSprint() {
   const data = it && sp.data[spDataKey(url, it)];
   const select = `<select data-sp-project title="${esc(url)}">${projects.map((u) => `<option value="${esc(u)}"${u === url ? ' selected' : ''}>${esc(sp.meta[u]?.title || u.replace(/^.*github\.com\//, ''))}</option>`).join('')}</select>`;
   // 閉じているときは選んだもののタイトルだけ出し、開いたら日付・件数も出す (spIterLabels)
-  const itOpt = (i) => `<option value="${esc(i.id)}" data-short="${esc(i.title)}" data-full="${esc(`${i.title} (${spFmt(i.startDate)} – ${spFmt(i.endDate)})${i.count === undefined ? '' : ` ${i.count} 件`}`)}"${i.id === it?.id ? ' selected' : ''}>${esc(i.title)}</option>`;
+  const itOpt = (i) => `<option value="${esc(i.id)}" data-short="${esc(spTitle(i))}" data-full="${esc(`${spTitle(i)} (${spFmt(i.startDate)} – ${spFmt(i.endDate)})${i.count === undefined ? '' : ` ${tr('sp.count', { n: i.count })}`}`)}"${i.id === it?.id ? ' selected' : ''}>${esc(spTitle(i))}</option>`;
   // サーバーが新しい順に絞って返すので、未来 / 現在 / 過去 に分けるだけ
   const today = spToday();
   const group = (label, list) => (list.length ? `<optgroup label="${label}">${list.map(itOpt).join('')}</optgroup>` : '');
   const itSelect = !items?.length ? '' : `<select data-sp-iteration>${
-    group('未来', items.filter((i) => i.startDate > today))
-    + group('現在', items.filter((i) => i.startDate <= today && today <= i.endDate))
-    + group('過去', items.filter((i) => i.endDate < today))}</select>`;
+    group(tr('future'), items.filter((i) => i.startDate > today))
+    + group(tr('current'), items.filter((i) => i.startDate <= today && today <= i.endDate))
+    + group(tr('past'), items.filter((i) => i.endDate < today))}</select>`;
   const road = sp.error ? `<div class="banner" style="margin:12px">${esc(sp.error)}</div>`
-    : mode === 'sprint' && meta && !meta.sprint ? '<p class="muted" style="padding:12px">このプロジェクトには Iteration フィールドがありません。</p>'
-    : mode === 'period' && meta && !meta.start && !meta.end ? '<p class="muted" style="padding:12px">このプロジェクトには Date フィールドがありません。</p>'
-    : data ? roadmapHtml({ ...data, roots: spFilter(data.roots) }, mode === 'period' ? 'この期間に開始日・終了日が入った issue はありません。' : 'このスプリントの issue はありません。') : '<p class="muted" style="padding:12px"><span class="spin"></span> 読み込み中…</p>';
+    : mode === 'sprint' && meta && !meta.sprint ? `<p class="muted" style="padding:12px">${tr('sp.noIteration')}</p>`
+    : mode === 'period' && meta && !meta.start && !meta.end ? `<p class="muted" style="padding:12px">${tr('err.noDateField')}</p>`
+    : data ? roadmapHtml({ ...data, roots: spFilter(data.roots) }, mode === 'period' ? tr('sp.emptyPeriod') : tr('sp.emptySprint')) : `<p class="muted" style="padding:12px"><span class="spin"></span> ${tr('loading')}</p>`;
   // 再描画でロードマップのスクロール位置が戻らないようにする
   const scroll = el.querySelector('.sp-road');
   const pos = scroll && [scroll.scrollLeft, scroll.scrollTop];
     // 最上位 issue をまとめて畳む / 開く
   const allFolded = data?.roots.every((n) => !n.children.length || sp.collapsed.has(n.id));
-  const foldAll = data?.roots.length ? `<button class="fold-all" data-sp-all="${allFolded ? 'open' : 'fold'}">${allFolded ? '▸ すべて開く' : '▾ すべて畳む'}</button>` : '';
+  const foldAll = data?.roots.length ? `<button class="fold-all" data-sp-all="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
   const right = `<span class="sp-right">${sp.loading ? '<span class="spin"></span>' : ''}${spRefetch(data)}${foldAll}</span>`;
   // スプリント・期間の選択もプロジェクトと一緒にフィルタの先頭に置く
   // 表示方法の切り替えはプロジェクトの右に区切り線付きで置く
   const modeSeg = `<span class="seg">${Object.entries(RM_MODES).map(([m, l]) => `<button data-rm-switch="${m}"${m === mode ? ' class="primary"' : ''}>${l}</button>`).join('')}</span>`;
-  const peopleBar = spPeopleBar(data, right, `${field('プロジェクト', select)}<span class="sep"></span>${field('表示', modeSeg)}${itSelect && field(mode === 'period' ? '期間' : 'スプリント', itSelect)}`);
+  const peopleBar = spPeopleBar(data, right, `${field(tr('sp.project'), select)}<span class="sep"></span>${field(tr('sp.view'), modeSeg)}${itSelect && field(mode === 'period' ? tr('sp.period') : tr('sp.sprint'), itSelect)}`);
   el.innerHTML = `${peopleBar}
     <section class="sp-road">${road}</section>`;
   if (pos && data) [el.querySelector('.sp-road').scrollLeft, el.querySelector('.sp-road').scrollTop] = pos;
@@ -1030,7 +1308,7 @@ function renderSprint() {
 // 取得時刻を兼ねた手動更新ボタン (hover で ↻ を出す)
 function spRefetch(data) {
   if (!data?.fetchedAt) return '';
-  return `<button class="refetch" data-sp-refresh ${sp.loading ? 'disabled' : ''} title="${esc(new Date(data.fetchedAt).toLocaleString())} — キャッシュ (24 時間) を使わず GitHub から取り直す"><span class="hint">↻ </span>${ago(data.fetchedAt)}取得</button>`;
+  return `<button class="refetch" data-sp-refresh ${sp.loading ? 'disabled' : ''} title="${esc(new Date(data.fetchedAt).toLocaleString(lang))} — ${tr('sp.refetchTitle')}"><span class="hint">↻ </span>${tr('fetchedAgo', { ago: ago(data.fetchedAt) })}</button>`;
 }
 
 // lead: フィルタの先頭に区切り線付きで置く選択欄 (無ければ issue があるときだけ出す)
@@ -1040,13 +1318,13 @@ function spPeopleBar(data, foldAll, lead = '') {
   const inData = data ? spRepos(data.roots) : new Set();
   const repos = [...new Set([...Object.keys(board.config.repos || {}), ...inData])];
   const shown = repos.filter((r) => inData.has(r) && (!sp.repos || sp.repos.has(r)));
-  const repoSelect = inData.size && multiSelect('sp-repos', 'リポジトリ',
-    `${!sp.repos ? 'すべて' : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : 'なし'}`,
+  const repoSelect = inData.size && multiSelect('sp-repos', tr('repo'),
+    `${!sp.repos ? tr('all') : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : tr('none')}`,
     repos.map((r) => ({ value: r, text: r.split('/')[1], disabled: !inData.has(r) })), (r) => !sp.repos || sp.repos.has(r));
   const on = people.filter((a) => !sp.people || sp.people.has(a.login));
-  const summary = `${!sp.people ? 'すべて' : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : 'なし'}`;
-  const select = people.length && multiSelect('people', '担当者', summary, people.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !sp.people || sp.people.has(l),
-    `<label class="ms-extra"><input type="checkbox" data-sp-root-only ${sp.rootOnly ? 'checked' : ''}>親 issue の担当者で絞る</label>`);
+  const summary = `${!sp.people ? tr('all') : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : tr('none')}`;
+  const select = people.length && multiSelect('people', tr('sp.assignee'), summary, people.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !sp.people || sp.people.has(l),
+    `<label class="ms-extra"><input type="checkbox" data-sp-root-only ${sp.rootOnly ? 'checked' : ''}>${tr('sp.rootOnly')}</label>`);
   const parts = [lead, repoSelect, select].filter(Boolean);
   return parts.length ? `<div class="sp-row"><div class="sp-people">${parts.join('<span class="sep"></span>')}</div>${foldAll}</div>` : '';
 }
@@ -1078,7 +1356,7 @@ function roadmapHtml({ sprint, roots }, empty) {
   const cells = [];
   days.forEach((d, i) => {
     const inSprint = d >= sprint.startDate && d <= sprint.endDate;
-    cells.push(`<div class="hd${d === today ? ' today' : ''}${inSprint ? ' in' : ''}" style="grid-row:1;grid-column:${1 + i}">${i === 0 || d.endsWith('-01') ? `${Number(d.slice(5, 7))}月<br>` : '<br>'}${Number(d.slice(8))}</div>`);
+    cells.push(`<div class="hd${d === today ? ' today' : ''}${inSprint ? ' in' : ''}" style="grid-row:1;grid-column:${1 + i}">${i === 0 || d.endsWith('-01') ? `${new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' })}<br>` : '<br>'}${Number(d.slice(8))}</div>`);
     if (d === today) cells.push(`<div class="col today" style="grid-column:${1 + i}"></div>`);
   });
   let r = 2;
@@ -1097,7 +1375,7 @@ function roadmapHtml({ sprint, roots }, empty) {
         cells.push(`<div class="bar ext ${stCls}" style="grid-row:${row};grid-column:${col(n.end) + 1} / ${(n.rawEnd > last ? col(last) : col(n.rawEnd)) + 1}"></div>`);
       }
       const avatars = n.assignees.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('');
-      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n(設定: ${n.rawStart || '未設定'} – ${n.rawEnd || '未設定'})` : ' (日付未設定)'}`)}">${toggle}${avatars}<a class="t" href="${esc(n.url)}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span></div>`);
+      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${toggle}${avatars}<a class="t" href="${esc(n.url)}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span></div>`);
     });
     r += rows.length;
   }
@@ -1173,14 +1451,14 @@ async function runMine(key, mode) {
 async function openLog(key) {
   const dlg = $('#log-dlg');
   const pre = dlg.querySelector('pre');
-  pre.textContent = '読み込み中…';
+  pre.textContent = tr('loading');
   dlg.showModal();
   const token = (openLog.token = {});
   while (dlg.open && openLog.token === token) {
     try {
       const { running, lines } = await api(`/api/log?key=${encodeURIComponent(key)}`);
       const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-      pre.textContent = lines.length ? lines.join('\n') : running ? 'まだ出力がありません' : '実行は終了しました';
+      pre.textContent = lines.length ? lines.join('\n') : running ? tr('noOutputYet') : tr('runEnded');
       if (atBottom) pre.scrollTop = pre.scrollHeight;
       if (!running) return;
     } catch (e) {
@@ -1213,7 +1491,7 @@ $('#board').addEventListener('click', async (ev) => {
   if (t.matches('[data-review]')) return review(t.dataset.review);
   if (t.matches('[data-settings]')) { ev.preventDefault(); return openSettings(); }
   if (t.matches('[data-cancel]')) {
-    if (!confirmTwice(t, `cancel:${t.dataset.cancel}`, '本当にキャンセル？')) return;
+    if (!confirmTwice(t, `cancel:${t.dataset.cancel}`, tr('confirmCancel'))) return;
     try {
       await api('/api/cancel', { method: 'POST', body: { key: t.dataset.cancel } });
     } catch (e) {
@@ -1236,7 +1514,7 @@ $('#board').addEventListener('click', async (ev) => {
   if (t.matches('[data-log]')) return openLog(t.dataset.log);
   if (t.matches('[data-mine-run]')) return runMine(t.dataset.key, t.dataset.mineRun);
   if (t.matches('[data-mine-cancel]')) {
-    if (!confirmTwice(t, `cancel:${t.dataset.mineCancel}`, '本当にキャンセル？')) return;
+    if (!confirmTwice(t, `cancel:${t.dataset.mineCancel}`, tr('confirmCancel'))) return;
     try {
       await api('/api/mine/cancel', { method: 'POST', body: { key: t.dataset.mineCancel } });
     } catch (e) {
@@ -1298,7 +1576,7 @@ $('#board').addEventListener('drop', async (ev) => {
     if (lane.dataset.lane === 'commented') await api('/api/skip', { method: 'POST', body: { key } });
     else if (from === 'reviewing') await api('/api/cancel', { method: 'POST', body: { key } });
     else if (from === 'planned') {
-      if (!confirm('PR 上の自分のコメントを指示として修正・push・返信します。よろしいですか？')) return;
+      if (!confirm(tr('confirmApplyComments'))) return;
       await api('/api/mine/apply-comments', { method: 'POST', body: { key } });
       saveDraft(key, {});
     }

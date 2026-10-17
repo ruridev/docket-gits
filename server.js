@@ -40,7 +40,12 @@ const DEFAULT_CONFIG = {
   sprintFuture: 1,
   // ロードマップの期間別の 1 区切り: week / 2week / month
   roadmapPeriod: 'month',
+  // Claude が PR に書く文章・ボードに出す指摘の言語: ja / ko / en
+  outputLang: 'ja',
 };
+
+// 画面に出すエラーは言語に依存しないコードで返し、ブラウザ側で翻訳する
+const E = (code, params) => ({ code, ...(params && { params }) });
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
 const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
@@ -309,6 +314,17 @@ function buildCommentApplyPrompt(pr) {
 - ${APPLIED_TAG}`;
 }
 
+// どの実行にも付ける出力言語の指示。指示文は日本語のまま、書かせる文章の言語だけ切り替える
+const OUTPUT_LANGS = { ja: '日本語', ko: '韓国語', en: '英語' };
+function withOutputLang(prompt, lang) {
+  const name = OUTPUT_LANGS[lang] || OUTPUT_LANGS.ja;
+  return `${prompt}
+
+## 出力言語
+- PR・issue に書く文章 (レビューコメント・返信・issue / PR の本文) と、<review-board-*> ブロック内の文章 (summary・title・body・comment・plan・reply・error) はすべて${name}で書く。上の指示にある定型文 (「人間のレビュアーもコードを読みました ✅」「修正しました」など) も${name}にして使う。
+- category など値が決められている項目は指示どおりの値のままにする。`;
+}
+
 // 最終回答から <tag>JSON</tag> を取り出す (最後の出現を優先)
 function extractTagJson(text, tag) {
   const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g');
@@ -386,12 +402,11 @@ function periodAt(date, unit) {
   const [y, m] = date.split('-').map(Number);
   if (!PERIOD_UNITS[unit]) {
     const startDate = `${date.slice(0, 7)}-01`;
-    return { id: startDate, title: `${y}年${m}月`, startDate, endDate: addDays(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10), -1) };
+    return { id: startDate, startDate, endDate: addDays(new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10), -1) };
   }
   const days = Math.floor((Date.parse(`${date}T00:00:00Z`) - Date.parse('2024-01-01T00:00:00Z')) / 86400000);
   const startDate = addDays('2024-01-01', days - (((days % PERIOD_UNITS[unit]) + PERIOD_UNITS[unit]) % PERIOD_UNITS[unit]));
-  const [, sm, sd] = startDate.split('-').map(Number);
-  return { id: startDate, title: `${sm}/${sd} からの${unit === 'week' ? '週' : ' 2 週間'}`, startDate, endDate: addDays(startDate, PERIOD_UNITS[unit] - 1) };
+  return { id: startDate, startDate, endDate: addDays(startDate, PERIOD_UNITS[unit] - 1) };
 }
 
 // 今日を含む区切りと、過去 past 個・未来 future 個を新しい順に並べる
@@ -564,7 +579,7 @@ const filterQuery = (field, title) => `${JSON.stringify(field)}:${JSON.stringify
 
 async function projectMeta(url, refresh) {
   const p = parseProjectUrl(url);
-  if (!p) throw new Error(`プロジェクト URL を解析できません: ${url}`);
+  if (!p) throw E('projectUrlInvalid', { url });
   const range = { past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) };
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   return cached(`meta:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
@@ -645,7 +660,7 @@ async function expandTree(ids, issues, names, projectId, range) {
 async function sprintIssues(url, iterationId, refresh) {
   const meta = await projectMeta(url, refresh);
   const sprint = meta.iterations.find((i) => i.id === iterationId);
-  if (!sprint) throw new Error('スプリントが見つかりません');
+  if (!sprint) throw E('sprintNotFound');
   return cached(`sprint:${url}:${iterationId}`, refresh, async () => (
     { sprint, roots: await issueTree(url, meta, [filterQuery(meta.sprint, sprint.title)], sprint), fetchedAt: Date.now() }
   ));
@@ -654,9 +669,9 @@ async function sprintIssues(url, iterationId, refresh) {
 const periodRange = () => ({ unit: PERIOD_UNITS[config.roadmapPeriod] !== undefined ? config.roadmapPeriod : 'month', past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) });
 
 async function periodIssues(url, from, refresh) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw new Error('期間の指定が不正です');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw E('periodInvalid');
   const meta = await projectMeta(url, refresh);
-  if (!meta.start && !meta.end) throw new Error('このプロジェクトには Date フィールドがありません');
+  if (!meta.start && !meta.end) throw E('noDateField');
   const { unit } = periodRange();
   const period = periodAt(from, unit);
   return cached(`period:${url}:${unit}:${period.id}`, refresh, async () => (
@@ -726,14 +741,14 @@ function readRun(dir, logName, code) {
     stdout = fs.readFileSync(`${base}.out`, 'utf8');
     stderr = fs.readFileSync(`${base}.err`, 'utf8');
   } catch (e) {
-    return { ok: false, error: `claude の出力を読めません: ${e.message}` };
+    return { ok: false, error: E('claudeReadFailed', { message: e.message }) };
   }
   fs.writeFileSync(`${base}.log`, `exit=${code}\n--- stdout\n${stdout}\n--- stderr\n${stderr}`);
   fs.rmSync(`${base}.out`, { force: true });
   fs.rmSync(`${base}.err`, { force: true });
   // stream-json は 1 行 1 イベントで、最後の result イベントに結果がまとまる
   const parsed = parseLines(stdout).findLast((ev) => ev.type === 'result');
-  if (!parsed) return { ok: false, error: `claude の出力を解析できません (exit=${code}): ${stderr.slice(-500)}` };
+  if (!parsed) return { ok: false, error: E('claudeParseFailed', { code, stderr: stderr.slice(-500) }) };
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
 }
 
@@ -761,7 +776,7 @@ function waitForExit(pid) {
 function runClaude(prompt, { key, cwd, resume, logName }) {
   return new Promise((resolve) => {
     const model = modelOptions(config);
-    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
+    const args = ['-p', withOutputLang(prompt, config.outputLang), '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
     if (resume) args.push('--resume', resume);
     fs.mkdirSync(LOG_DIR, { recursive: true });
     const base = path.join(LOG_DIR, logName);
@@ -818,7 +833,7 @@ function finishReview(key, cwd, res) {
   updateEntry(key, { run: null, usage: addUsage(state.prs[key]?.usage, res.usage) });
   // キャンセル済みなら結果を捨てる
   if (state.prs[key]?.status !== 'reviewing') return;
-  if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || 'レビューに失敗しました' });
+  if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || E('reviewFailed') });
   const parsed = extractTagJson(res.result, 'review-board-findings');
   updateEntry(key, {
     status: 'reviewed',
@@ -827,7 +842,7 @@ function finishReview(key, cwd, res) {
     raw: res.result,
     summary: parsed?.summary || null,
     findings: Array.isArray(parsed?.findings) ? parsed.findings : null,
-    error: parsed ? null : '指摘一覧 (JSON) を取得できませんでした。原文を確認してください',
+    error: parsed ? null : E('findingsParseFailed'),
     reviewedAt: Date.now(),
   });
 }
@@ -836,7 +851,7 @@ function finishPost(key, res) {
   updateEntry(key, { run: null, usage: addUsage(state.prs[key]?.usage, res.usage) });
   const posted = res.ok ? extractTagJson(res.result, 'review-board-posted') : null;
   if (!posted?.posted) {
-    return updateEntry(key, { status: 'reviewed', error: posted?.error || res.error || '投稿結果を確認できませんでした', postRaw: res.result });
+    return updateEntry(key, { status: 'reviewed', error: posted?.error || res.error || E('postUnknown'), postRaw: res.result });
   }
   updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: posted.url || null, postRaw: res.result });
 }
@@ -899,7 +914,7 @@ function finishMine(key, cwd, res) {
   const entry = state.mine[key];
   // キャンセル済みなら結果を捨てる
   if (entry?.status !== 'running') return;
-  if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || '実行に失敗しました' });
+  if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || E('runFailed') });
   const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'review-board-findings' : 'review-board-fix-plan');
   const items = entry.mode === 'self' ? parsed?.findings : parsed?.items;
   updateEntry(key, {
@@ -909,7 +924,7 @@ function finishMine(key, cwd, res) {
     raw: res.result,
     summary: parsed?.summary || null,
     findings: Array.isArray(items) ? items : null,
-    error: parsed ? null : '結果 (JSON) を取得できませんでした。原文を確認してください',
+    error: parsed ? null : E('resultParseFailed'),
   });
 }
 
@@ -917,7 +932,7 @@ function finishApply(key, res) {
   updateEntry(key, { run: null, usage: addUsage(state.mine[key]?.usage, res.usage) });
   const applied = res.ok ? extractTagJson(res.result, 'review-board-applied') : null;
   if (!applied?.done) {
-    return updateEntry(key, { status: 'planned', error: applied?.error || res.error || '対応結果を確認できませんでした。PR を確認してください', applyRaw: res.result });
+    return updateEntry(key, { status: 'planned', error: applied?.error || res.error || E('applyUnknown'), applyRaw: res.result });
   }
   updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, appliedAt: Date.now(), applyRaw: res.result });
 }
@@ -1050,7 +1065,7 @@ async function handle(req, res) {
     const iteration = url.searchParams.get('iteration');
     const refresh = url.searchParams.get('refresh') === '1';
     try {
-      if (!config.projects.includes(project)) return send(res, 404, { error: 'プロジェクトが設定にありません' });
+      if (!config.projects.includes(project)) return send(res, 404, { error: E('projectNotConfigured') });
       if (url.searchParams.get('mode') === 'period') {
         const id = url.searchParams.get('id');
         if (id) return send(res, 200, await periodIssues(project, id, refresh));
@@ -1061,7 +1076,7 @@ async function handle(req, res) {
       if (!iteration) return send(res, 200, { meta: await projectMeta(project, refresh) });
       return send(res, 200, await sprintIssues(project, iteration, refresh));
     } catch (e) {
-      return send(res, 502, { error: e.message });
+      return send(res, 502, { error: e instanceof Error ? e.message : e });
     }
   }
 
@@ -1079,36 +1094,36 @@ async function handle(req, res) {
     if (!mine) return send(res, 404, { error: 'not found' });
     if (url.pathname === '/api/mine/run') {
       const skill = config.repos[mine.pr.repo]?.[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
-      if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: `${mine.pr.repo} のスキルが未設定です` });
-      if (!['idle', 'planned'].includes(mine.status)) return send(res, 409, { error: '実行中です' });
+      if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: E('skillMissing', { repo: mine.pr.repo }) });
+      if (!['idle', 'planned'].includes(mine.status)) return send(res, 409, { error: E('running') });
       enqueueMine(body.key, body.mode);
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/apply') {
-      if (mine.status !== 'planned' || !mine.findings || !mine.sessionId) return send(res, 409, { error: '対応できる状態ではありません' });
-      if (!body.confirmed) return send(res, 400, { error: '「指摘内容を確認しました」にチェックしてください' });
-      if (!canDecideAll(mine.findings, body.decisions)) return send(res, 400, { error: '未判断の指摘があります' });
+      if (mine.status !== 'planned' || !mine.findings || !mine.sessionId) return send(res, 409, { error: E('cannotApply') });
+      if (!body.confirmed) return send(res, 400, { error: E('confirmRequired') });
+      if (!canDecideAll(mine.findings, body.decisions)) return send(res, 400, { error: E('undecided') });
       enqueueApply(body.key, body.decisions);
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/apply-comments') {
-      if (mine.status !== 'planned' || !mine.sessionId) return send(res, 409, { error: '対応できる状態ではありません' });
+      if (mine.status !== 'planned' || !mine.sessionId) return send(res, 409, { error: E('cannotApply') });
       enqueueApply(body.key, null);
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/merge-ready') {
-      if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: '移動できる状態ではありません' });
+      if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: E('cannotMove') });
       updateEntry(body.key, { mergeReady: !!body.ready, done: false });
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/done') {
       // 未対応の指摘が残っていると次の取得で指摘ありに戻るので移せない
-      if (mine.status !== 'idle' || (body.done && mine.pending)) return send(res, 409, { error: '移動できる状態ではありません' });
+      if (mine.status !== 'idle' || (body.done && mine.pending)) return send(res, 409, { error: E('cannotMove') });
       updateEntry(body.key, { done: !!body.done, mergeReady: false });
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/cancel') {
-      if (!['queued', 'running'].includes(mine.status)) return send(res, 409, { error: 'キャンセルできる状態ではありません' });
+      if (!['queued', 'running'].includes(mine.status)) return send(res, 409, { error: E('cannotCancel') });
       cancelMine(body.key);
       return send(res, 200, { ok: true });
     }
@@ -1119,25 +1134,25 @@ async function handle(req, res) {
   if (req.method !== 'POST' || !entry) return send(res, 404, { error: 'not found' });
 
   if (url.pathname === '/api/review') {
-    if (!config.repos[entry.pr.repo]?.skill) return send(res, 400, { error: `${entry.pr.repo} のスキルが未設定です` });
-    if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: '実行中です' });
+    if (!config.repos[entry.pr.repo]?.skill) return send(res, 400, { error: E('skillMissing', { repo: entry.pr.repo }) });
+    if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: E('running') });
     enqueueReview(body.key);
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/post') {
-    if (entry.status !== 'reviewed' || !entry.findings || !entry.sessionId) return send(res, 409, { error: '投稿できる状態ではありません' });
-    if (!canDecideAll(entry.findings, body.decisions)) return send(res, 400, { error: '未判断の指摘があります' });
+    if (entry.status !== 'reviewed' || !entry.findings || !entry.sessionId) return send(res, 409, { error: E('cannotPost') });
+    if (!canDecideAll(entry.findings, body.decisions)) return send(res, 400, { error: E('undecided') });
     enqueuePost(body.key, body.decisions, !!body.approve, !!body.humanRead);
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/cancel') {
-    if (!['queued', 'reviewing'].includes(entry.status)) return send(res, 409, { error: 'キャンセルできる状態ではありません' });
+    if (!['queued', 'reviewing'].includes(entry.status)) return send(res, 409, { error: E('cannotCancel') });
     cancelReview(body.key);
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/skip') {
     // 投稿せずに Done へ移す。GitHub 上の依頼は残るので mergeBoard で requested に戻さない
-    if (!['requested', 'reviewed'].includes(entry.status)) return send(res, 409, { error: 'スキップできる状態ではありません' });
+    if (!['requested', 'reviewed'].includes(entry.status)) return send(res, 409, { error: E('cannotSkip') });
     updateEntry(body.key, { status: 'commented', commentedAt: Date.now(), skipped: true, error: null });
     return send(res, 200, { ok: true });
   }
@@ -1162,9 +1177,9 @@ function main() {
     }
     if (e.status === 'queued' || e.status === 'reviewing') {
       if (config.repos[e.pr.repo]?.skill) requeue.push(() => enqueueReview(key));
-      else state.prs[key] = { ...e, status: 'requested', error: 'サーバー再起動により中断されました' };
+      else state.prs[key] = { ...e, status: 'requested', error: E('restartInterrupted') };
     }
-    if (e.status === 'posting') state.prs[key] = { ...e, status: 'reviewed', error: 'サーバー再起動により投稿が中断されました。PR を確認してから再実行してください' };
+    if (e.status === 'posting') state.prs[key] = { ...e, status: 'reviewed', error: E('restartPostInterrupted') };
   }
   for (const [key, e] of Object.entries(state.mine)) {
     if ((e.status === 'running' || e.status === 'applying') && e.run) {
@@ -1173,9 +1188,9 @@ function main() {
     }
     if (e.status === 'queued' || e.status === 'running') {
       if (config.repos[e.pr.repo]?.[e.mode === 'self' ? 'selfSkill' : 'fixSkill']) requeue.push(() => enqueueMine(key, e.mode));
-      else state.mine[key] = { ...e, status: 'idle', error: 'サーバー再起動により中断されました' };
+      else state.mine[key] = { ...e, status: 'idle', error: E('restartInterrupted') };
     }
-    if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: 'サーバー再起動により対応が中断されました。PR を確認してから再実行してください' };
+    if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: E('restartApplyInterrupted') };
   }
   saveState();
   // 回収中のジョブを running に数えてから積むので maxConcurrent を超えない
@@ -1193,4 +1208,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, inPollHours, RE_REQUEST_GRACE_MS };
