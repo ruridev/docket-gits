@@ -117,7 +117,8 @@ function searchQueries(mergedDays, now) {
 
 // GraphQL の Bot login には "[bot]" が付かないので揃えて比較する
 function authorKey(login) {
-  return (login || '').trim().toLowerCase().replace(/\[bot\]$/, '');
+  // 設定に数値などが混ざっても落ちないよう文字列にする
+  return String(login ?? '').trim().toLowerCase().replace(/\[bot\]$/, '');
 }
 
 function filterByAuthors(nodes, authors) {
@@ -489,11 +490,14 @@ function splitArgs(str) {
 }
 
 // 判断は no をキーに保存するので、Claude が番号を重複・欠落させたら 1 から振り直す
+// null などオブジェクトでない要素は判断の保存・表示で落ちるので捨てる
 function normalizeNos(items) {
   if (!Array.isArray(items)) return null;
-  const nos = items.map((f) => f.no);
-  if (nos.every((n) => n != null && n !== '') && new Set(nos.map(String)).size === nos.length) return items;
-  return items.map((f, i) => ({ ...f, no: i + 1 }));
+  const isObj = (f) => f && typeof f === 'object';
+  const list = items.every(isObj) ? items : items.filter(isObj);
+  const nos = list.map((f) => f.no);
+  if (nos.every((n) => n != null && n !== '') && new Set(nos.map(String)).size === nos.length) return list;
+  return list.map((f, i) => ({ ...f, no: i + 1 }));
 }
 
 function canDecideAll(findings, decisions) {
@@ -640,7 +644,8 @@ function updateEntry(key, patch) {
 function gh(args) {
   return new Promise((resolve, reject) => {
     execFile('gh', args, { maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(stderr || err.message));
+      // GraphQL の一部だけエラーでも失敗で終わるので、取れたデータを使えるよう stdout も渡す
+      if (err) reject(Object.assign(new Error(stderr || err.message), { stdout }));
       else resolve(stdout);
     });
   });
@@ -655,18 +660,25 @@ function refreshFromGitHub() {
 
 async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
-  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`]);
+  // SAML で保護された org の PR など一部のノードだけ読めないと gh は失敗で終わる。取れた分は反映し、エラーも画面に出す
+  let partialError = null;
+  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`]).catch((e) => {
+    try {
+      if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
+    } catch {}
+    throw e;
+  });
   const { data } = JSON.parse(out);
   state.viewer = data.viewer;
-  const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n.number);
+  const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now());
   // 個人リポジトリなどを混ぜないよう、設定に登録したリポジトリの PR だけ扱う (未登録なら全件)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
-  state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n.number && registered(n)), data.viewer.login);
+  state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n?.number && registered(n)), data.viewer.login);
   // ponytail: ページングせず 1 ページだけ取る。上限を超えたら画面で知らせる (超えるようなら after でページングする)
   state.truncated = ['open', 'merged', 'mine'].some((k) => data[k] && data[k].issueCount > data[k].nodes.length);
   state.lastFetchedAt = Date.now();
-  state.fetchError = null;
+  state.fetchError = partialError;
   saveState();
 }
 
@@ -843,9 +855,10 @@ function sanitizeConfig(body) {
 }
 
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
+// setInterval は 2^31 ms (約 24.8 日) を超えると 1 ms になるので、1 日で頭打ちにする
 function pollIntervalMs(minutes) {
   const m = Number(minutes);
-  return (m >= 1 ? m : DEFAULT_CONFIG.pollMinutes) * 60 * 1000;
+  return Math.min(m >= 1 ? m : DEFAULT_CONFIG.pollMinutes, 24 * 60) * 60 * 1000;
 }
 
 // 設定欄を空にすると 0 になり、キューが二度と動かなくなるので既定値に戻す
@@ -944,10 +957,15 @@ function logFiles(dir) {
   } catch {
     return [];
   }
-  return names.filter((n) => n.endsWith('.log')).map((n) => {
+  // リンク切れ・途中で消えたファイルは飛ばす (日次の削除で投げるとサーバーごと落ちる)
+  return names.filter((n) => n.endsWith('.log')).flatMap((n) => {
     const file = path.join(dir, n);
-    const { size, mtimeMs } = fs.statSync(file);
-    return { file, size, mtimeMs };
+    try {
+      const { size, mtimeMs } = fs.statSync(file);
+      return [{ file, size, mtimeMs }];
+    } catch {
+      return [];
+    }
   });
 }
 
@@ -988,11 +1006,14 @@ function isClaudeRun(pid) {
 }
 
 // detached で起動した claude はプロセスグループのリーダーなので、グループごと止めて Bash ツールの子プロセスも残さない
+// 確認した直後に終わっていると ESRCH で投げ、キャンセルが状態を戻せなくなるので無視する
 function killRun(pid) {
   try {
     process.kill(-pid, 'SIGTERM');
   } catch {
-    process.kill(pid, 'SIGTERM');
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {}
   }
 }
 
@@ -1083,14 +1104,16 @@ function finishReview(key, cwd, res, runId) {
   if (stale || state.prs[key]?.status !== 'reviewing') return;
   if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || E('reviewFailed') });
   const parsed = extractTagJson(res.result, 'docket-findings');
+  const findings = normalizeNos(parsed?.findings);
   updateEntry(key, {
     status: 'reviewed',
     sessionId: res.sessionId,
     cwd,
     raw: res.result,
     summary: parsed?.summary || null,
-    findings: normalizeNos(parsed?.findings),
-    error: parsed ? null : E('findingsParseFailed'),
+    findings,
+    // findings が配列でなければ投稿できないので、解析失敗として出力を見せる
+    error: findings ? null : E('findingsParseFailed'),
     reviewedAt: Date.now(),
   });
 }
@@ -1168,7 +1191,8 @@ function finishMine(key, cwd, res, runId) {
   if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || E('runFailed') });
   const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'docket-findings' : 'docket-fix-plan');
   // rebut の判断材料として、事前判断で書いた理由を添える
-  const items = entry.mode === 'self' ? parsed?.findings : parsed?.items?.map((i) => ({ ...i, ownReason: entry.triage?.find((t) => String(t.no) === String(i.no))?.reason || null }));
+  // items が配列でないと map で投げ、カードが実行中のまま止まる
+  const items = entry.mode === 'self' ? parsed?.findings : Array.isArray(parsed?.items) ? parsed.items.filter((i) => i && typeof i === 'object').map((i) => ({ ...i, ownReason: entry.triage?.find((t) => String(t.no) === String(i.no))?.reason || null })) : null;
   updateEntry(key, {
     status: 'planned',
     sessionId: res.sessionId,
@@ -1176,7 +1200,7 @@ function finishMine(key, cwd, res, runId) {
     raw: res.result,
     summary: parsed?.summary || null,
     findings: normalizeNos(items),
-    error: parsed ? null : E('resultParseFailed'),
+    error: normalizeNos(items) ? null : E('resultParseFailed'),
   });
 }
 
@@ -1300,8 +1324,10 @@ async function handle(req, res) {
   if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'forbidden host' });
 
   if (req.method === 'GET' && url.pathname === '/') {
+    // 読めなかったときに 500 を返せるよう、ヘッダーより先に読む
+    const html = fs.readFileSync(path.join(__dirname, 'index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(fs.readFileSync(path.join(__dirname, 'index.html')));
+    return res.end(html);
   }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
@@ -1485,7 +1511,8 @@ function main() {
       continue;
     }
     if (e.status === 'queued' || e.status === 'running') {
-      if (config.repos[e.pr.repo]?.[e.mode === 'self' ? 'selfSkill' : 'fixSkill']) requeue.push(() => enqueueMine(key, e.mode));
+      // 指摘への対応は事前判断 (triage) が無いとプロンプトを作れないので、引き継げなければ戻す
+      if (config.repos[e.pr.repo]?.[e.mode === 'self' ? 'selfSkill' : 'fixSkill'] && (e.mode === 'self' || e.triage)) requeue.push(() => enqueueMine(key, e.mode, e.triage));
       else state.mine[key] = { ...e, status: 'idle', error: E('restartInterrupted') };
     }
     if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: E('restartApplyInterrupted') };
@@ -1502,10 +1529,11 @@ function main() {
   setInterval(() => pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays)), 24 * 60 * 60 * 1000);
 
   http
-    .createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
+    // 送信後に投げた場合にもう一度 writeHead すると、未処理の rejection でサーバーごと落ちる
+    .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, 500, { error: e.message }))))
     .listen(PORT, '127.0.0.1', () => console.log(`Docket: http://localhost:${PORT}`));
 }
 
 if (require.main === module) main();
 
-module.exports = { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { killRun, readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

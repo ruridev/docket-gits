@@ -796,8 +796,9 @@ async function load(refresh = false) {
   const seq = ++loadSeq;
   try {
     const next = await api(`/api/board${refresh ? '?refresh=1' : ''}`);
-    if (seq < loadApplied) return;
-    loadApplied = seq;
+    // 「更新」は GitHub の取得を待つ間に後発のポーリングが先に返るが、結果は一番新しいので捨てない
+    if (seq < loadApplied && !refresh) return;
+    loadApplied = Math.max(loadApplied, seq);
     board = next;
   } catch (e) {
     board.fetchError = e.message;
@@ -899,7 +900,7 @@ function render() {
   // 押すたびに すべて → のみ → 除外 と切り替わる 1 つのボタン
   const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
   if (!(approved in APPROVED)) approved = '';
-  const approvedSeg = '<span class="sep"></span>' + field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${tr('approved.title')}">${APPROVED[approved]}</button>`);
+  const approvedSeg = '<span class="sep"></span>' + field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${esc(tr('approved.title'))}">${APPROVED[approved]}</button>`);
   // 定期再描画で検索欄の入力中のフォーカスが外れないよう、作り直した欄に戻す
   const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
   const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
@@ -977,7 +978,7 @@ function cardHtml(e) {
     action = mapping?.skill
       ? `<button class="primary" data-review="${esc(e.key)}">${tr('btn.review')}</button><span class="muted">${esc(skillLabel(mapping.skill))}</span>`
       : `<button disabled>${tr('btn.review')}</button><a href="#settings" data-settings>${tr('skillMissing')}</a>`;
-    action += `<button data-skip="${esc(e.key)}" title="${tr('skip.title')}">${tr('skip')}</button>`;
+    action += `<button data-skip="${esc(e.key)}" title="${esc(tr('skip.title'))}">${tr('skip')}</button>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewing') {
@@ -987,7 +988,7 @@ function cardHtml(e) {
   } else if (e.status === 'posting') {
     action = `<span class="muted"><span class="spin"></span> ${tr('posting')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   } else if (e.status === 'commented') {
-    action = `${e.postedUrl ? `<a href="${esc(safeUrl(e.postedUrl))}" target="docket-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${tr('dismiss.title')}">×</button>`;
+    action = `${e.postedUrl ? `<a href="${esc(safeUrl(e.postedUrl))}" target="docket-viewer">${tr('postedReview')}</a>` : `<span class="muted">${e.skipped ? tr('skipped') : tr('posted')}</span>`}<button data-dismiss="${esc(e.key)}" title="${esc(tr('dismiss.title'))}">×</button>`;
   }
 
   const clickable = e.status === 'reviewed';
@@ -1032,7 +1033,7 @@ function multiSelect(key, label, summary, items, isOn, extra = '') {
   const open = document.querySelector(`details.ms[data-ms="${key}"]`)?.open;
   const q = (msQuery[key] || '').toLowerCase();
   return field(label, `<details class="ms" data-ms="${key}"${open ? ' open' : ''}><summary>${summary}</summary><div class="ms-pop">
-    <input type="search" data-ms-q placeholder="${tr('search')}" value="${esc(msQuery[key] || '')}">
+    <input type="search" data-ms-q placeholder="${esc(tr('search'))}" value="${esc(msQuery[key] || '')}">
     <div class="ms-list">${items.map((i) => `<label data-ms-text="${esc(i.text.toLowerCase())}"${i.text.toLowerCase().includes(q) ? '' : ' hidden'} title="${esc(i.value)}"${i.disabled ? ' class="off"' : ''}><input type="checkbox" data-ms-value="${esc(i.value)}"${i.disabled ? ' disabled' : isOn(i.value) ? ' checked' : ''}>${i.img ? `<img class="avatar" src="${esc(i.img)}" alt="">` : ''}${esc(i.text)}</label>`).join('')}</div>
     <div class="ms-bulk"><button data-ms-bulk="all">${tr('selectAll')}</button><button data-ms-bulk="none">${tr('clearAll')}</button></div>${extra}</div></details>`);
 }
@@ -1099,7 +1100,7 @@ function cardShell(e, action, attrs, showError) {
       <span class="grow"><a href="${esc(safeUrl(pr.url))}" target="docket-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
       <span class="time" title="${esc(new Date(pr.updatedAt).toLocaleString(lang))}">${tr('fetchedAgo', { ago: ago(pr.updatedAt) })}</span>
     </div>
-    <div class="title">${esc(pr.title)}${e.pending ? `<span class="pending-dot" role="img" aria-label="${tr('pending.title')}"></span>` : ''}</div>
+    <div class="title">${esc(pr.title)}${e.pending ? `<span class="pending-dot" role="img" aria-label="${esc(tr('pending.title'))}"></span>` : ''}</div>
     ${pr.base ? `<div class="branch" title="base ← head">${esc(pr.base)} ← ${esc(pr.head)}</div>` : ''}
     <div class="chips">
       ${pr.state === 'MERGED' ? `<span class="chip merged" title="${esc(new Date(pr.mergedAt).toLocaleString(lang))}">Merged</span>` : ''}
@@ -1112,7 +1113,7 @@ function cardShell(e, action, attrs, showError) {
     <div class="reviewers">${reviewers}</div>
     ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}${e.lastLog && !e.run ? ` <button data-log="${esc(e.key)}">${tr('log')}</button>` : ''}</div>` : ''}
     ${e.usage || (e.status === 'idle' && e.appliedAt) ? `<div class="chips foot">
-      ${e.usage ? `<span class="usage" title="${tr('usage.title')}">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
+      ${e.usage ? `<span class="usage" title="${esc(tr('usage.title'))}">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
       ${e.status === 'idle' && e.appliedAt ? `<span class="time" title="${esc(new Date(e.appliedAt).toLocaleString(lang))}">${tr('appliedAgo', { ago: ago(e.appliedAt) })}</span>` : ''}
     </div>` : ''}
     <div class="actions">${action}</div>
@@ -1153,11 +1154,11 @@ function openReview(key) {
       </div>
       <div class="dlg-foot">
         <button data-rereview>${tr('rereview')}</button>
-        <button data-skip-dlg title="${tr('skip.title')}">${tr('skip')}</button>
+        <button data-skip-dlg title="${esc(tr('skip.title'))}">${tr('skip')}</button>
         ${e.lastLog ? `<button data-log="${esc(key)}">${tr('log')}</button>` : ''}
         <span style="flex:1"></span>
         ${findings ? `<span class="muted">${tr('decided', { n: decided, total: findings.length })}</span>` : ''}
-        <label title="${tr('humanRead.title')}"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('humanRead')}</label>
+        <label title="${esc(tr('humanRead.title'))}"><input type="checkbox" data-human-read ${draft.humanRead ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('humanRead')}</label>
         <label><input type="checkbox" data-approve ${draft.approve ? 'checked' : ''} ${findings ? '' : 'disabled'}> ${tr('approve')}</label>
         <button class="primary" data-submit ${ready ? '' : 'disabled'}>${tr('submit')}</button>
       </div>`;
@@ -1239,7 +1240,7 @@ function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr(
       <button class="agree ${d.verdict === 'agree' ? 'on' : ''}" data-verdict="agree" data-no="${esc(f.no)}">${tr('agree')}</button>
       <button class="disagree ${d.verdict === 'disagree' ? 'on' : ''}" data-verdict="disagree" data-no="${esc(f.no)}">${tr('disagree')}</button>
       ${skippable ? `<button class="skip ${d.verdict === 'skip' ? 'on' : ''}" data-verdict="skip" data-no="${esc(f.no)}">${tr('notApplicable')}</button>` : ''}
-      <textarea data-reason data-no="${esc(f.no)}" placeholder="${placeholder}">${esc(d.reason || '')}</textarea>
+      <textarea data-reason data-no="${esc(f.no)}" placeholder="${esc(placeholder)}">${esc(d.reason || '')}</textarea>
     </div>
   </div>`;
 }
@@ -1438,6 +1439,9 @@ function openTriage(key) {
 // ---------- 設定ダイアログ ----------
 
 async function openSettings() {
+  // 最初の取得に失敗したままだと空の設定を編集・保存し、リポジトリの対応などを消してしまう
+  if (!board.defaults) await load();
+  if (!board.defaults) return toast(board.fetchError);
   const dlg = $('#settings');
   const cfg = structuredClone(board.config);
   let uiLang = lang;
@@ -1486,7 +1490,7 @@ async function openSettings() {
                 <td>${esc(r)}</td>
                 <td><select data-repo="${esc(r)}" data-field="skill">${skillOptions(m.skill)}</select></td>
                 <td>${argInput(r, 'args')}</td>
-                <td><input data-repo="${esc(r)}" data-field="cwd" value="${esc(m.cwd || '')}" placeholder="${tr('default')}"></td>
+                <td><input data-repo="${esc(r)}" data-field="cwd" value="${esc(m.cwd || '')}" placeholder="${esc(tr('default'))}"></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1535,12 +1539,12 @@ async function openSettings() {
         <nav class="settings-nav">${PANES.map((p) => `<button data-pane="${p}" class="${p === pane ? 'on' : ''}">${tr(`nav.${p}`)}</button>`).join('')}</nav>
         <div class="settings-pane" data-pane-body="claude">
           <div class="form-row"><label>${tr('workdir')}</label><input data-cfg="workdir" value="${esc(cfg.workdir)}"></div>
-          <div class="form-row"><label title="${tr('s.model.title')}">${tr('s.model')}</label><input data-cfg="model" list="model-list" placeholder="opus" value="${esc(cfg.model || '')}"><datalist id="model-list"><option value="opus"><option value="sonnet"><option value="haiku"></datalist></div>
+          <div class="form-row"><label title="${esc(tr('s.model.title'))}">${tr('s.model')}</label><input data-cfg="model" list="model-list" placeholder="opus" value="${esc(cfg.model || '')}"><datalist id="model-list"><option value="opus"><option value="sonnet"><option value="haiku"></datalist></div>
           <div class="form-row"><label>effort</label><select data-cfg="effort">${['', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}" ${(cfg.effort || '') === v ? 'selected' : ''}>${v || tr('defaultParen')}</option>`).join('')}</select></div>
           <div class="form-row"><label>${tr('s.claudeArgs')}</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
           <div class="form-row"><label>${tr('s.concurrent')}</label><input data-cfg="maxConcurrent" type="number" min="1" value="${esc(cfg.maxConcurrent)}"></div>
           <h4>${tr('sec.logs')}</h4>
-          <div class="form-row"><label title="${tr('s.logKeep.title')}">${tr('s.logKeep')}</label><input data-cfg="logKeepDays" type="number" min="1" value="${esc(cfg.logKeepDays ?? 30)}"></div>
+          <div class="form-row"><label title="${esc(tr('s.logKeep.title'))}">${tr('s.logKeep')}</label><input data-cfg="logKeepDays" type="number" min="1" value="${esc(cfg.logKeepDays ?? 30)}"></div>
           <div class="form-row"><label>${tr('logs.stats', { count: logs.count, size: fmtBytes(logs.bytes) })}</label><span>
             <button data-logs-clear="old">${tr('logs.clearOld', { n: esc(cfg.logKeepDays ?? 30) })}</button>
             <button data-logs-clear="all">${tr('logs.clearAll')}</button>
@@ -1553,9 +1557,9 @@ async function openSettings() {
           <div class="form-row"><label>${tr('s.authors')}</label><textarea data-cfg="authors" rows="5" placeholder="alice&#10;dependabot[bot]">${esc((cfg.authors || []).join('\n'))}</textarea></div>
           <h4>${tr('tab.roadmap')}</h4>
           <div class="form-row"><label>${tr('s.projects')}</label><textarea data-cfg="projects" rows="3" placeholder="https://github.com/orgs/docket/projects/76">${esc((cfg.projects || []).join('\n'))}</textarea></div>
-          <div class="form-row"><label title="${tr('s.sprintRange.title')}">${tr('s.sprintPast')}</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
+          <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintPast')}</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
           <div class="form-row"><label>${tr('s.period')}</label><select data-cfg="roadmapPeriod">${['week', '2week', 'month'].map((v) => [v, tr(`unit.${v}`)]).map(([v, l]) => `<option value="${v}" ${(cfg.roadmapPeriod || 'month') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-          <div class="form-row"><label title="${tr('s.sprintRange.title')}">${tr('s.sprintFuture')}</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
+          <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintFuture')}</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
           <h4>${tr('sec.repos')}</h4>
           <div class="form-row"><label>${tr('s.repos')}</label><textarea data-cfg="repos" rows="4" placeholder="docket/webapp">${esc(Object.keys(cfg.repos).join('\n'))}</textarea></div>
           <div data-repo-tables>${repoTables()}</div>
@@ -1566,13 +1570,13 @@ async function openSettings() {
           <div class="form-row"><label>${tr('s.refresh')}</label><input data-cfg="refreshSeconds" type="number" min="1" value="${esc(cfg.refreshSeconds)}"></div>
           <h4>${tr('sec.fetch')}</h4>
           <div class="form-row"><label>${tr('s.poll')}</label><input data-cfg="pollMinutes" type="number" min="1" value="${esc(cfg.pollMinutes)}"></div>
-          <div class="form-row"><label title="${tr('s.pollHours.title')}">${tr('s.pollHours')}</label><span><input data-cfg="pollStartHour" type="number" min="0" max="23" style="width:5em" value="${esc(cfg.pollStartHour ?? 9)}"> – <input data-cfg="pollEndHour" type="number" min="0" max="24" style="width:5em" value="${esc(cfg.pollEndHour ?? 19)}"></span></div>
+          <div class="form-row"><label title="${esc(tr('s.pollHours.title'))}">${tr('s.pollHours')}</label><span><input data-cfg="pollStartHour" type="number" min="0" max="23" style="width:5em" value="${esc(cfg.pollStartHour ?? 9)}"> – <input data-cfg="pollEndHour" type="number" min="0" max="24" style="width:5em" value="${esc(cfg.pollEndHour ?? 19)}"></span></div>
           ${resetBtn('refresh')}
         </div>
         <div class="settings-pane" data-pane-body="lang">
           <div class="form-row"><label>${tr('s.uiLang')}</label><select data-ui-lang>${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${uiLang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-          <div class="form-row"><label title="${tr('s.outLang.title')}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'ja') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-          <div class="form-row"><label title="${tr('s.disagreeIcon.title')}">${tr('s.disagreeIcon')}</label><input data-cfg="disagreeIcon" placeholder="🤔💭" style="width:8em" value="${esc(cfg.disagreeIcon ?? '🤔💭')}"></div>
+          <div class="form-row"><label title="${esc(tr('s.outLang.title'))}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'ja') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="form-row"><label title="${esc(tr('s.disagreeIcon.title'))}">${tr('s.disagreeIcon')}</label><input data-cfg="disagreeIcon" placeholder="🤔💭" style="width:8em" value="${esc(cfg.disagreeIcon ?? '🤔💭')}"></div>
           ${resetBtn('lang')}
         </div>
         <div class="settings-pane" data-pane-body="terms">
@@ -1606,7 +1610,11 @@ async function openSettings() {
   // 作業ディレクトリを変えたらスキル候補を取り直す
   dlg.onchange = async (ev) => {
     if (ev.target.dataset.cfg !== 'workdir' && ev.target.dataset.field !== 'cwd') return;
-    skills = await fetchSkills();
+    try {
+      skills = await fetchSkills();
+    } catch (e) {
+      return toast(e.message);
+    }
     renderDlg();
   };
   dlg.onclick = async (ev) => {
@@ -1734,6 +1742,8 @@ const spData = () => sp.data[spDataKey(spProject(), spIteration(spProject()))];
 
 async function loadSprint(refresh = false) {
   const url = spProject();
+  // 前の取得が後から終わっても、今の選択のエラー・読み込み中表示を上書きしない
+  const seq = (sp.seq = (sp.seq || 0) + 1);
   sp.error = null;
   if (!url) return renderSprint();
   sp.loading = true;
@@ -1750,9 +1760,9 @@ async function loadSprint(refresh = false) {
     const it = spIteration(url);
     if (it) sp.data[spDataKey(url, it)] = await api(q(mode === 'sprint' ? { iteration: it.id } : { mode, id: it.id }));
   } catch (e) {
-    sp.error = e.message;
+    if (seq === sp.seq) sp.error = e.message;
   }
-  sp.loading = false;
+  if (seq === sp.seq) sp.loading = false;
   renderSprint();
 }
 
@@ -2158,7 +2168,7 @@ window.addEventListener('hashchange', () => {
 // 画面に入ったときだけ描く (render のたびに描くと設定の入力中の値が消える)
 function enterView() {
   if (view() === 'sprint') loadSprint();
-  if (view() === 'settings') openSettings();
+  if (view() === 'settings') openSettings().catch((e) => toast(e.message));
   if (view() === 'tips') renderTipShots();
 }
 $('#edit-lanes').onclick = () => {
@@ -2390,7 +2400,8 @@ load().then(enterView);
 // ローカル状態は設定した間隔で、GitHub はサーバー側の定期取得に任せる
 // 設定変更を即反映するため毎回間隔を読み直す
 (function poll() {
-  setTimeout(() => load().finally(poll), Math.max(1, Number(board.config.refreshSeconds) || 5) * 1000);
+  // setTimeout は約 24.8 日を超えると 1 ms になるので 1 日で頭打ちにする
+  setTimeout(() => load().finally(poll), Math.min(Math.max(1, Number(board.config.refreshSeconds) || 5), 86400) * 1000);
 })();
 </script>
 </body>

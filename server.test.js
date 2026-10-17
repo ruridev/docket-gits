@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { killRun, readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -425,6 +425,7 @@ test('pollIntervalMs: 分をミリ秒にし、1 分未満や不正値は既定�
   assert.equal(pollIntervalMs(10), 10 * 60 * 1000);
   assert.equal(pollIntervalMs('2'), 2 * 60 * 1000);
   for (const v of [0, -1, '', undefined, 'abc']) assert.equal(pollIntervalMs(v), 5 * 60 * 1000);
+  assert.equal(pollIntervalMs(100000), 24 * 60 * 60 * 1000);
 });
 
 test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎと終日も扱う', () => {
@@ -639,6 +640,7 @@ test('normalizeNos: 番号が重複・欠落していれば 1 から振り直し
   assert.equal(normalizeNos(ok), ok);
   assert.deepEqual(normalizeNos([{ no: 1, t: 'a' }, { no: 1, t: 'b' }, { t: 'c' }]).map((f) => [f.no, f.t]), [[1, 'a'], [2, 'b'], [3, 'c']]);
   assert.equal(normalizeNos(undefined), null);
+  assert.deepEqual(normalizeNos([null, { no: 1 }, 'x']), [{ no: 1 }]);
 });
 
 test('decisionLines: 要約があれば番号の後に添える', () => {
@@ -698,4 +700,73 @@ test('buildFixPlanPrompt: (prompt) なら設定の対応プロンプトをテン
 test('対応の実行プロンプト: スキルがなくても最初の指示の手順で動かす', () => {
   assert.match(buildFixApplyPrompt({ url: 'https://x/1' }, [], {}), /最初の指示/);
   assert.match(buildCommentApplyPrompt({ url: 'https://x/1' }), /最初の指示/);
+});
+
+test('起動: 待機中の指摘への対応 (fix) が残っていても、事前判断を引き継いで積み直し、起動に失敗しない', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
+  const pr = { repo: 'acme/api', number: 3, url: 'https://x/3' };
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ repos: { 'acme/api': { fixSkill: 'review-fix' } }, consentVersion: 1 }));
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ prs: {}, mine: { 'mine:acme/api#3': { status: 'queued', mode: 'fix', triage, pr } } }));
+  // PATH を空にして gh / claude を実際には起動しない
+  const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: dir, PORT: '0', PATH: '' } });
+  let stderr = '';
+  child.stderr.on('data', (d) => (stderr += d));
+  const started = await new Promise((resolve) => {
+    child.stdout.on('data', (d) => /Docket:/.test(d) && resolve(true));
+    child.on('exit', () => resolve(false));
+  });
+  child.kill();
+  assert.ok(started, stderr);
+});
+
+test('logStats / pruneLogs: 読めない .log (リンク切れなど) があっても投げない (日次の削除でサーバーが落ちないように)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  fs.symlinkSync(path.join(dir, 'missing'), path.join(dir, 'broken.log'));
+  fs.writeFileSync(path.join(dir, 'a.log'), 'x');
+  assert.deepEqual(logStats(dir), { count: 1, bytes: 1 });
+  assert.equal(pruneLogs(dir, Date.now(), 0).count, 1);
+});
+
+test('filterByAuthors: 設定に文字列以外が混ざっても投げない', () => {
+  assert.deepEqual(filterByAuthors([{ author: { login: 'a' } }, { author: { login: '1' } }], [1, null]), [{ author: { login: '1' } }]);
+});
+
+test('GET /: index.html を読めなくても 500 を返し、サーバーは落ちない', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  fs.copyFileSync(path.join(__dirname, 'server.js'), path.join(dir, 'server.js'));
+  const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
+  const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
+  try {
+    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    const get = (p) => fetch(`http://localhost:${port}${p}`, { headers: { 'X-Docket': '1' } }).then((r) => r.status);
+    assert.equal(await get('/'), 500);
+    assert.equal(await get('/api/logs'), 200);
+  } finally {
+    child.kill();
+  }
+});
+
+test('killRun: 既に終わったプロセスでも投げない (キャンセルが状態を戻せるように)', () => {
+  const { pid } = require('node:child_process').spawnSync('true');
+  assert.doesNotThrow(() => killRun(pid));
+});
+
+test('GitHub 取得: 一部のノードだけ権限エラー (gh は失敗で終わる) でも、取れた PR は反映してエラーも出す', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  const data = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [node(1), null] }, mine: { issueCount: 0, nodes: [] } };
+  const errors = [{ message: 'Resource protected by organization SAML enforcement.' }];
+  fs.writeFileSync(path.join(dir, 'out.json'), `${JSON.stringify({ data, errors })}\n`);
+  // gh の代わりに、部分的なデータを出して失敗で終わるスクリプトを置く
+  fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\nwhile IFS= read -r l; do echo "$l"; done < ${path.join(dir, 'out.json')}\necho "gh: SAML" >&2\nexit 1\n`, { mode: 0o755 });
+  const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
+  const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
+  try {
+    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: { 'X-Docket': '1' } }).then((r) => r.json());
+    assert.deepEqual(board.prs.map((p) => p.key), ['acme/api#1']);
+    assert.match(board.fetchError, /SAML/);
+  } finally {
+    child.kill();
+  }
 });
