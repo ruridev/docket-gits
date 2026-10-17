@@ -7,13 +7,13 @@
 <style>
   :root {
     --bg: #f6f8fa; --panel: #fff; --lane: #eef1f4; --border: #d0d7de; --text: #1f2328; --muted: #656d76;
-    --accent: #0969da; --accent-text: #fff; --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --chip: #eaeef2;
+    --accent: #0969da; --accent-text: #fff; --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --orange: #bc4c00; --chip: #eaeef2;
     --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23656d76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --panel: #161b22; --lane: #10151c; --border: #30363d; --text: #e6edf3; --muted: #8d96a0;
-      --accent: #2f81f7; --accent-text: #fff; --ok: #3fb950; --warn: #d29922; --danger: #f85149; --chip: #21262d;
+      --accent: #2f81f7; --accent-text: #fff; --ok: #3fb950; --warn: #d29922; --danger: #f85149; --orange: #db6d28; --chip: #21262d;
       --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d96a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     }
   }
@@ -24,6 +24,8 @@
   button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 4px 12px; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
   button:disabled { opacity: .45; cursor: not-allowed; }
+  :where(button:not(:disabled)):hover { background: var(--chip); }
+  button.primary:not(:disabled):hover { filter: brightness(1.1); }
   input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
   /* select と複数選択のドロップダウンで同じ矢印を使う */
   select, .ms > summary { appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 10px center; }
@@ -48,14 +50,22 @@
   /* フィルタ枠の右に並ぶものは枠内の選択欄の下端にそろえる (枠の padding + border 分上げる) */
   .board-bar > :not(.sp-people), .sp-right { margin-bottom: 9px; }
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 8px 16px 16px; overflow-x: auto; }
-  .lane { background: var(--lane); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-height: 60vh; }
-  .lane h2 { font-size: 14px; margin: 4px 4px 8px; display: flex; gap: 8px; align-items: center; }
+  /* ボードは画面の残りの高さでスクロールさせ、ヘッダ・フィルタ・レーン見出しを固定する */
+  body:has(#board:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
+  body:has(#board:not([hidden])) .board { flex: 1; min-height: 0; overflow-y: auto; grid-auto-rows: max-content; }
+  .lane { background: var(--lane); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px 8px; min-height: 60vh; }
+  /* 見出しはレーンの枠に重ねて固定する。スクロール中も角丸の枠に見えるよう、
+     角の外側は背景色で塗り (h2 の background)、枠と角丸は ::before で描く。
+     top はボードの上 padding 分 (8px) を詰めてカードが見出しの上にのぞかないようにする */
+  .lane h2 { font-size: 14px; margin: -1px -9px 0; padding: 13px 13px 8px; display: flex; gap: 8px; align-items: center; position: sticky; top: -8px; z-index: 1; background: var(--bg); }
+  .lane h2::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--lane); border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; }
   .lane h2 .count { background: var(--chip); border-radius: 10px; padding: 0 8px; font-size: 12px; color: var(--muted); }
   .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
   .card.clickable { cursor: pointer; }
   .card[draggable] { cursor: grab; }
   .board.editing .lane { cursor: grab; }
+  .lane h2 .lane-name { flex: 1; min-width: 0; font: inherit; font-weight: 600; }
   .board.editing .card { pointer-events: none; opacity: .4; }
   .lane.drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
   .card.clickable:hover { border-color: var(--accent); }
@@ -64,11 +74,11 @@
   .card .title { margin: 4px 0 6px; font-weight: 600; word-break: break-word; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
   .chip { font-size: 11px; border-radius: 10px; padding: 0 8px; border: 1px solid var(--border); background: var(--chip); }
-  .chip.draft { color: var(--muted); }
   .chip.merged { border-color: #8250df; color: #8250df; }
   .chip.err { border-color: var(--danger); color: var(--danger); }
   .chip.off { border-color: var(--warn); color: var(--warn); }
-  .chip.pending { border-color: var(--danger); color: var(--danger); }
+  .pending-dot { display: inline-block; width: 7px; height: 7px; margin-left: 5px; border-radius: 50%; background: var(--danger); vertical-align: middle; cursor: help; position: relative; }
+  .pending-dot:hover::after { content: attr(aria-label); position: absolute; top: 12px; right: -4px; z-index: 10; padding: 3px 8px; border-radius: 4px; background: var(--text); color: var(--panel); font-size: 12px; font-weight: normal; white-space: nowrap; }
   .issue { font-size: 12px; display: block; color: var(--muted); }
   .branch { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; word-break: break-all; margin-bottom: 4px; }
   .stack { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
@@ -79,7 +89,20 @@
   .rv { position: relative; }
   .rv .st { position: absolute; right: -4px; bottom: -4px; font-size: 10px; background: var(--panel); border-radius: 50%; line-height: 1; }
   .rv.pending img { opacity: .4; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 8px -10px 0; padding: 8px 10px 0; border-top: 1px solid var(--border); }
+  .card.hl .actions { margin-inline: -8px; padding-inline: 8px; }
+  .actions:empty { display: none; }
+  .card .actions button { font-size: 12px; padding: 2px 8px; }
+  .actions .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .actions a[data-settings] { font-size: 12px; }
+  .chips.foot { align-items: center; margin: 6px 0 0; }
+  .card .time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .card .usage { font-size: 11px; color: var(--orange); white-space: nowrap; }
+  .chips.foot .time { margin-left: auto; }
+  body.hide-branch .card .branch, body.hide-issue .card .issue, body.hide-stack .card .stack, body.hide-updated .card .top .time,
+  body.hide-applied .card .foot .time, body.hide-usage .card .usage, body.hide-reviewers .card .reviewers, body.hide-author .card .top .avatar { display: none; }
+  #display-dlg { width: min(360px, calc(100vw - 32px)); }
+  #display-dlg label { display: block; padding: 4px 0; }
   .muted { color: var(--muted); font-size: 12px; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; max-width: calc(100vw - 32px); background: var(--danger); color: #fff; padding: 8px 16px; border-radius: 6px; white-space: pre-wrap; }
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; }
@@ -102,8 +125,11 @@
   .verdict button.on.disagree { background: var(--danger); border-color: var(--danger); color: #fff; }
   .verdict textarea { flex: 1; min-height: 34px; resize: vertical; }
   table.repos { width: 100%; border-collapse: collapse; }
-  table.repos th, table.repos td { border-bottom: 1px solid var(--border); padding: 6px; text-align: left; }
-  table.repos input, table.repos select { width: 100%; }
+  table.repos th, table.repos td { border-bottom: 1px solid var(--border); padding: 6px; text-align: left; vertical-align: top; }
+  table.repos th { vertical-align: bottom; white-space: nowrap; }
+  table.repos td:first-child { padding-top: 12px; }
+  table.repos input, table.repos select { width: 100%; box-sizing: border-box; }
+  table.repos [data-preview] { font-size: 11px; margin-top: 3px; word-break: break-all; }
   .form-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
   .form-row input, .form-row textarea, .form-row select { width: 100%; }
   .settings-body { display: grid; grid-template-columns: 180px 1fr; height: min(640px, calc(100vh - 140px)); }
@@ -114,8 +140,48 @@
   .settings-pane:not(.on) { display: none; }
   .settings-pane h4 { margin: 20px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }
   .settings-pane > h4:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  .help { border: 0; border-radius: 50%; width: 24px; height: 24px; padding: 0; background: var(--chip); color: var(--muted); font-weight: 600; }
+  .help:hover { color: var(--text); }
   .tip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
   .tip summary { cursor: pointer; font-weight: 600; }
+  /* Tip の説明図。実際の描画関数に架空のデータを渡して描く (操作はできない) */
+  .tip-shot { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: auto; max-height: 420px; }
+  .tip-shot .lane { min-height: 0; }
+  .tip-shot .cards { display: grid; grid-template-columns: repeat(2, 280px); gap: 12px; padding: 12px; }
+  #consent-dlg { width: min(640px, calc(100vw - 32px)); }
+  /* About: この画面を作った理由と考え方 */
+  .about { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; font-size: 15px; line-height: 1.75; }
+  .about h2 { font-size: 24px; margin: 0 0 8px; }
+  .about h3 { font-size: 18px; margin: 36px 0 8px; padding-top: 20px; border-top: 1px solid var(--border); }
+  .about .lead { font-size: 17px; color: var(--muted); margin: 0; }
+  .about blockquote { margin: 20px 0; padding: 10px 16px; border-left: 4px solid var(--accent); background: var(--panel); border-radius: 0 8px 8px 0; font-weight: 600; }
+  .about li { margin-bottom: 8px; }
+  .about-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; font-size: 14px; }
+  .about-flow > b { width: 100%; }
+  .about-flow span { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  .about-flow .human { border: 2px solid var(--ok); font-weight: 600; }
+  .about-flow i { font-style: normal; color: var(--muted); }
+  .site-foot { padding: 6px 16px; text-align: center; font-size: 12px; border-top: 1px solid var(--border); background: var(--panel); }
+  .consent ul { list-style: none; padding: 0; margin: 12px 0 0; }
+  .consent li { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-top: 1px dashed var(--border); }
+  .consent li p { margin: 4px 0 0; }
+  .consent li > div { flex: 1; }
+  .consent .got { display: flex; width: fit-content; align-items: center; gap: 4px; margin: 6px 0 0 auto; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .consent .got:has(input:checked) { color: var(--ok); }
+  .consent li > div > b { font-size: 15px; }
+  .art { flex: none; width: 64px; height: 64px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .art .b { fill: var(--chip); }
+  .art .a { fill: var(--accent); }
+  .art .w { fill: #f2c94c; }
+  .art .d { stroke: var(--danger); fill: none; }
+  .art .h { fill: var(--danger); stroke: none; }
+  .art .k { fill: var(--text); stroke: none; }
+  .art .t { fill: #fff; stroke: none; }
+  .art .m, .art .c { stroke: var(--muted); }
+  .consent .star { display: inline-flex; gap: 1px; margin: -8px 0 -8px 4px; vertical-align: middle; }
+  .consent .star svg { display: block; width: 26px; height: 26px; }
+  .consent .star svg:nth-child(2) { transform: rotate(-10deg) translateY(-2px); }
+  .consent .star svg:nth-child(3) { transform: rotate(12deg); }
   /* スプリント */
   #sprint { padding: 12px 16px; }
   .sp-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
@@ -148,6 +214,7 @@
   .ms .avatar { width: 20px; height: 20px; border: 0; opacity: 1; cursor: inherit; }
   .ms .ms-extra { display: flex; align-items: center; gap: 4px; margin: 6px 0 0; padding: 6px 4px 0; border: 0; border-top: 1px solid var(--border); white-space: nowrap; }
   .ms-bulk { display: flex; gap: 4px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .sp-row > button { flex: none; white-space: nowrap; }
   .sp-row .fold-all { margin-left: auto; white-space: nowrap; border: none; background: none; color: var(--muted); padding: 4px; }
   .sp-row .fold-all:hover { color: var(--accent); }
   .sp-right { margin-left: auto; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -163,7 +230,7 @@
   /* スプリント期間はヘッダー上端の青い線だけで示す */
   .rm .hd.in { box-shadow: inset 0 3px 0 color-mix(in srgb, var(--accent) 45%, transparent); }
   .rm .col { grid-row: 2 / -1; }
-  .rm .col.today { border-left: 2px solid var(--danger); }
+  .rm .col.today { background: linear-gradient(var(--danger), var(--danger)) center / 2px 100% no-repeat; }
   .rm .sep { border-top: 1px solid var(--border); }
   .rm .tg { width: 14px; flex: none; cursor: pointer; color: var(--muted); user-select: none; text-align: center; }
   /* 担当者 → タイトルの順に棒の先頭から並べ、棒より長いタイトルは棒の外へはみ出させる */
@@ -179,6 +246,13 @@
   .rm .bar.d0 a.t { font-weight: 600; }
   .rm .bar .avatar { width: 16px; height: 16px; }
   .rm .bar.dim { opacity: .35; }
+  /* 紐づく PR があると 2 行にして、2 行目に PR 番号を並べる */
+  .rm .bar.two { height: auto; flex-direction: column; align-items: flex-start; gap: 0; padding: 2px 8px 2px 4px; border-radius: 12px; }
+  .rm .bar .ln { display: flex; align-items: center; gap: 4px; }
+  .rm .bar .prs { padding-left: 18px; font-size: 12px; gap: 8px; }
+  .rm .bar .prs a { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
+  .rm .bar .prs svg { width: 12px; height: 12px; fill: currentColor; }
+  .rm .bar .prs .merged svg { color: #8250df; } .rm .bar .prs .open svg { color: var(--ok); } .rm .bar .prs .draft svg { color: var(--muted); }
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
     .board-bar, header, .sp-row { flex-wrap: wrap; }
@@ -196,7 +270,7 @@
   <nav class="tabs"><a href="#review" data-view="review"><span data-i18n="tab.review"></span><span class="badges"></span></a><a href="#receive" data-view="receive"><span data-i18n="tab.receive"></span><span class="badges"></span></a><a href="#sprint" data-view="sprint"><span data-i18n="tab.roadmap"></span><small></small></a></nav>
   <span class="grow"></span>
   <span id="viewer"></span>
-  <button id="open-tips">Tip</button>
+  <button id="open-tips" class="help" title="Tip" aria-label="Tip">?</button>
   <button id="open-settings" data-i18n="settings"></button>
 </header>
 <div id="banner"></div>
@@ -204,13 +278,16 @@
   <div id="repo-filter" class="sp-people" hidden></div>
   <button id="stack-order" data-i18n="stackOrder" data-i18n-title="stackOrder.title"></button>
   <button id="edit-lanes" data-i18n="editLanes"></button>
-  <button id="lane-save" class="primary" hidden data-i18n="laneSave"></button>
+  <button id="card-display" data-i18n="cardDisplay"></button>
+  <button id="lane-save" class="primary" hidden data-i18n="save"></button>
   <button id="lane-cancel" hidden data-i18n="cancel"></button>
   <span style="flex:1"></span>
   <button id="refresh" class="refetch"></button>
 </div>
 <main class="board" id="board"></main>
 <main id="sprint" hidden></main>
+<main id="about" class="about" hidden></main>
+<footer class="site-foot"><a href="#about">About</a></footer>
 
 <dialog id="review-dlg"></dialog>
 <dialog id="settings-dlg"></dialog>
@@ -218,10 +295,27 @@
   <form method="dialog" class="dlg-head"><h3 data-i18n="claudeOutput"></h3><button data-i18n="close"></button></form>
   <pre class="dlg-body log"></pre>
 </dialog>
+<dialog id="consent-dlg">
+  <div class="dlg-head"><h3 data-i18n="consent.title"></h3><button data-close data-i18n="close"></button></div>
+  <div class="dlg-body consent" data-i18n-html="consent.html"></div>
+  <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-agree data-i18n="consent.agree"></button></div>
+</dialog>
+<dialog id="display-dlg">
+  <div class="dlg-head"><h3 data-i18n="cardDisplay"></h3><span style="flex:1"></span><button data-close data-i18n="close"></button></div>
+  <div class="dlg-body"></div>
+  <div class="dlg-foot" hidden><span style="flex:1"></span><button data-copy="" data-i18n="cd.no"></button><button class="primary" data-copy="1" data-i18n="cd.yes"></button></div>
+</dialog>
 <dialog id="tips-dlg">
   <form method="dialog" class="dlg-head"><h3>Tip</h3><button data-i18n="close"></button></form>
   <div class="dlg-body">
+    <details class="tip" open data-i18n-html="tips.lanes" data-shots="review,receive"></details>
+    <details class="tip" data-i18n-html="tips.review" data-shots="findings"></details>
+    <details class="tip" data-i18n-html="tips.buttons" data-shots="bar"></details>
     <details class="tip" data-i18n-html="tips.html"></details>
+    <details class="tip" data-i18n-html="tips.roadmap" data-shots="roadmap"></details>
+    <details class="tip" data-i18n-html="tips.settings"></details>
+    <details class="tip" data-i18n-html="tips.cost" data-shots="cost"></details>
+    <button data-open-consent data-i18n="consent.open"></button>
   </div>
 </dialog>
 
@@ -230,40 +324,45 @@
 // 画面の言語はブラウザごとに保存する (未設定ならブラウザの言語)。切り替えたら再読み込みする
 // 値は HTML としてそのまま入れるので、ユーザーデータは呼び出し側でエスケープして params に渡す
 const LANGS = { ja: '日本語', ko: '한국어', en: 'English' };
-const lang = (() => {
-  try { const saved = localStorage.getItem('rb-lang'); if (LANGS[saved]) return saved; } catch {}
+const browserLang = () => {
   const nav = (navigator.language || '').slice(0, 2);
   return LANGS[nav] ? nav : 'en';
+};
+const lang = (() => {
+  try { const saved = localStorage.getItem('rb-lang'); if (LANGS[saved]) return saved; } catch {}
+  return browserLang();
 })();
 document.documentElement.lang = lang;
 const I18N = {
   ja: {
     'tab.review': 'レビューする', 'tab.receive': 'レビューを受ける', 'tab.roadmap': 'ロードマップ', settings: '設定',
     'stackOrder': 'スタック順', 'stackOrder.title': '同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)',
-    editLanes: 'レーン配置', laneSave: '配置を保存', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'Claude の出力',
+    editLanes: 'レーン編集', cardDisplay: '表示設定', 'cd.branch': 'ブランチ名', 'cd.issue': 'issue 名', 'cd.stack': 'スタック PR', 'cd.updated': 'PR 更新日時', 'cd.applied': '対応日時', 'cd.usage': 'トークン使用量', 'cd.reviewers': 'レビュワー画像', 'cd.author': 'PR 作成者画像 (「レビューを受ける」では常に非表示)', 'cd.prs': 'issue に紐づく PR', 'cd.copy': '「{view}」にも同じ表示設定を適用しますか？', 'cd.yes': 'はい', 'cd.no': 'いいえ', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'Claude の出力',
+    'about.html': '<h2>Review Board について</h2><p class="lead">AI エージェントと一緒にコードをレビューし、受けた指摘を直す。それを 1 つの画面で。ただし、最後に判断するのはいつも人間です。</p><h3>AI は速い。だからこそ気をつけたい</h3><p>AI エージェントでコードを書き、レビューすることはすでに日常になり、生産性は驚くほど上がりました。AI の進化の速さを考えると、この流れはこれからさらに加速していくはずです。</p><p>ただ、便利になるほど気になることが 1 つあります。人が少しずつ怠けてしまうことです。「AI がうまくやってくれただろう」と中身を見ずに Approve を押すようになると、作っているサービスが本当に望んだものになっているのか、だんだん誰にも分からなくなっていきます。</p><p>コーディングスタイルのようなことは、もう AI に任せて構いません。大事なのは<b>自分の意図がコードにきちんと込められているか</b>です。それが抜けていれば、AI でどれだけ早く完成させても意味がありません。</p><blockquote>仕事は AI に任せられても、責任までは任せられない。コードと成果物の最終的な責任は人間にある。</blockquote><h3>人と AI が一緒にレビューしたことを、当たり前に保証する</h3><p>そこで Review Board では、AI に仕事を渡すところに、あえて人が判断するステップを入れています。</p><div class="about-flow"><b>🔍 レビューする側</b><span>🤖 AI が一次レビュー</span><i>→</i><span class="human">👤 コードを読み、指摘ごとに同意 / 非同意 (+意見)</span><i>→</i><span>💬 PR に投稿</span></div><div class="about-flow"><b>✍️ レビューを受ける側</b><span>💬 指摘を受ける</span><i>→</i><span>🤖 AI が修正方針を提案</span><i>→</i><span class="human">👤 指摘の妥当性と方針に同意 / 非同意</span><i>→</i><span>🤖 AI が修正を反映</span></div><ul><li><b>レビューする側</b>: 一次レビューは AI に任せます。ただし投稿の前に「コードを読みました」のチェックボックスで、人が一度は自分でコードを読むようにしています。AI の指摘を採用するかどうかも 1 件ずつ人が「同意 / 非同意」で決め、必要なら自分の意見を添えます。</li><li><b>レビューを受ける側</b>: 受けた指摘を直す手間は AI に任せます。ただし、その指摘がそもそも妥当か、AI が出した修正方針に同意するかは人が判断します。</li></ul><div data-shot="findings"></div><p>こうすることで、レビューする側もされる側も、相手のコメントの裏に人の判断があると分かります。だからお互いの意見を、より安心して信頼できるようになります。</p><h3>疲れないために: 画面設計の原則</h3><p>AI エージェントのおかげでレビューも修正も楽になりました。それでも、その周りの細かな作業がかえって疲れを溜めていました。Review Board の画面は、その疲れを減らすことを目指しています。</p><ul><li><b>ブラウザのタブを無限に開かない</b>: レビュー依頼・自分の PR・スプリントを 1 つの画面で見られます。GitHub のリンクもいつも同じ 1 つのタブで開きます。</li><li><b>ツールを行き来しない</b>: ブラウザで PR を見て、ターミナルに移って Claude に skill の実行を指示して、また戻って……という往復を、ボタン 1 つにまとめました。</li><li><b>新しい情報を探しに行かない</b>: GitHub Notifications を定期的に確認しなくても、新しいレビュー依頼や指摘がボードに自動で入ってきます。</li></ul><div data-shot="review"></div><blockquote>スピードは AI に。判断と責任は人間に。</blockquote>',
     'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (rb-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
+    'tips.lanes': '<summary>レーンの見方</summary><p><b>レビューする</b> タブ (他の人の PR)</p><ul><li>レビュー依頼: 自分にレビューが依頼された PR。「レビューする」で Claude のレビューを始めます。</li><li>レビュー中: Claude がレビュー中、または順番待ち。</li><li>レビュー済み: 指摘が出て、自分の判断を待っています。カードを開いて確認してください。</li><li>完了: PR に投稿した、またはスキップしたもの。</li></ul><p><b>レビューを受ける</b> タブ (自分の PR)</p><ul><li>下書き: Draft の PR。</li><li>レビュー待ち: レビューを待っている PR。</li><li>指摘あり: 未解決スレッドのうち、最後の発言が自分でないものがある PR。</li><li>実行中: セルフレビューや指摘対応が進行中。</li><li>判断待ち: セルフレビューの指摘や対応計画が出て、自分の判断を待っています。</li><li>マージ可能 / 完了: 自分で移すレーンです。カードをドラッグしてレビュー待ち ↔ マージ可能 ↔ 完了 の間を移せます。</li></ul>', 'tips.review': '<summary>指摘を判断して投稿する</summary><ol><li>カードを開くと指摘が 1 件ずつ並びます。それぞれ「同意」か「同意しない」を選び、必要ならメモを書きます。</li><li>レビューするタブ: 同意した指摘だけが PR にコメントとして投稿されます。同意しない指摘も理由を書けば <span data-disagree-icon>🤔💭</span> 付きで投稿されます。Approve するかもここで選びます。</li><li>レビューを受けるタブ: セルフレビューは同意した指摘を投稿し、修正・push・返信まで進めます。指摘対応は同意した計画どおりに修正・push・返信します。</li><li>「コードを読みました」は AI のレビューをそのまま出さないためのチェックです。自分でコードを読んでからチェックしてください。</li></ol><p class="muted">選んだ内容はブラウザに保存されるので、閉じて開き直しても残っています。投稿・Approve・再レビューなどのボタンは誤操作防止のため 2 回押すと実行されます。</p>', 'tips.buttons': '<summary>ボード上部のボタン</summary><ul><li>スタック順: 同じレーンの中でスタック PR を 親 → 子 → 孫 の順に並べます。もう一度押すと更新順に戻ります。</li><li>Approve 済み: 押すたびに すべて → のみ → 除外 と切り替わります。</li><li>レーン編集: レーンをドラッグして順番を変えたり、名前を変えたりできます。「保存」を押すと反映されます。</li><li>カード表示: カードに出す項目 (ブランチ名、issue、スタック、トークン使用量、レビュアー画像など) を選びます。</li><li>右端の更新ボタン: GitHub からすぐに取り直します。</li></ul>', 'tips.roadmap': '<summary>ロードマップ画面</summary><ul><li>設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を入れると、issue の予定がバーで表示されます。</li><li>スプリント別はプロジェクトの Iteration (スプリント) ごと、期間別は 1 週間 / 1 か月ごとに開始日・終了日で表示します。</li><li>「親 issue の担当者で絞る」をオンにすると、担当者の絞り込みを最上位 issue の担当者で行います。</li><li>データは 24 時間キャッシュされます。すぐに最新を見たいときは取り直しボタンを押してください。</li></ul>', 'tips.settings': '<summary>設定のコツ</summary><ul><li>リポジトリとスキルの対応の引数テンプレートでは {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name} が使えます。</li><li>GitHub 自動取得の時間帯の外では自動で取得しません。更新ボタンで手動取得はいつでもできます。</li><li>同時実行数を超えたレビューは「待機中」として順番に実行されます。</li><li>各設定画面の「すべて既定に戻す」で初期状態に戻せます。</li></ul>', 'tips.cost': '<summary>トークン使用量とログ</summary><ul><li>カードのトークン使用量は、その PR で使ったトークン (キャッシュ含む) と費用の累計です。「カード表示」でオン / オフできます。</li><li>実行中のカードの「ログ」で Claude の出力を見られます。</li><li>終わった実行のログは設定の「ログ保持日数」だけ残り、毎日自動で削除されます。設定画面からすぐに削除することもできます。</li></ul>',
     // README がこの英語のレーン名で説明しているので、日本語でも英語のままにする
-    'lane.requested': 'Requested', 'lane.reviewing': 'Reviewing', 'lane.reviewed': 'Reviewed', 'lane.done': 'Done', 'lane.draft': 'Draft',
+    'lane.requested': 'レビュー依頼', 'lane.reviewing': 'レビュー中', 'lane.reviewed': 'レビュー済み', 'lane.done': '完了', 'lane.draft': '下書き',
     'lane.mine': 'レビュー待ち', 'lane.pending': '指摘あり', 'lane.running': '実行中', 'lane.planned': '判断待ち', 'lane.mergeable': 'マージ可能',
     'rm.sprint': 'スプリント別', 'rm.period': '期間別',
     'ago.min': '{n}分前', 'ago.hour': '{n}時間前', 'ago.day': '{n}日前', fetchedAgo: '{ago}に更新', startedAgo: '({ago}に開始)',
     refreshNow: '今すぐ更新', refetchTitle: 'GitHub から取り直す', fetchFailed: 'GitHub の取得に失敗しました: {msg}', truncated: 'GitHub の検索結果が 1 回の取得上限 (レビュー依頼 100 件・自分の PR 50 件) を超えたため、一部の PR を表示していません', lastFetched: '最終更新: {ago}',
     repo: 'リポジトリ', author: '作成者', all: 'すべて', none: 'なし',
     approved: 'Approve 済み', 'approved.only': 'のみ', 'approved.exclude': '除外', 'approved.title': '押すと すべて → のみ → 除外 の順に切り替え',
-    'btn.review': 'レビューする', skillMissing: 'スキル未設定', skip: 'スキップ', 'skip.title': '投稿せずに Done へ移す',
+    'btn.review': 'レビューする', skillMissing: 'スキル未設定', skip: 'スキップ', 'skip.title': '投稿せずに完了へ移す',
     queued: '待機中…', confirmCancel: '本当にキャンセルしますか？', reviewing: 'レビュー中…', log: 'ログ',
     findingsDecide: '指摘 {n} 件 — 判断する', checkRaw: '原文を確認する', posting: '投稿中…', postedReview: '投稿したレビュー',
     skipped: 'スキップ済み', posted: '投稿済み', 'dismiss.title': 'ボードから消す',
     'running.self': 'セルフレビュー中…', 'running.fix': '指摘を確認中…', selfReview: 'セルフレビュー', fixComments: '指摘に対応',
-    appliedAgo: '対応済み {ago}', applying: '修正・push・返信中…', stack: 'スタック: ',
-    'rv.pending': 'レビュー待ち', requestRemoved: '依頼解除済み', pending: '未対応の指摘 {n}', 'pending.title': '未解決スレッドのうち、最後の発言が自分以外のもの',
+    appliedAgo: '{ago}に対応済', applying: '修正・push・返信中…', stack: 'スタック: ',
+    'rv.pending': 'レビュー待ち', requestRemoved: '依頼解除済み', 'pending.title': '未対応の指摘があります',
     'usage.title': 'このPRで使ったトークン (キャッシュ込み) と費用の累計', error: 'エラー',
     search: '検索', selectAll: 'すべて選択', clearAll: 'すべて解除',
     noFindings: '指摘はありません。', noOutput: '(出力なし)', agentRaw: 'エージェントの原文', rereview: '再レビュー', decided: '{n} / {total} 判断済み',
     'humanRead.title': 'AI 任せのノールックレビューを防ぐため、自分でもコードを読んだらチェックしてください', humanRead: 'コードを読みました',
     approve: 'Approve する', submit: 'コメントする',
     confirmRereview: 'もう一度押すと判断を破棄して再レビュー', confirmApprove: 'もう一度押すと Approve で投稿', confirmPost: 'もう一度押すと投稿',
-    'ph.agree': '理由・補足 (任意・コメント本文に反映されます)', 'ph.disagree': '非同意の理由 (任意・書くと 🤔💭 付きで投稿されます)',
+    'ph.agree': '理由・補足 (任意・コメント本文に反映されます)', 'ph.disagree': '非同意の理由 (任意・書くと {icon} 付きで投稿されます)',
     origComment: '元コメント', agree: '同意', disagree: '非同意',
     'ph.self.agree': '補足 (任意・投稿と修正に反映されます)', 'ph.self.disagree': '非同意の指摘は投稿も修正もしません (メモ欄)',
     'ph.fix.agree': '補足 (任意・修正と返信に反映されます)', 'ph.fix.disagree': '非同意の理由 (任意・書くとその内容で対応を決め直します。空なら修正も返信もしません)',
@@ -278,14 +377,18 @@ const I18N = {
     's.mine': 'レビューを受ける (自分の PR) のスキル',
     's.mine.help': 'スキルが空ならそのボタンを出しません。セルフレビュー用スキルは <code>&lt;review-board-findings&gt;</code> 形式の指摘一覧を、対応用スキル (例: review-fix) は指摘ごとの対応計画を返すよう指示して実行します。',
     's.uiLang': '画面の言語', 's.outLang': 'Claude の出力言語', 's.outLang.title': 'Claude が PR に書くコメント・返信や、ボードに出す指摘の言語',
+    's.disagreeIcon': '同意しない意見のアイコン', 's.disagreeIcon.title': '同意しない指摘に理由を書いて投稿するとき、自分の意見の頭に付けるアイコン',
     's.model': 'モデル', 's.model.title': '空なら claude の既定。サブエージェントも同じモデルで動きます', 's.claudeArgs': 'claude 追加引数',
     's.mergedDays': 'マージ済み PR の表示日数', 's.refresh': '画面の更新間隔 (秒)', 's.poll': 'GitHub の取得間隔 (分)',
     's.pollHours': 'GitHub を自動取得する時間帯 (時)', 's.pollHours.title': 'この時間帯の外では GitHub を自動取得しません (手動の更新は可)。開始と終了が同じなら終日',
-    's.concurrent': '同時実行数', 's.authors': 'PR 作成者 (1 行 1 人、空なら全員)', 's.projects': 'ロードマップ画面の GitHub Projects (1 行 1 つ)',
+    's.concurrent': '同時実行数',
+    'sec.logs': 'ログ', 's.logKeep': 'ログの保存日数', 's.logKeep.title': '終わった実行のログをこの日数だけ残し、古いものは毎日自動で削除します',
+    'logs.stats': '{count} 件・{size}', 'logs.clearOld': '{n} 日より古いログを削除', 'logs.clearAll': 'すべて削除',
+    'logs.cleared': '{count} 件 ({size}) を削除しました', 'confirmDelete': 'もう一度押すと削除', 's.authors': 'PR 作成者 (1 行 1 人、空なら全員)', 's.projects': 'ロードマップ画面の GitHub Projects (1 行 1 つ)',
     's.sprintPast': 'ロードマップに出す過去のスプリント・期間の数', 's.sprintRange.title': '期間別でも同じ数だけ過去・未来の区切りを出します',
     's.period': 'ロードマップの期間別の区切り', 'unit.week': '1 週', 'unit.2week': '2 週', 'unit.month': '1 か月',
     's.sprintFuture': '未来のスプリント・期間の数 (スプリントは issue があるものだけ)', 's.repos': 'リポジトリ (1 行 1 つ、owner/name)',
-    'nav.claude': 'Claude の実行', 'nav.github': 'GitHub と作業対象', 'nav.refresh': '更新間隔', 'nav.lang': '言語',
+    'nav.claude': 'Claude の実行', 'nav.github': 'GitHub と作業対象', 'nav.refresh': '更新間隔', 'nav.lang': '言語', 'nav.terms': '用語', 'terms.help': 'レーンの名前を変えられます (表示だけで、レーンの役割は変わりません)。空欄なら既定の名前', 'pane.reset': 'すべて既定に戻す',
     'sec.board': 'PR ボード', 'sec.repos': 'リポジトリ', 'sec.screen': '画面', 'sec.fetch': 'GitHub の取得',
     'sp.noProjects': '設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。', 'sp.count': '{n} 件',
     future: '未来', current: '現在', past: '過去',
@@ -298,7 +401,7 @@ const I18N = {
     'period.week': '{date} からの週', 'period.2week': '{date} からの 2 週間',
     noOutputYet: 'まだ出力がありません', runEnded: '実行は終了しました',
     confirmApplyComments: 'PR 上の自分のコメントを指示として修正・push・返信します。実行するには 5 秒以内にもう一度ドラッグしてください',
-    move: '移動…', applyComments: 'PR のコメントどおり対応', confirmRun: 'もう一度押すと実行',
+    applyComments: 'PR のコメントどおり対応', confirmRun: 'もう一度押すと実行',
     'err.projectUrlInvalid': 'プロジェクト URL を解析できません: {url}', 'err.sprintNotFound': 'スプリントが見つかりません',
     'err.periodInvalid': '期間の指定が不正です', 'err.noDateField': 'このプロジェクトには Date フィールドがありません',
     'err.claudeReadFailed': 'claude の出力を読めません: {message}', 'err.claudeParseFailed': 'claude の出力を解析できません (exit={code}): {stderr}',
@@ -310,35 +413,40 @@ const I18N = {
     'err.undecided': '未判断の指摘があります', 'err.cannotMove': '移動できる状態ではありません', 'err.cannotCancel': 'キャンセルできる状態ではありません',
     'err.cannotPost': '投稿できる状態ではありません', 'err.cannotSkip': 'スキップできる状態ではありません',
     'err.restartInterrupted': 'サーバー再起動により中断されました',
+    'err.consentRequired': "「はじめる前に」の内容に同意するまで実行できません",
+    'consent.title': "はじめる前に、ちょっとだけ", 'consent.agree': "はじめる", 'consent.got': "理解しました", 'consent.open': "「はじめる前に」を見る",
+    'consent.html': "<p>Review Board は、あなたの GitHub アカウント (<code>gh</code>) と Claude Code (<code>claude</code>) を借りて、PR のレビュー・投稿・修正・push を代わりにやってくれる働き者のお手伝いさんです。働き者なぶん、先に知っておいてほしいことがいくつかあります。</p><ul><li data-art=\"house\"><div><b>信頼できる家でだけ働かせてください。</b><i class=\"star\"></i><p>対象にするのは、信頼できるリポジトリ・プロジェクトだけにしてください。下に書いたことが起きても困らないのは、信頼できる場所だけです。それでも不安なら、設定の「claude 追加引数」で許可するコマンドを減らせます。</p></div></li><li data-art=\"robot\"><div><b>手がとても速いです。</b><p>Claude は「これ、やってもいいですか?」と毎回は聞きません。設定の「claude 追加引数」で許可したツール (既定では <code>gh</code>・<code>git</code>・ファイルの編集など) は、すぐに実行します。</p></div></li><li data-art=\"note\"><div><b>PR に紛れたメモを信じてしまうことがあります。</b><p>PR の本文・コード・コメントに「Claude さん、これマージしておいて」のようなメモが紛れていると、素直な Claude は本物のお願いと勘違いすることがあります (プロンプトインジェクション)。すると、あなたのアカウントで Approve・マージ・push をしてしまうかもしれません。</p></div></li><li data-art=\"tag\"><div><b>名札はあなたのものです。</b><p>投稿も push も、すべてあなたの名前で出ていきます。送る前に、ボードに出た内容を一度だけでも眺めてください。</p></div></li><li data-art=\"cool\"><div><b>AI も間違えます。しかも、わりと自信満々に。</b><p>指摘をうのみにしないでください。怪しいと思ったら、自分でコードを開いてみてください。</p></div></li><li data-art=\"cookie\"><div><b>トークンを食べて働きます。</b><p>レビューのたびに、あなたの Claude のトークンを使います。どれだけ食べたかは、カードのいちばん下のバッジで確認できます。</p></div></li></ul>",
     'err.restartPostInterrupted': 'サーバー再起動により投稿が中断されました。PR を確認してから再実行してください',
     'err.restartApplyInterrupted': 'サーバー再起動により対応が中断されました。PR を確認してから再実行してください',
   },
   ko: {
     'tab.review': '리뷰하기', 'tab.receive': '리뷰 받기', 'tab.roadmap': '로드맵', settings: '설정',
     'stackOrder': '스택 순', 'stackOrder.title': '같은 레인 안에서 스택의 부모 → 자식 → 손자 순으로 정렬 (다시 누르면 업데이트 순으로 돌아감)',
-    editLanes: '레인 배치', laneSave: '배치 저장', cancel: '취소', close: '닫기', claudeOutput: 'Claude 출력',
+    editLanes: '레인 편집', cardDisplay: '표시 설정', 'cd.branch': '브랜치명', 'cd.issue': 'issue 이름', 'cd.stack': '스택 PR', 'cd.updated': 'PR 업데이트 일시', 'cd.applied': '반영 일시', 'cd.usage': '토큰 사용량', 'cd.reviewers': '리뷰어 이미지', 'cd.author': 'PR 작성자 이미지 (\'리뷰 받기\'에서는 항상 숨김)', 'cd.prs': 'issue에 연결된 PR', 'cd.copy': '\'{view}\'에도 같은 표시 설정을 적용할까요?', 'cd.yes': '예', 'cd.no': '아니오', cancel: '취소', close: '닫기', claudeOutput: 'Claude 출력',
+    'about.html': '<h2>Review Board에 대하여</h2><p class="lead">AI 에이전트와 함께 코드를 리뷰하고, 받은 지적을 고치는 일을 한 화면에서. 단, 마지막 판단은 언제나 사람이 합니다.</p><h3>AI는 빠르다. 그래서 더 조심해야 한다</h3><p>AI 에이전트로 코드를 쓰고 리뷰하는 일은 이미 일상이 되었고, 생산성은 놀라울 만큼 올라갔습니다. AI의 발전 속도를 생각하면 이 흐름은 앞으로 더 빨라질 것입니다.</p><p>하지만 편해질수록 마음에 걸리는 것이 하나 있습니다. 사람이 조금씩 게을러진다는 것입니다. "AI가 알아서 잘 했겠지" 하는 마음으로 내용을 보지 않고 Approve를 누르기 시작하면, 지금 만들고 있는 서비스가 정말 원하던 모습인지 점점 아무도 확신할 수 없게 됩니다.</p><p>코딩 스타일 같은 것은 이제 AI에게 맡겨도 괜찮습니다. 중요한 것은 <b>내가 의도한 것이 코드에 제대로 담겨 있는가</b>입니다. 그것이 빠져 있다면 AI로 아무리 빨리 완성했어도 의미가 없습니다.</p><blockquote>일은 AI에게 맡길 수 있어도, 책임까지 맡길 수는 없다. 코드와 결과물에 대한 최종 책임은 사람에게 있다.</blockquote><h3>사람과 AI가 함께 리뷰했다는 것을, 기본으로 보장하기</h3><p>그래서 Review Board는 AI에게 일을 넘기는 곳마다, 일부러 사람이 판단하는 단계를 넣었습니다.</p><div class="about-flow"><b>🔍 리뷰하는 쪽</b><span>🤖 AI가 1차 리뷰</span><i>→</i><span class="human">👤 코드를 읽고, 지적마다 동의 / 동의 안 함 (+의견)</span><i>→</i><span>💬 PR에 게시</span></div><div class="about-flow"><b>✍️ 리뷰받는 쪽</b><span>💬 지적을 받음</span><i>→</i><span>🤖 AI가 수정 방침 제안</span><i>→</i><span class="human">👤 지적의 타당성과 방침에 동의 / 동의 안 함</span><i>→</i><span>🤖 AI가 수정 반영</span></div><ul><li><b>리뷰하는 쪽</b>: 1차 리뷰는 AI에게 맡깁니다. 하지만 게시하기 전에 「코드를 읽었습니다」 체크박스로, 사람이 코드를 한 번은 직접 읽도록 했습니다. AI의 지적을 채택할지도 하나하나 사람이 「동의 / 동의 안 함」으로 정하고, 필요하면 자기 의견을 덧붙입니다.</li><li><b>리뷰받는 쪽</b>: 받은 지적을 고치는 수고는 AI에게 맡깁니다. 하지만 그 지적이 애초에 타당한지, AI가 내놓은 수정 방침에 동의하는지는 사람이 판단합니다.</li></ul><div data-shot="findings"></div><p>이렇게 하면 리뷰하는 쪽도, 리뷰받는 쪽도 상대의 코멘트 뒤에 사람의 판단이 있다는 것을 알 수 있습니다. 그래서 서로의 의견을 더 안심하고 신뢰할 수 있게 됩니다.</p><h3>피곤하지 않게: 화면 설계의 원칙</h3><p>AI 에이전트 덕분에 리뷰도 수정도 편해졌습니다. 그런데도 그 주변의 자잘한 일들이 오히려 피로를 쌓고 있었습니다. Review Board의 화면은 그 피로를 줄이는 것을 목표로 합니다.</p><ul><li><b>브라우저 탭을 끝없이 열지 않는다</b>: 리뷰 요청, 내 PR, 스프린트를 한 화면에서 봅니다. GitHub 링크도 항상 같은 탭 하나에서 열립니다.</li><li><b>도구 사이를 오가지 않는다</b>: 브라우저에서 PR을 보고, 터미널로 가서 Claude에게 skill 실행을 지시하고, 다시 돌아오는… 그 왕복을 버튼 하나로 줄였습니다.</li><li><b>새 소식을 찾으러 가지 않는다</b>: GitHub Notifications를 주기적으로 확인하지 않아도, 새 리뷰 요청과 지적이 보드에 알아서 들어옵니다.</li></ul><div data-shot="review"></div><blockquote>속도는 AI에게. 판단과 책임은 사람에게.</blockquote>',
     'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(rb-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
-    'lane.requested': '요청됨', 'lane.reviewing': '리뷰 중', 'lane.reviewed': '리뷰 완료', 'lane.done': '완료', 'lane.draft': '드래프트',
+    'tips.lanes': '<summary>레인 보는 법</summary><p><b>리뷰하기</b> 탭 (다른 사람의 PR)</p><ul><li>리뷰 요청: 나에게 리뷰가 요청된 PR. 「리뷰하기」로 Claude 리뷰를 시작합니다.</li><li>리뷰 중: Claude가 리뷰하고 있거나 차례를 기다리는 중.</li><li>리뷰 완료: 리뷰 의견이 나와서 내 결정을 기다리는 중. 카드를 열어 검토하세요.</li><li>완료: PR에 게시했거나 건너뛴 것.</li></ul><p><b>리뷰 받기</b> 탭 (내 PR)</p><ul><li>드래프트: Draft 상태의 PR.</li><li>리뷰 대기: 리뷰를 기다리는 PR.</li><li>코멘트 있음: 해결되지 않은 스레드 중 마지막 발언이 내가 아닌 것이 있는 PR.</li><li>실행 중: 셀프 리뷰나 코멘트 반영이 진행 중.</li><li>결정 대기: 셀프 리뷰 의견이나 반영 계획이 나와서 내 결정을 기다리는 중.</li><li>머지 가능 / 완료: 직접 옮기는 레인입니다. 카드를 끌어서 리뷰 대기 ↔ 머지 가능 ↔ 완료 사이를 옮길 수 있습니다.</li></ul>', 'tips.review': '<summary>리뷰 의견 결정하고 게시하기</summary><ol><li>카드를 열면 리뷰 의견이 하나씩 나옵니다. 각각 「동의」 또는 「동의 안 함」을 고르고, 필요하면 메모를 남깁니다.</li><li>리뷰하기 탭: 동의한 의견만 PR에 코멘트로 게시됩니다. 동의하지 않은 의견도 이유를 쓰면 <span data-disagree-icon>🤔💭</span>와 함께 게시됩니다. Approve할지도 여기서 고릅니다.</li><li>리뷰 받기 탭: 셀프 리뷰는 동의한 의견을 게시하고 수정·push·답글까지 진행합니다. 코멘트 반영은 동의한 계획대로 수정·push·답글을 진행합니다.</li><li>「코드를 읽었습니다」는 AI 리뷰를 그대로 내보내지 않기 위한 체크입니다. 직접 코드를 읽은 뒤 체크하세요.</li></ol><p class="muted">고른 내용은 브라우저에 저장되므로 창을 닫았다가 다시 열어도 남아 있습니다. 게시·Approve·다시 리뷰 같은 버튼은 실수 방지를 위해 두 번 눌러야 실행됩니다.</p>', 'tips.buttons': '<summary>보드 위쪽 버튼</summary><ul><li>스택 순: 같은 레인 안에서 스택 PR을 부모 → 자식 → 손자 순으로 정렬합니다. 다시 누르면 업데이트 순으로 돌아갑니다.</li><li>Approve 완료: 누를 때마다 전체 → 만 보기 → 제외 순으로 바뀝니다.</li><li>레인 편집: 레인을 끌어서 순서를 바꾸거나 이름을 바꿀 수 있습니다. 「저장」을 눌러야 반영됩니다.</li><li>표시 설정: 카드에 보여 줄 항목(브랜치명, issue, 스택, 토큰 사용량, 리뷰어 이미지 등)을 고릅니다.</li><li>오른쪽 끝 새로고침 버튼: GitHub에서 바로 다시 가져옵니다.</li></ul>', 'tips.roadmap': '<summary>로드맵 화면</summary><ul><li>설정의 「로드맵 화면의 GitHub Projects」에 프로젝트 URL을 넣으면 issue 일정이 막대로 나옵니다.</li><li>스프린트별은 프로젝트의 Iteration(스프린트)마다, 기간별은 1주 / 1개월 단위로 시작일·종료일 기준으로 보여 줍니다.</li><li>「부모 issue 담당자로 필터」를 켜면 담당자 필터를 최상위 issue의 담당자 기준으로 적용합니다.</li><li>데이터는 24시간 캐시됩니다. 바로 최신으로 보려면 다시 가져오기 버튼을 누르세요.</li></ul>', 'tips.settings': '<summary>설정 요령</summary><ul><li>저장소와 스킬 매핑의 인자 템플릿에는 {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}를 쓸 수 있습니다.</li><li>GitHub 자동 가져오기 시간대 밖에서는 자동으로 가져오지 않습니다. 새로고침 버튼으로 직접 가져오는 건 언제든 됩니다.</li><li>동시 실행 수를 넘는 리뷰는 「대기 중」으로 줄을 서서 차례로 실행됩니다.</li><li>각 설정 화면의 「모두 기본값으로 되돌리기」로 처음 상태로 돌릴 수 있습니다.</li></ul>', 'tips.cost': '<summary>토큰 사용량과 로그</summary><ul><li>카드의 토큰 사용량은 그 PR에서 쓴 토큰(캐시 포함)과 비용의 누계입니다. 「표시 설정」에서 켜고 끌 수 있습니다.</li><li>실행 중인 카드의 「로그」로 Claude 출력을 볼 수 있습니다.</li><li>끝난 실행의 로그는 설정의 「로그 보관 일수」만큼 남고 매일 자동으로 지워집니다. 설정 화면에서 바로 지울 수도 있습니다.</li></ul>',
+    'lane.requested': '리뷰 요청', 'lane.reviewing': '리뷰 중', 'lane.reviewed': '리뷰 완료', 'lane.done': '완료', 'lane.draft': '드래프트',
     'lane.mine': '리뷰 대기', 'lane.pending': '코멘트 있음', 'lane.running': '실행 중', 'lane.planned': '결정 대기', 'lane.mergeable': '머지 가능',
     'rm.sprint': '스프린트별', 'rm.period': '기간별',
     'ago.min': '{n}분 전', 'ago.hour': '{n}시간 전', 'ago.day': '{n}일 전', fetchedAgo: '{ago} 업데이트됨', startedAgo: '({ago} 시작)',
     refreshNow: '지금 새로고침', refetchTitle: 'GitHub에서 다시 가져오기', fetchFailed: 'GitHub에서 가져오지 못했습니다: {msg}', truncated: 'GitHub 검색 결과가 한 번에 가져올 수 있는 한도(리뷰 요청 100건, 내 PR 50건)를 넘어 일부 PR이 표시되지 않습니다', lastFetched: '마지막 업데이트: {ago}',
     repo: '저장소', author: '작성자', all: '전체', none: '없음',
     approved: 'Approve 완료', 'approved.only': '만 보기', 'approved.exclude': '제외', 'approved.title': '누를 때마다 전체 → 만 보기 → 제외 순으로 전환',
-    'btn.review': '리뷰하기', skillMissing: '스킬 미설정', skip: '건너뛰기', 'skip.title': '게시하지 않고 Done으로 이동',
+    'btn.review': '리뷰하기', skillMissing: '스킬 미설정', skip: '건너뛰기', 'skip.title': '게시하지 않고 완료로 이동',
     queued: '대기 중…', confirmCancel: '정말 취소할까요?', reviewing: '리뷰 중…', log: '로그',
     findingsDecide: '리뷰 의견 {n}건 — 검토하기', checkRaw: '원문 확인하기', posting: '게시 중…', postedReview: '게시한 리뷰',
     skipped: '건너뜀', posted: '게시 완료', 'dismiss.title': '보드에서 제거',
     'running.self': '셀프 리뷰 중…', 'running.fix': '코멘트 확인 중…', selfReview: '셀프 리뷰', fixComments: '코멘트 반영',
-    appliedAgo: '반영 완료 {ago}', applying: '수정·push·답글 중…', stack: '스택: ',
-    'rv.pending': '리뷰 대기', requestRemoved: '리뷰 요청 취소됨', pending: '미반영 코멘트 {n}', 'pending.title': '미해결 스레드 중 마지막 발언이 내가 아닌 것',
+    appliedAgo: '{ago} 반영 완료', applying: '수정·push·답글 중…', stack: '스택: ',
+    'rv.pending': '리뷰 대기', requestRemoved: '리뷰 요청 취소됨', 'pending.title': '미반영 코멘트가 있습니다',
     'usage.title': '이 PR에서 사용한 토큰(캐시 포함)과 비용 누계', error: '오류',
     search: '검색', selectAll: '모두 선택', clearAll: '모두 해제',
     noFindings: '리뷰 의견이 없습니다.', noOutput: '(출력 없음)', agentRaw: '에이전트 원문', rereview: '다시 리뷰', decided: '{n} / {total} 결정 완료',
     'humanRead.title': '코드를 보지 않고 AI에만 맡기는 리뷰를 막기 위해, 직접 코드를 읽었다면 체크하세요', humanRead: '코드를 읽었습니다',
     approve: 'Approve하기', submit: '코멘트하기',
     confirmRereview: '한 번 더 누르면 선택을 초기화하고 다시 리뷰', confirmApprove: '한 번 더 누르면 Approve로 게시', confirmPost: '한 번 더 누르면 게시',
-    'ph.agree': '이유·추가 설명 (선택, 코멘트 본문에 반영됨)', 'ph.disagree': '동의하지 않는 이유 (선택, 쓰면 🤔💭와 함께 게시됨)',
+    'ph.agree': '이유·추가 설명 (선택, 코멘트 본문에 반영됨)', 'ph.disagree': '동의하지 않는 이유 (선택, 쓰면 {icon}와 함께 게시됨)',
     origComment: '원래 코멘트', agree: '동의', disagree: '동의 안 함',
     'ph.self.agree': '추가 설명 (선택, 게시와 수정에 반영됨)', 'ph.self.disagree': '동의하지 않은 의견은 게시도 수정도 하지 않습니다 (메모)',
     'ph.fix.agree': '추가 설명 (선택, 수정과 답글에 반영됨)', 'ph.fix.disagree': '동의하지 않는 이유 (선택, 쓰면 그 내용으로 계획을 다시 세웁니다. 비우면 수정도 답글도 하지 않습니다)',
@@ -353,14 +461,18 @@ const I18N = {
     's.mine': '리뷰 받기(내 PR) 스킬',
     's.mine.help': '스킬이 비어 있으면 해당 버튼을 표시하지 않습니다. 셀프 리뷰용 스킬은 <code>&lt;review-board-findings&gt;</code> 형식의 리뷰 의견 목록을, 반영용 스킬(예: review-fix)은 코멘트별 반영 계획을 반환하도록 지시해서 실행합니다.',
     's.uiLang': '화면 언어', 's.outLang': 'Claude 출력 언어', 's.outLang.title': 'Claude가 PR에 쓰는 코멘트·답글과 보드에 표시하는 리뷰 의견의 언어',
+    's.disagreeIcon': '동의 안 함 의견 아이콘', 's.disagreeIcon.title': '동의하지 않은 의견에 이유를 써서 게시할 때 내 의견 앞에 붙이는 아이콘',
     's.model': '모델', 's.model.title': '비우면 claude 기본값. 서브에이전트도 같은 모델로 동작합니다', 's.claudeArgs': 'claude 추가 인자',
     's.mergedDays': '머지된 PR 표시 일수', 's.refresh': '화면 갱신 간격(초)', 's.poll': 'GitHub 가져오기 간격(분)',
     's.pollHours': 'GitHub 자동 가져오기 시간대(시)', 's.pollHours.title': '이 시간대 밖에서는 GitHub를 자동으로 가져오지 않습니다(수동 갱신은 가능). 시작과 끝이 같으면 하루 종일',
-    's.concurrent': '동시 실행 수', 's.authors': 'PR 작성자 (한 줄에 한 명, 비우면 전원)', 's.projects': '로드맵 화면의 GitHub Projects (한 줄에 하나)',
+    's.concurrent': '동시 실행 수',
+    'sec.logs': '로그', 's.logKeep': '로그 보관 일수', 's.logKeep.title': '끝난 실행의 로그를 이 일수만큼 남기고, 오래된 것은 매일 자동으로 삭제합니다',
+    'logs.stats': '{count}건 · {size}', 'logs.clearOld': '{n}일보다 오래된 로그 삭제', 'logs.clearAll': '모두 삭제',
+    'logs.cleared': '{count}건 ({size})을 삭제했습니다', 'confirmDelete': '한 번 더 누르면 삭제', 's.authors': 'PR 작성자 (한 줄에 한 명, 비우면 전원)', 's.projects': '로드맵 화면의 GitHub Projects (한 줄에 하나)',
     's.sprintPast': '로드맵에 표시할 과거 스프린트·기간 수', 's.sprintRange.title': '기간별에서도 같은 수만큼 과거·미래 구간을 표시합니다',
     's.period': '로드맵 기간별 구간', 'unit.week': '1주', 'unit.2week': '2주', 'unit.month': '1개월',
     's.sprintFuture': '미래 스프린트·기간 수 (스프린트는 issue가 있는 것만)', 's.repos': '저장소 (한 줄에 하나, owner/name)',
-    'nav.claude': 'Claude 실행', 'nav.github': 'GitHub·작업 대상', 'nav.refresh': '갱신 간격', 'nav.lang': '언어',
+    'nav.claude': 'Claude 실행', 'nav.github': 'GitHub·작업 대상', 'nav.refresh': '갱신 간격', 'nav.lang': '언어', 'nav.terms': '용어', 'terms.help': '레인 이름을 바꿀 수 있습니다(표시만 바뀌고 레인의 역할은 그대로입니다). 비워 두면 기본 이름', 'pane.reset': '모두 기본값으로 되돌리기',
     'sec.board': 'PR 보드', 'sec.repos': '저장소', 'sec.screen': '화면', 'sec.fetch': 'GitHub 가져오기',
     'sp.noProjects': '설정의 "로드맵 화면의 GitHub Projects"에 프로젝트 URL을 추가하세요.', 'sp.count': '{n}건',
     future: '미래', current: '현재', past: '과거',
@@ -373,7 +485,7 @@ const I18N = {
     'period.week': '{date}부터 1주', 'period.2week': '{date}부터 2주',
     noOutputYet: '아직 출력이 없습니다', runEnded: '실행이 끝났습니다',
     confirmApplyComments: 'PR에 남긴 내 코멘트를 지시로 삼아 수정·push·답글을 진행합니다. 실행하려면 5초 안에 한 번 더 드래그하세요',
-    move: '이동…', applyComments: 'PR 코멘트대로 반영', confirmRun: '한 번 더 누르면 실행',
+    applyComments: 'PR 코멘트대로 반영', confirmRun: '한 번 더 누르면 실행',
     'err.projectUrlInvalid': '프로젝트 URL을 해석할 수 없습니다: {url}', 'err.sprintNotFound': '스프린트를 찾을 수 없습니다',
     'err.periodInvalid': '기간 지정이 올바르지 않습니다', 'err.noDateField': '이 프로젝트에는 Date 필드가 없습니다',
     'err.claudeReadFailed': 'claude 출력을 읽을 수 없습니다: {message}', 'err.claudeParseFailed': 'claude 출력을 해석할 수 없습니다 (exit={code}): {stderr}',
@@ -385,14 +497,19 @@ const I18N = {
     'err.undecided': '결정하지 않은 의견이 있습니다', 'err.cannotMove': '이동할 수 있는 상태가 아닙니다', 'err.cannotCancel': '취소할 수 있는 상태가 아닙니다',
     'err.cannotPost': '게시할 수 있는 상태가 아닙니다', 'err.cannotSkip': '건너뛸 수 있는 상태가 아닙니다',
     'err.restartInterrupted': '서버 재시작으로 중단되었습니다',
+    'err.consentRequired': "\"시작하기 전에\" 안내에 동의해야 실행할 수 있습니다",
+    'consent.title': "시작하기 전에 잠깐만요", 'consent.agree': "시작하기", 'consent.got': "이해했어요", 'consent.open': "\"시작하기 전에\" 보기",
+    'consent.html': "<p>Review Board는 당신의 GitHub 계정(<code>gh</code>)과 Claude Code(<code>claude</code>)를 빌려서 PR 리뷰·게시·수정·push를 대신 해 주는 부지런한 도우미입니다. 부지런한 만큼, 미리 알아 두실 게 몇 가지 있어요.</p><ul><li data-art=\"house\"><div><b>믿을 수 있는 집에서만 일하게 해 주세요.</b><i class=\"star\"></i><p>대상은 신뢰할 수 있는 저장소·프로젝트만으로 정해 주세요. 아래에 적은 일이 일어나도 괜찮은 곳은 믿을 수 있는 곳뿐입니다. 그래도 불안하면 설정의 \"claude 추가 인자\"에서 허용하는 명령을 줄이면 됩니다.</p></div></li><li data-art=\"robot\"><div><b>손이 아주 빠릅니다.</b><p>Claude는 \"이거 해도 돼요?\"라고 매번 묻지 않아요. 설정의 \"claude 추가 인자\"에서 허용한 도구(기본값은 <code>gh</code>·<code>git</code>·파일 편집 등)는 바로 실행합니다.</p></div></li><li data-art=\"note\"><div><b>PR 속 쪽지를 믿어 버릴 수 있어요.</b><p>PR 본문·코드·코멘트에 \"Claude야, 이거 머지해 줘\" 같은 쪽지가 숨어 있으면, 착한 Claude는 그걸 진짜 부탁으로 착각할 수 있습니다(프롬프트 인젝션). 그러면 당신 계정으로 Approve·머지·push를 해 버릴지도 몰라요.</p></div></li><li data-art=\"tag\"><div><b>이름표는 당신 것입니다.</b><p>게시와 push는 전부 당신 이름으로 나갑니다. 보내기 전에 보드에 뜬 내용을 한 번만 훑어봐 주세요.</p></div></li><li data-art=\"cool\"><div><b>AI도 틀립니다. 그것도 꽤 자신 있게요.</b><p>지적을 그대로 믿지 마세요. 수상하면 직접 코드를 열어 보세요.</p></div></li><li data-art=\"cookie\"><div><b>토큰을 먹고 일합니다.</b><p>리뷰할 때마다 당신의 Claude 토큰을 씁니다. 얼마나 먹었는지는 카드 맨 아래 뱃지에서 볼 수 있어요.</p></div></li></ul>",
     'err.restartPostInterrupted': '서버 재시작으로 게시가 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
     'err.restartApplyInterrupted': '서버 재시작으로 반영이 중단되었습니다. PR을 확인한 뒤 다시 실행하세요',
   },
   en: {
     'tab.review': 'Review', 'tab.receive': 'Get reviewed', 'tab.roadmap': 'Roadmap', settings: 'Settings',
     'stackOrder': 'Stack order', 'stackOrder.title': 'Sort cards in each lane by stack: parent → child → grandchild (click again to sort by last update)',
-    editLanes: 'Arrange lanes', laneSave: 'Save layout', cancel: 'Cancel', close: 'Close', claudeOutput: 'Claude output',
+    editLanes: 'Edit lanes', cardDisplay: 'Display', 'cd.branch': 'Branch name', 'cd.issue': 'Issue title', 'cd.stack': 'Stacked PRs', 'cd.updated': 'PR updated time', 'cd.applied': 'Addressed time', 'cd.usage': 'Token usage', 'cd.reviewers': 'Reviewer avatars', 'cd.author': 'PR author avatar (always hidden in "Get reviewed")', 'cd.prs': 'PRs linked to issues', 'cd.copy': 'Apply the same display settings to "{view}" too?', 'cd.yes': 'Yes', 'cd.no': 'No', cancel: 'Cancel', close: 'Close', claudeOutput: 'Claude output',
+    'about.html': '<h2>About Review Board</h2><p class="lead">Review code with AI agents and fix the feedback you get, all on one screen. But the final call always belongs to a human.</p><h3>AI is fast. That’s exactly why we need to be careful</h3><p>Writing and reviewing code with AI agents is already part of everyday work, and productivity has gone up dramatically. Given how fast AI is improving, this will only speed up.</p><p>But the more convenient it gets, the more one thing worries me: people slowly getting complacent. Once we start hitting Approve without reading, thinking “the AI probably got it right,” it gets harder and harder for anyone to say whether the service we are building is really what we wanted.</p><p>Things like coding style can be left to AI now. What matters is <b>whether what I intended actually made it into the code</b>. If it didn’t, it doesn’t matter how fast AI helped us finish.</p><blockquote>You can hand work to AI, but not responsibility. The final responsibility for the code and what it produces stays with people.</blockquote><h3>Making “reviewed by a human and AI together” the default</h3><p>So wherever Review Board hands work to AI, it deliberately puts a human decision in the loop.</p><div class="about-flow"><b>🔍 Reviewing</b><span>🤖 AI does the first review</span><i>→</i><span class="human">👤 Read the code, Agree / Disagree on each finding (+ comment)</span><i>→</i><span>💬 Post to the PR</span></div><div class="about-flow"><b>✍️ Being reviewed</b><span>💬 Receive feedback</span><i>→</i><span>🤖 AI proposes a fix plan</span><i>→</i><span class="human">👤 Agree / Disagree on the feedback and the plan</span><i>→</i><span>🤖 AI applies the fix</span></div><ul><li><b>Reviewing</b>: AI does the first pass. But before anything is posted, an “I read the code” checkbox asks you to read the code yourself at least once. You also decide on each AI finding with “Agree / Disagree”, adding your own comment when needed.</li><li><b>Being reviewed</b>: AI takes on the work of fixing the feedback you received. But whether that feedback is valid in the first place, and whether you agree with the AI’s fix plan, is your call.</li></ul><div data-shot="findings"></div><p>This way, both reviewers and authors know there is human judgment behind every comment, so they can trust each other’s feedback with more confidence.</p><h3>Less fatigue: the design principles</h3><p>AI agents made reviewing and fixing easier. Yet the small chores around them kept piling up fatigue. Review Board’s screens are built to cut that fatigue.</p><ul><li><b>No endless browser tabs</b>: review requests, your own PRs and sprints on one screen. GitHub links always open in the same single tab.</li><li><b>No hopping between tools</b>: reading a PR in the browser, switching to a terminal to tell Claude to run a skill, then coming back… that round trip is now one button.</li><li><b>No hunting for news</b>: no need to keep checking GitHub Notifications. New review requests and feedback land on the board on their own.</li></ul><div data-shot="review"></div><blockquote>Speed from AI. Judgment and responsibility from people.</blockquote>',
     'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (rb-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
+    'tips.lanes': '<summary>What each lane means</summary><p><b>Review</b> tab (other people\'s PRs)</p><ul><li>Requested: your review was requested. Press "Review" to start a Claude review.</li><li>Reviewing: Claude is reviewing, or waiting its turn.</li><li>Reviewed: findings are ready and waiting for your decision. Open the card to go through them.</li><li>Done: posted to the PR, or skipped.</li></ul><p><b>Receive</b> tab (your PRs)</p><ul><li>Draft: PRs in Draft.</li><li>Awaiting review: PRs waiting for review.</li><li>Has comments: an unresolved thread whose last comment is not yours.</li><li>Running: a self-review or comment fix is in progress.</li><li>Needs decision: self-review findings or a fix plan are waiting for your decision.</li><li>Ready to merge / Done: lanes you move cards into yourself. Drag a card between Awaiting review, Ready to merge and Done.</li></ul>', 'tips.review': '<summary>Decide on findings and post</summary><ol><li>Open a card to see the findings one by one. Pick "Agree" or "Disagree" for each and add a note if needed.</li><li>Review tab: only agreed findings are posted as PR comments. A disagreed finding is also posted with <span data-disagree-icon>🤔💭</span> if you write a reason. You also choose whether to approve here.</li><li>Receive tab: self-review posts the agreed findings, then fixes, pushes and replies. Comment fixes follow the agreed plan to fix, push and reply.</li><li>"I read the code" keeps AI reviews from going out unread. Check it after reading the code yourself.</li></ol><p class="muted">Your choices are saved in the browser, so they survive closing and reopening. Buttons such as post, approve and re-review need two clicks to avoid mistakes.</p>', 'tips.buttons': '<summary>Buttons above the board</summary><ul><li>Stack order: sorts stacked PRs in each lane as parent → child → grandchild. Click again to sort by last update.</li><li>Approved: each click cycles All → Only → Exclude.</li><li>Edit lanes: drag lanes to reorder them, or rename them. Press "Save" to apply.</li><li>Card display: choose what cards show (branch, issue, stack, token usage, reviewer avatars and more).</li><li>Refresh button at the far right: fetches from GitHub right away.</li></ul>', 'tips.roadmap': '<summary>Roadmap screen</summary><ul><li>Add project URLs to "GitHub Projects for the roadmap" in settings to see issue schedules as bars.</li><li>By sprint groups by the project Iteration (sprint); by period shows 1-week or 1-month spans based on start and end dates.</li><li>"Filter by parent issue assignee" applies the assignee filter to the top-level issue assignee.</li><li>Data is cached for 24 hours. Press the fetch-again button to see the latest right away.</li></ul>', 'tips.settings': '<summary>Settings tips</summary><ul><li>Argument templates in the repo-to-skill mapping can use {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}.</li><li>Outside the GitHub auto-fetch hours nothing is fetched automatically. The refresh button still works any time.</li><li>Reviews beyond the concurrency limit wait as "Queued" and run in order.</li><li>"Reset all to defaults" on each settings pane restores the initial values.</li></ul>', 'tips.cost': '<summary>Token usage and logs</summary><ul><li>Token usage on a card is the running total of tokens (including cache) and cost spent on that PR. Turn it on or off in "Card display".</li><li>"Log" on a running card shows the Claude output.</li><li>Logs of finished runs are kept for the "log retention days" in settings and deleted automatically every day. You can also delete them right away from settings.</li></ul>',
     'lane.requested': 'Requested', 'lane.reviewing': 'Reviewing', 'lane.reviewed': 'Reviewed', 'lane.done': 'Done', 'lane.draft': 'Draft',
     'lane.mine': 'Awaiting review', 'lane.pending': 'Has comments', 'lane.running': 'Running', 'lane.planned': 'Needs decision', 'lane.mergeable': 'Ready to merge',
     'rm.sprint': 'By sprint', 'rm.period': 'By period',
@@ -406,14 +523,14 @@ const I18N = {
     skipped: 'Skipped', posted: 'Posted', 'dismiss.title': 'Remove from board',
     'running.self': 'Self-reviewing…', 'running.fix': 'Checking comments…', selfReview: 'Self-review', fixComments: 'Address comments',
     appliedAgo: 'Addressed {ago}', applying: 'Fixing, pushing, replying…', stack: 'Stack: ',
-    'rv.pending': 'Review pending', requestRemoved: 'Request removed', pending: '{n} unaddressed', 'pending.title': "Unresolved threads whose last comment isn't yours",
+    'rv.pending': 'Review pending', requestRemoved: 'Request removed', 'pending.title': 'Has unaddressed comments',
     'usage.title': 'Total tokens (incl. cache) and cost spent on this PR', error: 'Error',
     search: 'Search', selectAll: 'Select all', clearAll: 'Clear all',
     noFindings: 'No findings.', noOutput: '(no output)', agentRaw: "Agent's raw output", rereview: 'Re-review', decided: '{n} / {total} decided',
     'humanRead.title': "To avoid rubber-stamping AI reviews, check this once you've read the code yourself", humanRead: 'I read the code',
     approve: 'Approve', submit: 'Comment',
     confirmRereview: 'Click again to discard decisions and re-review', confirmApprove: 'Click again to post with Approve', confirmPost: 'Click again to post',
-    'ph.agree': 'Reason or notes (optional, reflected in the comment)', 'ph.disagree': 'Reason for disagreeing (optional, posted with 🤔💭 if written)',
+    'ph.agree': 'Reason or notes (optional, reflected in the comment)', 'ph.disagree': 'Reason for disagreeing (optional, posted with {icon} if written)',
     origComment: 'Original comment', agree: 'Agree', disagree: 'Disagree',
     'ph.self.agree': 'Notes (optional, reflected in the post and fix)', 'ph.self.disagree': 'Disagreed findings are neither posted nor fixed (notes only)',
     'ph.fix.agree': 'Notes (optional, reflected in the fix and reply)', 'ph.fix.disagree': 'Reason for disagreeing (optional: if given, the plan is revised accordingly; if empty, no fix or reply)',
@@ -428,14 +545,18 @@ const I18N = {
     's.mine': 'Skills for "Get reviewed" (my PRs)',
     's.mine.help': 'If a skill is empty, its button is hidden. The self-review skill is told to return findings in <code>&lt;review-board-findings&gt;</code> format, and the fix skill (e.g. review-fix) to return a plan for each review comment.',
     's.uiLang': 'Display language', 's.outLang': 'Output language', 's.outLang.title': 'Language Claude uses for PR comments, replies and the findings shown on the board',
+    's.disagreeIcon': 'Disagree icon', 's.disagreeIcon.title': 'Icon placed before your own opinion when a disagreed finding is posted with a reason',
     's.model': 'Model', 's.model.title': "Empty uses claude's default. Subagents run on the same model", 's.claudeArgs': 'Extra claude args',
     's.mergedDays': 'Days to show merged PRs', 's.refresh': 'Screen refresh interval (s)', 's.poll': 'GitHub fetch interval (min)',
     's.pollHours': 'GitHub auto-fetch hours', 's.pollHours.title': "GitHub isn't fetched automatically outside these hours (manual refresh still works). Same start and end means all day",
-    's.concurrent': 'Max concurrent runs', 's.authors': 'PR authors (one per line, empty = everyone)', 's.projects': 'GitHub Projects for the roadmap (one per line)',
+    's.concurrent': 'Max concurrent runs',
+    'sec.logs': 'Logs', 's.logKeep': 'Days to keep logs', 's.logKeep.title': 'Logs of finished runs are kept for this many days; older ones are deleted automatically every day',
+    'logs.stats': '{count} file(s) · {size}', 'logs.clearOld': 'Delete logs older than {n} days', 'logs.clearAll': 'Delete all',
+    'logs.cleared': 'Deleted {count} file(s) ({size})', 'confirmDelete': 'Click again to delete', 's.authors': 'PR authors (one per line, empty = everyone)', 's.projects': 'GitHub Projects for the roadmap (one per line)',
     's.sprintPast': 'Past sprints / periods on the roadmap', 's.sprintRange.title': 'The same number of past / future periods is used in "By period"',
     's.period': 'Roadmap period length', 'unit.week': '1 week', 'unit.2week': '2 weeks', 'unit.month': '1 month',
     's.sprintFuture': 'Future sprints / periods (only sprints with issues)', 's.repos': 'Repositories (one per line, owner/name)',
-    'nav.claude': 'Claude', 'nav.github': 'GitHub & targets', 'nav.refresh': 'Refresh', 'nav.lang': 'Language',
+    'nav.claude': 'Claude', 'nav.github': 'GitHub & targets', 'nav.refresh': 'Refresh', 'nav.lang': 'Language', 'nav.terms': 'Terms', 'terms.help': "Rename lanes (display only — what each lane holds doesn't change). Leave empty for the default name", 'pane.reset': 'Reset all to defaults',
     'sec.board': 'PR board', 'sec.repos': 'Repositories', 'sec.screen': 'Screen', 'sec.fetch': 'GitHub fetch',
     'sp.noProjects': 'Add a project URL to "GitHub Projects for the roadmap" in Settings.', 'sp.count': '{n} issue(s)',
     future: 'Upcoming', current: 'Current', past: 'Past',
@@ -448,7 +569,7 @@ const I18N = {
     'period.week': 'Week of {date}', 'period.2week': '2 weeks from {date}',
     noOutputYet: 'No output yet', runEnded: 'Run finished',
     confirmApplyComments: 'Fix, push and reply using your own comments on the PR as instructions. Drag again within 5 seconds to run',
-    move: 'Move…', applyComments: 'Follow PR comments', confirmRun: 'Click again to run',
+    applyComments: 'Follow PR comments', confirmRun: 'Click again to run',
     'err.projectUrlInvalid': "Can't parse project URL: {url}", 'err.sprintNotFound': 'Sprint not found',
     'err.periodInvalid': 'Invalid period', 'err.noDateField': 'This project has no Date field',
     'err.claudeReadFailed': "Can't read claude output: {message}", 'err.claudeParseFailed': "Can't parse claude output (exit={code}): {stderr}",
@@ -460,6 +581,9 @@ const I18N = {
     'err.undecided': 'Some findings are undecided', 'err.cannotMove': "Can't move in this state", 'err.cannotCancel': "Can't cancel in this state",
     'err.cannotPost': "Can't post in this state", 'err.cannotSkip': "Can't skip in this state",
     'err.restartInterrupted': 'Interrupted by a server restart',
+    'err.consentRequired': "Agree to \"Before you start\" to run this",
+    'consent.title': "Before you start, a quick word", 'consent.agree': "Start", 'consent.got': "I understand", 'consent.open': "Show \"Before you start\"",
+    'consent.html': "<p>Review Board borrows your GitHub account (<code>gh</code>) and Claude Code (<code>claude</code>) to review, post, fix and push PRs for you. It's a hard worker, and hard workers come with a few things you should know first.</p><ul><li data-art=\"house\"><div><b>Only let it work in houses you trust.</b><i class=\"star\"></i><p>Only add repositories and projects you trust. Everything below is only okay to happen somewhere you trust. Still nervous? Narrow down the commands allowed in \"Extra claude args\" in Settings.</p></div></li><li data-art=\"robot\"><div><b>It has very fast hands.</b><p>Claude doesn't ask \"May I?\" every time. It runs the tools allowed in \"Extra claude args\" (by default <code>gh</code>, <code>git</code>, file edits, etc.) right away.</p></div></li><li data-art=\"note\"><div><b>It may believe notes hidden in a PR.</b><p>If a PR description, code or comment hides a note like \"Hey Claude, please merge this\", good-natured Claude may take it as a real request (prompt injection), and approve, merge or push with your account.</p></div></li><li data-art=\"tag\"><div><b>The name tag is yours.</b><p>Every post and push goes out under your name. Take one quick look at what the board shows before sending.</p></div></li><li data-art=\"cool\"><div><b>AI makes mistakes. Confidently, too.</b><p>Don't take findings at face value. If something smells off, open the code yourself.</p></div></li><li data-art=\"cookie\"><div><b>It runs on tokens.</b><p>Every review eats your Claude tokens. The badge at the bottom of each card shows how much it ate.</p></div></li></ul>",
     'err.restartPostInterrupted': 'Posting was interrupted by a server restart. Check the PR before retrying',
     'err.restartApplyInterrupted': 'Applying was interrupted by a server restart. Check the PR before retrying',
   },
@@ -471,6 +595,21 @@ const errText = (err) => (err && typeof err === 'object' ? tr(`err.${err.code}`,
 document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = tr(el.dataset.i18n)));
 document.querySelectorAll('[data-i18n-title]').forEach((el) => (el.title = tr(el.dataset.i18nTitle)));
 document.querySelectorAll('[data-i18n-html]').forEach((el) => (el.innerHTML = tr(el.dataset.i18nHtml)));
+// 「はじめる前に」の挿絵。色は CSS (.art) 側でテーマに合わせる
+const ROBOT_HEAD = '<line x1="32" y1="9" x2="32" y2="4"/><circle class="a" cx="32" cy="3.5" r="2.5"/><rect class="b" x="20" y="9" width="24" height="18" rx="6"/>';
+const ART = {
+  house: '<path class="d" d="M6 30 32 8l26 22"/><rect class="b" x="13" y="27" width="38" height="30" rx="2"/><path d="M27 40v-4a5 5 0 0 1 10 0v4"/><rect class="w" x="24" y="40" width="16" height="13" rx="2"/><circle class="k" cx="32" cy="46" r="1.8"/><path class="h" d="M50 14c-2-3-6-1-4 2l4 4 4-4c2-3-2-5-4-2z"/>',
+  robot: `${ROBOT_HEAD}<circle class="k" cx="27" cy="17" r="2"/><circle class="k" cx="37" cy="17" r="2"/><path d="M28 22q4 3 8 0"/><rect class="b" x="24" y="28" width="16" height="12" rx="3"/><path d="M24 32 12 46M26 38l-6 8M40 32l12 14M38 38l6 8"/><path class="m" d="M6 38l3-2M5 44l3-1M58 38l-3-2M59 44l-3-1"/><rect class="b" x="6" y="47" width="52" height="10" rx="2"/><path d="M11 52h3M18 52h3M25 52h3M32 52h3M39 52h3M46 52h3"/>`,
+  note: '<rect class="b" x="8" y="6" width="34" height="46" rx="3"/><path d="M14 16h22M14 23h22M14 30h16"/><g transform="rotate(12 44 42)"><rect class="w" x="32" y="30" width="24" height="22" rx="2"/><circle class="k" cx="41" cy="38" r="1.8"/><circle class="k" cx="49" cy="38" r="1.8"/><path d="M40 45q5 2 9-2"/></g>',
+  tag: `${ROBOT_HEAD}<circle class="k" cx="27" cy="17" r="2"/><circle class="k" cx="37" cy="17" r="2"/><path d="M28 22q4 3 8 0"/><rect class="b" x="16" y="28" width="32" height="28" rx="5"/><rect class="a" x="22" y="36" width="20" height="14" rx="2"/><circle class="t" cx="32" cy="41" r="2.5"/><path class="t" d="M27 48a5 4 0 0 1 10 0"/>`,
+  cool: `${ROBOT_HEAD}<rect class="k" x="22" y="14" width="9" height="5" rx="2"/><rect class="k" x="33" y="14" width="9" height="5" rx="2"/><path d="M31 16h2"/><path d="M26 22q6 4 12 0"/><rect class="b" x="24" y="28" width="16" height="14" rx="3"/><path d="M40 33l8-5"/><path class="a" d="M48 22v6h4v-3a2 2 0 0 0-4-3z"/><path class="d" d="M50 6a4 4 0 1 1 4 4v3M54 17v.5" stroke-width="2.5"/><path d="M24 33l-6 6"/>`,
+  cookie: `${ROBOT_HEAD}<circle class="k" cx="27" cy="16" r="2"/><circle class="k" cx="37" cy="16" r="2"/><ellipse class="k" cx="32" cy="22.5" rx="4" ry="3"/><circle class="w" cx="46" cy="40" r="12"/><circle class="k" cx="42" cy="36" r="1.5"/><circle class="k" cx="49" cy="35" r="1.5"/><circle class="k" cx="45" cy="44" r="1.5"/><circle class="k" cx="51" cy="43" r="1.5"/><path class="c" d="M34 30l2 2M30 34l1 2M38 36l1 1"/><rect class="b" x="14" y="30" width="16" height="14" rx="3"/><path d="M30 36l6 2"/>`,
+};
+document.querySelectorAll('.consent [data-art]').forEach((el) => el.insertAdjacentHTML('afterbegin', `<svg class="art" viewBox="0 0 64 64" aria-hidden="true">${ART[el.dataset.art]}</svg>`));
+// 一番大事な項目の目印。線を少しずらして重ね、鉛筆で描いたように見せる
+const STAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><path fill="#f7d84a" opacity=".55" d="M20 4l4.6 10.2 11 1.1-8.3 7.4 2.5 10.9L20 28l-9.7 5.6 2.4-10.9-8.2-7.5 11-1z"/><g fill="none" stroke="#d9a400" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.3 3.6l4.4 10.5 11.2 1-8.5 7.5 2.7 11-9.9-5.8-9.6 5.9 2.3-11.1-8.4-7.3 11.2-1.2z"/><path d="M19.6 4.8l4.9 9.6 10.6 1.5-8 7.1 2.2 10.6-9.6-5.4-9.9 5.2 2.6-10.6-8-7.6 10.7-.6z" opacity=".6"/><path d="M15 17l8-2M14 21l12-4M15 25l12-4M18 28l7-3" opacity=".45" stroke-width="1.1"/></g></svg>';
+document.querySelectorAll('.consent .star').forEach((el) => (el.innerHTML = STAR.repeat(3)));
+document.querySelectorAll('.consent li > div').forEach((el) => el.insertAdjacentHTML('beforeend', `<label class="got"><input type="checkbox"> ${tr('consent.got')}</label>`));
 
 const LANES = [
   { id: 'requested', label: tr('lane.requested'), color: '#1a7f37', statuses: ['requested'], badge: true },
@@ -488,7 +627,14 @@ const MINE_LANES = [
   { id: 'mergeable', label: tr('lane.mergeable'), color: '#8250df', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && e.mergeReady && !e.done },
   { id: 'done', label: tr('lane.done'), color: '#656d76', match: (e) => e.status === 'idle' && !e.pending && e.done },
 ];
-// レーンの並び順はブラウザごとに保存する。「レーン配置」モード中だけドラッグで並び替えられる
+// レーンの並び順と名前はブラウザごとに保存する。「レーン編集」モード中だけドラッグで並び替え・名前の変更ができる
+// 名前は表示だけの上書きで、key は `${view}:${lane id}`。無ければ既定の名前
+const LANE_NAMES_KEY = 'rb-lane-names';
+const laneNames = () => { try { return JSON.parse(localStorage.getItem(LANE_NAMES_KEY)) || {}; } catch { return {}; } };
+const saveLaneNames = (names) => {
+  try { localStorage.setItem(LANE_NAMES_KEY, JSON.stringify(Object.fromEntries(Object.entries(names).map(([k, n]) => [k, n.trim()]).filter(([, n]) => n)))); } catch {}
+};
+const laneLabel = (v, lane) => laneNames()[`${v}:${lane.id}`] || lane.label;
 const laneOrderKey = (v) => `rb-lane-order:${v}`;
 function lanesFor(v) {
   const lanes = v === 'receive' ? MINE_LANES : LANES;
@@ -499,6 +645,7 @@ function lanesFor(v) {
 }
 const laneMatch = (lane) => lane.match || ((p) => lane.statuses.includes(p.status));
 let laneEdit = null; // 編集中の lane id 配列
+let laneNameEdit = null; // 編集中のレーン名 (laneNames と同じ形)
 // リポジトリ・作成者の絞り込み (非表示にしたもの) もタブごと・ブラウザごとに保存する。kind は multiSelect の key
 const hiddenKey = (kind, v) => `rb-hidden-${kind}:${v}`;
 function hiddenOf(kind, v) {
@@ -509,7 +656,7 @@ let laneDrag = null;
 const RM_MODES = { sprint: tr('rm.sprint'), period: tr('rm.period') };
 if (['#milestone', '#repo'].includes(location.hash)) location.replace('#sprint'); // 廃止した Milestone別 / リポジトリ別 のブックマーク
 const rmMode = () => (RM_MODES[location.hash.slice(1)] ? location.hash.slice(1) : null);
-const view = () => (location.hash === '#receive' ? 'receive' : rmMode() ? 'sprint' : 'review');
+const view = () => (location.hash === '#receive' ? 'receive' : location.hash === '#about' ? 'about' : rmMode() ? 'sprint' : 'review');
 const REVIEW_ICON = { APPROVED: '✅', CHANGES_REQUESTED: '🔴', COMMENTED: '💬', DISMISSED: '⚪', PENDING: '⏳' };
 
 let board = { prs: [], mine: [], config: { repos: {} } };
@@ -574,6 +721,8 @@ function ago(iso) {
 // 定期取得と操作後の取得が重なったとき、後から届いた古い応答で新しい表示を戻さないようにする
 let loadSeq = 0;
 let loadApplied = 0;
+// 手動更新中はロードマップと同じくスピナーを出して押せなくする
+let refreshing = false;
 async function load(refresh = false) {
   const seq = ++loadSeq;
   try {
@@ -598,16 +747,17 @@ const release = () => {
 };
 for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, release, true);
 window.addEventListener('blur', release);
-document.addEventListener('focusout', () => renderSkipped && setTimeout(render));
 
 function render() {
   if (dragging || laneDrag) return; // 再描画するとドラッグが途切れる
-  // 開いている選択欄を作り直すと閉じてしまう
-  if (pointerDown || document.activeElement?.matches('#board select')) return void (renderSkipped = true);
+  if (board.consentVersion && (board.config.consentVersion || 0) < board.consentVersion) openConsent(true);
+  if (pointerDown) return void (renderSkipped = true);
   renderSkipped = false;
+  for (const el of document.querySelectorAll('[data-disagree-icon]')) el.textContent = disagreeIcon();
   $('#viewer').innerHTML = board.viewer ? `<img class="avatar" src="${esc(board.viewer.avatarUrl)}" alt=""> ${esc(board.viewer.login)}` : '';
   // 取得時刻を兼ねた手動更新ボタン (ロードマップの spRefetch と同じ見た目)
-  $('#refresh').innerHTML = `<span class="hint">↻ </span>${board.lastFetchedAt ? tr('fetchedAgo', { ago: ago(board.lastFetchedAt) }) : tr('refreshNow')}`;
+  $('#refresh').disabled = refreshing;
+  $('#refresh').innerHTML = `${refreshing ? '<span class="spin"></span> ' : '<span class="hint">↻ </span>'}${board.lastFetchedAt ? tr('fetchedAgo', { ago: ago(board.lastFetchedAt) }) : tr('refreshNow')}`;
   $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString(lang)} — ` : ''}${tr('refetchTitle')}`;
   // 別のタブを見ていても、判断待ち (Reviewed / 判断待ち) が出たことをブラウザのタブ名で分かるようにする
   const waiting = board.prs.filter((p) => p.status === 'reviewed').length + board.mine.filter((p) => p.status === 'planned').length;
@@ -634,13 +784,16 @@ function render() {
     const entries = v === 'receive' ? board.mine : board.prs;
     a.querySelector('.badges').innerHTML = lanesFor(v).filter((l) => l.badge).map((l) => {
       const n = entries.filter(laneMatch(l)).length;
-      return n ? `<span class="badge" style="background:${l.color}" title="${l.label}">${n}</span>` : '';
+      return n ? `<span class="badge" style="background:${l.color}" title="${esc(laneLabel(v, l))}">${n}</span>` : '';
     }).join('');
   });
   const sprint = view() === 'sprint';
-  $('#board').hidden = $('#board-bar').hidden = sprint;
+  const about = view() === 'about';
+  $('#board').hidden = $('#board-bar').hidden = sprint || about;
   $('#sprint').hidden = !sprint;
-  if (sprint) return;
+  $('#about').hidden = !about;
+  if (about && !$('#about').innerHTML) renderAbout(); // 言語を変えると再読み込みになるので 1 回だけ描く
+  if (sprint || about) return;
   const hidden = hiddenOf('repos', view());
   const hiddenAuthors = mine ? [] : hiddenOf('authors', view());
   const all = mine ? board.mine : board.prs;
@@ -686,20 +839,28 @@ function render() {
   $('#stack-order').classList.toggle('primary', stackOrder);
   $('#lane-save').hidden = $('#lane-cancel').hidden = !laneEdit;
   $('#board').classList.toggle('editing', !!laneEdit);
+  // 名前の入力中に再描画されても入力を続けられるようにする
+  const nameAt = document.activeElement?.dataset.laneName && [document.activeElement.dataset.laneName, document.activeElement.selectionStart, document.activeElement.selectionEnd];
   $('#board').innerHTML = lanesFor(view()).map((lane) => {
     let cards = prs.filter(laneMatch(lane));
     if (stackOrder) cards = stackSort(cards);
     return `<section class="lane" data-lane="${lane.id}" ${laneEdit ? 'draggable="true"' : ''}>
-      <h2><span class="dot" style="border-color:${lane.color}"></span>${lane.label}<span class="count">${cards.length}</span></h2>
+      <h2><span class="dot" style="border-color:${lane.color}"></span>${laneEdit
+        ? `<input class="lane-name" data-lane-name="${lane.id}" value="${esc(laneNameEdit[`${view()}:${lane.id}`] || '')}" placeholder="${esc(lane.label)}">`
+        : esc(laneLabel(view(), lane))}<span class="count">${cards.length}</span></h2>
       ${cards.map(mine ? mineCardHtml : cardHtml).join('') || `<div class="muted" style="padding:4px">${tr('none')}</div>`}
     </section>`;
   }).join('');
+  const ni = nameAt && $(`#board [data-lane-name="${nameAt[0]}"]`);
+  if (ni) { ni.focus(); ni.setSelectionRange(nameAt[1], nameAt[2]); }
 
   if (openKey && $('#review-dlg').open) {
     const entry = [...board.prs, ...board.mine].find((p) => p.key === openKey);
     if (!entry || !['reviewed', 'planned'].includes(entry.status)) $('#review-dlg').close();
   }
 }
+
+const fmtBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.ceil(n / 1024)}KB`);
 
 function fmtTokens(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
@@ -739,10 +900,9 @@ function mineCardHtml(e) {
   if (e.status === 'idle') {
     const buttons = [
       mapping.selfSkill && `<button data-mine-run="self" data-key="${esc(e.key)}" title="${esc(mapping.selfSkill)}">${tr('selfReview')}</button>`,
-      mapping.fixSkill && `<button ${e.pending ? 'class="primary"' : ''} data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">${tr('fixComments')}</button>`,
+      mapping.fixSkill && `<button data-mine-run="fix" data-key="${esc(e.key)}" title="${esc(mapping.fixSkill)}">${tr('fixComments')}</button>`,
     ].filter(Boolean);
-    action = buttons.length ? `<span>${buttons.join(' ')}</span>` : `<a href="#" data-settings>${tr('skillMissing')}</a>`;
-    if (e.appliedAt) action += `<span class="muted">${tr('appliedAgo', { ago: ago(e.appliedAt) })}</span>`;
+    action = buttons.length ? `<span class="btns">${buttons.join('')}</span>` : `<a href="#" data-settings>${tr('skillMissing')}</a>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span>${cancel}`;
   } else if (e.status === 'running') {
@@ -755,10 +915,6 @@ function mineCardHtml(e) {
   const clickable = e.status === 'planned';
   // 自分の PR ⇄ マージ可能 ⇄ Done の D&D で手動で移す。判断待ちは実行中に移すと PR 上のコメントどおりに対応する
   const dragFrom = e.status === 'planned' && e.sessionId ? 'planned' : e.status === 'idle' && !e.pending && (e.done || !e.pr.isDraft) ? (e.done ? 'done' : e.mergeReady ? 'mergeable' : 'mine') : null;
-  // ドラッグできない環境 (キーボード・タッチ) 向けに、同じ移動を選択欄でもできるようにする
-  if (e.status === 'idle' && dragFrom) {
-    action += `<select data-mine-move="${esc(e.key)}"><option value="">${tr('move')}</option>${DROP_TO[dragFrom].map((id) => `<option value="${id}">${MINE_LANES.find((l) => l.id === id).label}</option>`).join('')}</select>`;
-  }
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open-mine="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'planned');
 }
 
@@ -837,16 +993,13 @@ function cardShell(e, action, attrs, showError) {
     <div class="top">
       ${view() === 'receive' ? '' : `<img class="avatar" src="${esc(pr.author?.avatarUrl)}" alt="" title="${esc(pr.author?.login)}">`}
       <span class="grow"><a href="${esc(safeUrl(pr.url))}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
-      <span>${ago(pr.updatedAt)}</span>
+      <span class="time" title="${esc(new Date(pr.updatedAt).toLocaleString(lang))}">${tr('fetchedAgo', { ago: ago(pr.updatedAt) })}</span>
     </div>
-    <div class="title">${esc(pr.title)}</div>
+    <div class="title">${esc(pr.title)}${e.pending ? `<span class="pending-dot" role="img" aria-label="${tr('pending.title')}"></span>` : ''}</div>
     ${pr.base ? `<div class="branch" title="base ← head">${esc(pr.base)} ← ${esc(pr.head)}</div>` : ''}
     <div class="chips">
       ${pr.state === 'MERGED' ? `<span class="chip merged" title="${esc(new Date(pr.mergedAt).toLocaleString(lang))}">Merged</span>` : ''}
-      ${pr.isDraft ? '<span class="chip draft">Draft</span>' : ''}
       ${e.active === false ? `<span class="chip off">${tr('requestRemoved')}</span>` : ''}
-      ${e.pending ? `<span class="chip pending" title="${tr('pending.title')}">${tr('pending', { n: e.pending })}</span>` : ''}
-      ${e.usage ? `<span class="chip" title="${tr('usage.title')}">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
       ${e.error ? `<span class="chip err" title="${esc(errText(e.error))}">${tr('error')}</span>` : ''}
       ${pr.labels.map((l) => `<span class="chip" style="border-color:#${esc(l.color)}">${esc(l.name)}</span>`).join('')}
     </div>
@@ -854,6 +1007,10 @@ function cardShell(e, action, attrs, showError) {
     ${pr.issues.map((i) => `<a class="issue" href="${esc(safeUrl(i.url))}" target="rb-viewer">◎ ${esc(i.repo.split('/')[1])} #${i.number} ${esc(i.title)}</a>`).join('')}
     <div class="reviewers">${reviewers}</div>
     ${e.error && showError ? `<div class="muted" style="color:var(--danger)">${esc(errText(e.error))}${e.lastLog && !e.run ? ` <button data-log="${esc(e.key)}">${tr('log')}</button>` : ''}</div>` : ''}
+    ${e.usage || (e.status === 'idle' && e.appliedAt) ? `<div class="chips foot">
+      ${e.usage ? `<span class="usage" title="${tr('usage.title')}">${fmtTokens(e.usage.tokens)} tok · $${e.usage.costUsd.toFixed(2)}</span>` : ''}
+      ${e.status === 'idle' && e.appliedAt ? `<span class="time" title="${esc(new Date(e.appliedAt).toLocaleString(lang))}">${tr('appliedAgo', { ago: ago(e.appliedAt) })}</span>` : ''}
+    </div>` : ''}
     <div class="actions">${action}</div>
   </article>`;
 }
@@ -963,8 +1120,8 @@ function openReview(key) {
   dlg.showModal();
 }
 
-const REVIEW_PLACEHOLDER = { agree: tr('ph.agree'), disagree: tr('ph.disagree') };
-function findingHtml(f, d, placeholders = REVIEW_PLACEHOLDER) {
+const disagreeIcon = () => board.config?.disagreeIcon?.trim() || '🤔💭';
+function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr('ph.disagree', { icon: disagreeIcon() }) }) {
   const loc = f.path ? `${f.path}${f.line ? `:${f.line}` : ''}` : '';
   const placeholder = d.verdict === 'disagree' ? placeholders.disagree : placeholders.agree;
   return `<div class="finding ${esc(d.verdict || '')}">
@@ -1098,6 +1255,7 @@ async function openSettings() {
     return (await api(`/api/skills?${new URLSearchParams(dirs.map((d) => ['dir', d]))}`)).skills;
   };
   let skills = await fetchSkills();
+  let logs = await api('/api/logs');
   // テキストエリアから一度消して戻した行は、消す前の設定を使う
   const known = { ...cfg.repos };
 
@@ -1158,7 +1316,18 @@ async function openSettings() {
           </tbody>
         </table>`;
   };
-  const PANES = ['claude', 'github', 'refresh', 'lang'];
+  const PANES = ['claude', 'github', 'refresh', 'lang', 'terms'];
+  // 「すべて既定に戻す」で戻す設定 (用語と画面の言語は別に扱う)
+  const PANE_KEYS = {
+    claude: ['workdir', 'model', 'effort', 'claudeArgs', 'maxConcurrent', 'logKeepDays'],
+    github: ['mergedDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'repos'],
+    refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
+    lang: ['outputLang', 'disagreeIcon'],
+  };
+  const resetBtn = (p) => `<p><button data-pane-reset="${p}">${tr('pane.reset')}</button></p>`;
+  let terms = laneNames();
+  const termRows = (v, lanes) => `<h4>${tr(`tab.${v}`)}</h4>${lanes.map((l) => `<div class="form-row"><label>${esc(l.label)}</label>`
+    + `<input data-term="${v}:${l.id}" placeholder="${esc(l.label)}" value="${esc(terms[`${v}:${l.id}`] || '')}"></div>`).join('')}`;
   let pane = PANES[0];
   const renderDlg = () => {
     dlg.innerHTML = `
@@ -1171,6 +1340,13 @@ async function openSettings() {
           <div class="form-row"><label>effort</label><select data-cfg="effort">${['', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}" ${(cfg.effort || '') === v ? 'selected' : ''}>${v || tr('defaultParen')}</option>`).join('')}</select></div>
           <div class="form-row"><label>${tr('s.claudeArgs')}</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
           <div class="form-row"><label>${tr('s.concurrent')}</label><input data-cfg="maxConcurrent" type="number" min="1" value="${esc(cfg.maxConcurrent)}"></div>
+          <h4>${tr('sec.logs')}</h4>
+          <div class="form-row"><label title="${tr('s.logKeep.title')}">${tr('s.logKeep')}</label><input data-cfg="logKeepDays" type="number" min="1" value="${esc(cfg.logKeepDays ?? 30)}"></div>
+          <div class="form-row"><label>${tr('logs.stats', { count: logs.count, size: fmtBytes(logs.bytes) })}</label><span>
+            <button data-logs-clear="old">${tr('logs.clearOld', { n: esc(cfg.logKeepDays ?? 30) })}</button>
+            <button data-logs-clear="all">${tr('logs.clearAll')}</button>
+          </span></div>
+          ${resetBtn('claude')}
         </div>
         <div class="settings-pane" data-pane-body="github">
           <h4>${tr('sec.board')}</h4>
@@ -1184,6 +1360,7 @@ async function openSettings() {
           <h4>${tr('sec.repos')}</h4>
           <div class="form-row"><label>${tr('s.repos')}</label><textarea data-cfg="repos" rows="4" placeholder="docket/webapp">${esc(Object.keys(cfg.repos).join('\n'))}</textarea></div>
           <div data-repo-tables>${repoTables()}</div>
+          ${resetBtn('github')}
         </div>
         <div class="settings-pane" data-pane-body="refresh">
           <h4>${tr('sec.screen')}</h4>
@@ -1191,10 +1368,18 @@ async function openSettings() {
           <h4>${tr('sec.fetch')}</h4>
           <div class="form-row"><label>${tr('s.poll')}</label><input data-cfg="pollMinutes" type="number" min="1" value="${esc(cfg.pollMinutes)}"></div>
           <div class="form-row"><label title="${tr('s.pollHours.title')}">${tr('s.pollHours')}</label><span><input data-cfg="pollStartHour" type="number" min="0" max="23" style="width:5em" value="${esc(cfg.pollStartHour ?? 9)}"> – <input data-cfg="pollEndHour" type="number" min="0" max="24" style="width:5em" value="${esc(cfg.pollEndHour ?? 19)}"></span></div>
+          ${resetBtn('refresh')}
         </div>
         <div class="settings-pane" data-pane-body="lang">
           <div class="form-row"><label>${tr('s.uiLang')}</label><select data-ui-lang>${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${uiLang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="form-row"><label title="${tr('s.outLang.title')}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'ja') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="form-row"><label title="${tr('s.disagreeIcon.title')}">${tr('s.disagreeIcon')}</label><input data-cfg="disagreeIcon" placeholder="🤔💭" style="width:8em" value="${esc(cfg.disagreeIcon ?? '🤔💭')}"></div>
+          ${resetBtn('lang')}
+        </div>
+        <div class="settings-pane" data-pane-body="terms">
+          <p class="muted">${tr('terms.help')}</p>
+          ${termRows('review', LANES)}${termRows('receive', MINE_LANES)}
+          ${resetBtn('terms')}
         </div>
       </div>
       <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-save>${tr('save')}</button></div>`;
@@ -1204,6 +1389,7 @@ async function openSettings() {
   dlg.oninput = (ev) => {
     const t = ev.target;
     if (t.matches('[data-ui-lang]')) uiLang = t.value;
+    if (t.dataset.term) terms[t.dataset.term] = t.value;
     if (t.dataset.cfg === 'repos') {
       const names = t.value.split('\n').map((s) => s.trim()).filter((s) => /^[\w.-]+\/[\w.-]+$/.test(s));
       Object.assign(known, cfg.repos);
@@ -1211,6 +1397,7 @@ async function openSettings() {
       dlg.querySelector('[data-repo-tables]').innerHTML = repoTables();
     } else if (t.dataset.cfg === 'authors' || t.dataset.cfg === 'projects') cfg[t.dataset.cfg] = t.value.split('\n').map((s) => s.trim()).filter(Boolean);
     else if (t.dataset.cfg) cfg[t.dataset.cfg] = t.type === 'number' ? Number(t.value) : t.value;
+    if (t.dataset.cfg === 'logKeepDays') dlg.querySelector('[data-logs-clear="old"]').textContent = tr('logs.clearOld', { n: t.value });
     if (t.dataset.repo) cfg.repos[t.dataset.repo] = { args: '{pr-number}', ...cfg.repos[t.dataset.repo], [t.dataset.field]: t.value };
     if (t.dataset.repo) for (const el of dlg.querySelectorAll('[data-preview]')) {
       const [r, field] = el.dataset.preview.split('|');
@@ -1232,6 +1419,30 @@ async function openSettings() {
       return;
     }
     if (t.matches('[data-close]')) return dlg.close();
+    // 「古いもの」は入力中 (未保存) の保存日数で消す
+    const clear = t.dataset.logsClear;
+    if (clear) {
+      if (!confirmTwice(t, `logs-clear:${clear}`, tr('confirmDelete'))) return;
+      try {
+        const { removed, ...rest } = await api('/api/logs/clear', { method: 'POST', body: clear === 'all' ? { all: true } : { days: cfg.logKeepDays } });
+        logs = rest;
+        renderDlg(); // トーストは開いている dialog の中に出すので、描き直してから出す
+        toast(tr('logs.cleared', { count: removed.count, size: fmtBytes(removed.bytes) }));
+      } catch (err) {
+        toast(err.message);
+      }
+      return;
+    }
+    // 保存するまでは反映しないので、確認なしで今のペインの入力を既定に戻す
+    const reset = t.dataset.paneReset;
+    if (reset) {
+      if (reset === 'terms') terms = {};
+      if (reset === 'lang') uiLang = browserLang();
+      for (const k of PANE_KEYS[reset] || []) cfg[k] = structuredClone(board.defaults[k]);
+      if (reset === 'claude' || reset === 'github') skills = await fetchSkills(); // 作業ディレクトリが変わるため
+      renderDlg();
+      return;
+    }
     if (t.matches('[data-save]')) {
       // 失敗したらダイアログを閉じず、入力を残したまま知らせる
       try {
@@ -1239,6 +1450,7 @@ async function openSettings() {
       } catch (err) {
         return toast(err.message);
       }
+      saveLaneNames(terms);
       dlg.close();
       if (uiLang !== lang) {
         try { localStorage.setItem('rb-lang', uiLang); } catch {}
@@ -1275,12 +1487,14 @@ const spTitle = (i) => {
 };
 const spToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
-// スプリントに出てくる担当者 (子孫も含む)
+// スプリントに出てくる担当者 (子孫も含む)。担当者がいない issue があれば login '' (未設定) を末尾に足す
 function spPeople(roots) {
   const map = new Map();
-  const walk = (n) => { n.assignees.forEach((a) => map.set(a.login, a)); n.children.forEach(walk); };
+  let unset = false;
+  const walk = (n) => { n.assignees.forEach((a) => map.set(a.login, a)); unset ||= !n.assignees.length; n.children.forEach(walk); };
   roots.forEach(walk);
-  return [...map.values()].sort((a, b) => a.login.localeCompare(b.login));
+  const list = [...map.values()].sort((a, b) => a.login.localeCompare(b.login));
+  return unset ? [...list, { login: '', avatarUrl: '' }] : list;
 }
 
 // スプリントに出てくるリポジトリ (子孫も含む)
@@ -1305,7 +1519,7 @@ const spPrune = (roots, hit) => {
 function spFilter(roots) {
   if (sp.repos) roots = spPrune(roots, (n) => sp.repos.has(n.repo));
   if (!sp.people) return roots;
-  const hit = (n) => n.assignees.some((a) => sp.people.has(a.login));
+  const hit = (n) => (n.assignees.length ? n.assignees.some((a) => sp.people.has(a.login)) : sp.people.has(''));
   return sp.rootOnly ? roots.filter(hit) : spPrune(roots, hit);
 }
 
@@ -1406,16 +1620,25 @@ function spPeopleBar(data, foldAll, lead = '') {
     `${!sp.repos ? tr('all') : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : tr('none')}`,
     repos.map((r) => ({ value: r, text: r.split('/')[1], disabled: !inData.has(r) })), (r) => !sp.repos || sp.repos.has(r));
   const on = people.filter((a) => !sp.people || sp.people.has(a.login));
-  const summary = `${!sp.people ? tr('all') : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : tr('none')}`;
-  const select = people.length && multiSelect('people', tr('sp.assignee'), summary, people.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !sp.people || sp.people.has(l),
+  const summary = `${!sp.people ? tr('all') : on.length ? on.map((a) => (a.login ? `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">` : tr('unset'))).join('') : tr('none')}`;
+  const select = people.length && multiSelect('people', tr('sp.assignee'), summary, people.map((a) => ({ value: a.login, text: a.login || tr('unset'), img: a.avatarUrl })), (l) => !sp.people || sp.people.has(l),
     `<label class="ms-extra"><input type="checkbox" data-sp-root-only ${sp.rootOnly ? 'checked' : ''}>${tr('sp.rootOnly')}</label>`);
   const parts = [lead, repoSelect, select].filter(Boolean);
-  return parts.length ? `<div class="sp-row"><div class="sp-people">${parts.join('<span class="sep"></span>')}</div>${foldAll}</div>` : '';
+  return parts.length ? `<div class="sp-row"><div class="sp-people">${parts.join('<span class="sep"></span>')}</div><button data-sp-display>${tr('cardDisplay')}</button>${foldAll}</div>` : '';
 }
 
 const SP_DAY = 64;
 const SP_MARGIN = 1;
 const SP_INDENT = 14; // 親と同じ日に始まる子の棒を右にずらす幅 (階層ごと) // 複数スプリントにまたがる issue が続いていると分かるよう前後に余白を取る
+// GitHub の Octicons (git-merge / git-pull-request / git-pull-request-draft)
+const PR_ICON = {
+  merged: 'M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z',
+  open: 'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z',
+  draft: 'M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z',
+};
+const prKind = (pr) => (pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open');
+const prsHtml = (prs) => prs.map((pr) => `<a class="${prKind(pr)}" href="${esc(safeUrl(pr.url))}" target="rb-viewer" title="${esc(prKind(pr))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="${PR_ICON[prKind(pr)]}"/></svg>#${pr.number}</a>`).join('');
+
 function roadmapHtml({ sprint, roots }, empty) {
   if (!roots.length) return `<p class="muted" style="padding:12px">${empty}</p>`;
   const from = spDay(sprint.startDate, -SP_MARGIN);
@@ -1444,6 +1667,7 @@ function roadmapHtml({ sprint, roots }, empty) {
     if (d === today) cells.push(`<div class="col today" style="grid-column:${1 + i}"></div>`);
   });
   let r = 2;
+  const heights = [];
   for (const { rows } of groups) {
     rows.forEach(({ n, depth, shift }, i) => {
       const row = r + i;
@@ -1459,17 +1683,23 @@ function roadmapHtml({ sprint, roots }, empty) {
         cells.push(`<div class="bar ext ${stCls}" style="grid-row:${row};grid-column:${col(n.end) + 1} / ${(n.rawEnd > last ? col(last) : col(n.rawEnd)) + 1}"></div>`);
       }
       const avatars = n.assignees.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('');
-      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span></div>`);
+      // サーバーのキャッシュが古いと prs が無い
+      const prs = cardHiddenOf('sprint').includes('prs') ? [] : n.prs || [];
+      heights.push(prs.length ? '48px' : '30px');
+      const head = `${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="rb-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span>`;
+      const line = prs.length ? `<div class="ln">${head}</div><div class="ln prs">${prsHtml(prs)}</div>` : head;
+      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}${prs.length ? ' two' : ''}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${line}</div>`);
     });
     r += rows.length;
   }
-  return `<div class="rm" style="grid-template-columns:repeat(${days.length}, ${SP_DAY}px);grid-template-rows:auto repeat(${r - 2}, 30px)">${cells.join('')}</div>`;
+  return `<div class="rm" style="grid-template-columns:repeat(${days.length}, ${SP_DAY}px);grid-template-rows:auto ${heights.join(' ')}">${cells.join('')}</div>`;
 }
 
 $('#sprint').addEventListener('click', (ev) => {
   const t = ev.target;
   if (t.closest('a[target]')) return;
   if (t.closest('[data-sp-refresh]')) return loadSprint(true);
+  if (t.closest('[data-sp-display]')) return openCardDisplay();
   const rm = t.closest('[data-rm-switch]');
   if (rm) { location.hash = rm.dataset.rmSwitch; return; }
   const all = t.closest('[data-sp-all]');
@@ -1629,18 +1859,6 @@ $('#board').addEventListener('click', async (ev) => {
   if (mineCard) openMine(mineCard.dataset.openMine);
 });
 
-$('#board').addEventListener('change', async (ev) => {
-  const t = ev.target;
-  if (!t.matches('[data-mine-move]') || !t.value) return;
-  t.blur();
-  try {
-    await moveMine(t.dataset.mineMove, t.value);
-  } catch (e) {
-    toast(e.message);
-  }
-  load();
-});
-
 let dragging = null;
 const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], mine: ['mergeable', 'done'], planned: ['running'], mergeable: ['mine', 'done'], done: ['mine', 'mergeable'] };
 const dropLane = (ev) => {
@@ -1710,9 +1928,11 @@ $('#board').addEventListener('dragend', () => {
   render();
 });
 $('#refresh').onclick = async () => {
-  $('#refresh').disabled = true;
+  refreshing = true;
+  render();
   await load(true);
-  $('#refresh').disabled = false;
+  refreshing = false;
+  render();
 };
 $('#stack-order').onclick = () => { stackOrder = !stackOrder; render(); };
 $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
@@ -1735,15 +1955,22 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
 };
 window.addEventListener('hashchange', () => {
   laneEdit = null; // タブ切替で編集は破棄
+  applyCardHidden();
   render();
   if (view() === 'sprint') loadSprint();
 });
 $('#edit-lanes').onclick = () => {
   laneEdit = lanesFor(view()).map((l) => l.id);
+  laneNameEdit = laneNames();
   render();
 };
+$('#board').addEventListener('input', (ev) => {
+  const id = ev.target.dataset.laneName;
+  if (id) laneNameEdit[`${view()}:${id}`] = ev.target.value;
+});
 $('#lane-save').onclick = () => {
   try { localStorage.setItem(laneOrderKey(view()), JSON.stringify(laneEdit)); } catch {}
+  saveLaneNames(laneNameEdit);
   laneEdit = null;
   render();
 };
@@ -1751,8 +1978,201 @@ $('#lane-cancel').onclick = () => {
   laneEdit = null;
   render();
 };
+// 「はじめる前に」。同意前は閉じられない (claude を起動する API もサーバー側で止めている)
+function openConsent(required) {
+  const dlg = $('#consent-dlg');
+  dlg.querySelector('[data-close]').hidden = required;
+  dlg.querySelector('[data-agree]').hidden = !required;
+  dlg.oncancel = (ev) => required && ev.preventDefault(); // Esc で閉じさせない
+  if (dlg.open) return; // 再読み込みのたびに呼ばれるので、開いている間はチェックを消さない
+  dlg.querySelectorAll('.got input').forEach((cb) => (cb.checked = false));
+  dlg.querySelector('[data-agree]').disabled = true;
+  dlg.showModal();
+}
+// 全項目に「理解しました」を付けるまで同意ボタンを押せない
+$('#consent-dlg').onchange = () => ($('#consent-dlg [data-agree]').disabled = [...$('#consent-dlg').querySelectorAll('.got input')].some((cb) => !cb.checked));
+$('#consent-dlg').onclick = async (ev) => {
+  if (ev.target.matches('[data-close]')) return $('#consent-dlg').close();
+  if (!ev.target.matches('[data-agree]')) return;
+  try {
+    await api('/api/consent', { method: 'POST' });
+    $('#consent-dlg').close();
+    load();
+  } catch (e) {
+    toast(e.message);
+  }
+};
+$('#tips-dlg').addEventListener('click', (ev) => ev.target.matches('[data-open-consent]') && openConsent(false));
 $('#open-settings').onclick = openSettings;
-$('#open-tips').onclick = () => $('#tips-dlg').showModal();
+// ---------- Tip の説明図 ----------
+// 実際のカード・レーン・ロードマップの描画関数に架空のデータを渡して描く。名前や画像はすべて作りもの
+const TIP_TEXT = {
+  ja: { t: ['ログイン画面のエラー表示を改善', '注文一覧に CSV 出力を追加', '商品検索の並び替えを修正', '決済 API のタイムアウト設定', 'カートの数量変更を即時反映', 'お知らせ機能の下書き', 'README の手順を更新', '配送先住所の入力チェック', '会員ランク機能', 'ランク判定バッチ', 'ランク表示画面'],
+    f: ['null のときに例外になります', 'items が空だと items[0] で TypeError になります。先に空配列をチェックしてください。', 'テストが足りません', '境界値 (0 件) のテストを追加してください。'], r: '別 PR で対応予定です' },
+  ko: { t: ['로그인 화면의 오류 표시 개선', '주문 목록에 CSV 내보내기 추가', '상품 검색 정렬 수정', '결제 API 타임아웃 설정', '장바구니 수량 변경 즉시 반영', '공지 기능 초안', 'README 절차 갱신', '배송지 주소 입력 검사', '회원 등급 기능', '등급 판정 배치', '등급 표시 화면'],
+    f: ['null일 때 예외가 납니다', 'items가 비어 있으면 items[0]에서 TypeError가 납니다. 먼저 빈 배열인지 확인하세요.', '테스트가 부족합니다', '경곗값(0건) 테스트를 추가하세요.'], r: '별도 PR에서 처리할 예정입니다' },
+  en: { t: ['Improve error messages on the login screen', 'Add CSV export to the order list', 'Fix sorting in product search', 'Set a timeout for the payment API', 'Apply cart quantity changes instantly', 'Draft of the notice feature', 'Update the steps in README', 'Validate the shipping address', 'Member rank feature', 'Rank calculation batch', 'Rank display screen'],
+    f: ['Throws when the value is null', 'If items is empty, items[0] throws a TypeError. Check for an empty array first.', 'Tests are missing', 'Add a test for the boundary case (0 items).'], r: 'Will handle this in a separate PR' },
+};
+const TIP_REPO = 'acme/shop-web';
+const tipAvatar = (name, color) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="10" fill="${color}"/><text x="10" y="14" font-size="11" text-anchor="middle" fill="#fff" font-family="sans-serif">${name[0].toUpperCase()}</text></svg>`)}`;
+const TIP_USERS = [['sakura', '#d1567a'], ['minho', '#2f81f7'], ['alex', '#1a7f37'], ['yuki', '#9a6700']].map(([login, c]) => ({ login, avatarUrl: tipAvatar(login, c) }));
+const tipAgo = (min) => new Date(Date.now() - min * 60000).toISOString();
+function tipPr(i, extra = {}) {
+  const [me, a, b, c] = TIP_USERS;
+  return {
+    repo: TIP_REPO, number: 120 + i, url: '#', title: (TIP_TEXT[lang] || TIP_TEXT.ja).t[i], author: [a, b, c][i % 3], updatedAt: tipAgo(5 + i * 37),
+    base: 'main', head: `feature/topic-${120 + i}`, labels: [], issues: [], state: 'OPEN', isDraft: false,
+    reviews: i % 2 ? [{ ...me, state: 'APPROVED' }] : [], requested: [me, b], ...extra,
+  };
+}
+const tipFindings = () => { const f = (TIP_TEXT[lang] || TIP_TEXT.ja).f; return [{ no: '1', severity: 'major', title: f[0], path: 'src/cart.js', line: 42, body: f[1] }, { no: '2', severity: 'minor', title: f[2], path: 'test/cart.test.js', body: f[3] }]; };
+const tipUsage = { tokens: 184000, costUsd: 0.62 };
+const TIP_ENTRIES = {
+  review: () => [
+    { status: 'requested', pr: tipPr(0) },
+    { status: 'reviewing', startedAt: tipAgo(2), pr: tipPr(1) },
+    { status: 'reviewed', findings: tipFindings(), usage: tipUsage, pr: tipPr(2) },
+    { status: 'commented', postedUrl: '#', usage: tipUsage, pr: tipPr(3) },
+  ],
+  receive: () => [
+    { status: 'idle', pr: tipPr(5, { isDraft: true }) },
+    { status: 'idle', pr: tipPr(0) },
+    { status: 'idle', pending: 2, pr: tipPr(1) },
+    { status: 'running', mode: 'self', startedAt: tipAgo(3), pr: tipPr(2) },
+    { status: 'planned', mode: 'self', findings: tipFindings(), pr: tipPr(3) },
+    { status: 'idle', mergeReady: true, appliedAt: tipAgo(90), usage: tipUsage, pr: tipPr(4) },
+    { status: 'idle', done: true, pr: tipPr(6) },
+  ],
+};
+function tipLanes(v) {
+  const entries = TIP_ENTRIES[v]().map((e, i) => ({ key: `tip:${i}`, ...e }));
+  return `<div class="board">${lanesFor(v).map((lane) => {
+    const cards = entries.filter(laneMatch(lane));
+    return `<section class="lane"><h2><span class="dot" style="border-color:${lane.color}"></span>${esc(laneLabel(v, lane))}<span class="count">${cards.length}</span></h2>
+      ${cards.map(v === 'receive' ? mineCardHtml : cardHtml).join('') || `<div class="muted" style="padding:4px">${tr('none')}</div>`}</section>`;
+  }).join('')}</div>`;
+}
+function tipRoadmap() {
+  const day = (n) => spDay(spToday(), n);
+  const [me, a, b] = TIP_USERS;
+  const t = (TIP_TEXT[lang] || TIP_TEXT.ja).t;
+  const node = (i, start, end, extra = {}) => ({ id: `tip:${i}`, number: 300 + i, url: '#', title: t[i], start, end, state: 'OPEN', assignees: [], children: [], prs: [], ...extra });
+  const root = node(8, day(-3), day(8), { assignees: [me], children: [
+    node(9, day(-3), day(2), { assignees: [a], state: 'CLOSED', prs: [{ number: 131, url: '#', state: 'MERGED' }] }),
+    node(10, day(1), day(8), { assignees: [b], prs: [{ number: 135, url: '#', state: 'OPEN', isDraft: true }] }),
+  ] });
+  return roadmapHtml({ sprint: { startDate: day(-4), endDate: day(9) }, roots: [root] }, '');
+}
+const TIP_SHOTS = {
+  review: () => [tipLanes('review'), 0.6],
+  receive: () => [tipLanes('receive'), 0.5],
+  findings: () => {
+    const fs = tipFindings();
+    return [`<div class="dlg-body">${findingHtml(fs[0], { verdict: 'agree' })}${findingHtml(fs[1], { verdict: 'disagree', reason: (TIP_TEXT[lang] || TIP_TEXT.ja).r })}</div>
+      <div class="dlg-foot"><span style="flex:1"></span><span class="muted">${tr('decided', { n: 2, total: 2 })}</span>
+      <label><input type="checkbox" checked> ${tr('humanRead')}</label><label><input type="checkbox"> ${tr('approve')}</label><button class="primary">${tr('submit')}</button></div>`, 0.8];
+  },
+  bar: () => {
+    const bar = $('#board-bar').cloneNode(true);
+    for (const el of [bar, ...bar.querySelectorAll('[id]')]) el.removeAttribute('id');
+    return [bar.outerHTML, 0.9];
+  },
+  roadmap: () => [tipRoadmap(), 0.7],
+  cost: () => {
+    const [, , , running, , mergeable] = TIP_ENTRIES.receive();
+    return [`<div class="cards">${[{ ...running, usage: tipUsage }, mergeable].map((e, i) => mineCardHtml({ key: `tip:c${i}`, ...e })).join('')}</div>`, 0.8];
+  },
+};
+// 開くたびに描き直す (言語・設定・レーン名の変更を反映するため)。
+// カードはリポジトリとスキルの対応を見てボタンを出すので、架空のリポジトリにも一時的にスキルを割り当てる
+function withTipRepo(fn) {
+  const repos = board.config.repos;
+  board.config.repos = { ...repos, [TIP_REPO]: { skill: 'review', selfSkill: 'self-review', fixSkill: 'review-fix' } };
+  try { return fn(); } finally { board.config.repos = repos; }
+}
+function tipShotEl(name) {
+  const [html, zoom] = TIP_SHOTS[name]();
+  const el = document.createElement('div');
+  el.className = 'tip-shot';
+  el.inert = true;
+  el.innerHTML = `<div style="zoom:${zoom}">${html}</div>`;
+  return el;
+}
+function renderTipShots() {
+  withTipRepo(() => {
+    for (const d of $('#tips-dlg').querySelectorAll('[data-shots]')) {
+      d.querySelectorAll('.tip-shot').forEach((el) => el.remove());
+      const lists = d.querySelectorAll(':scope > ul, :scope > ol');
+      d.dataset.shots.split(',').forEach((name, i) => d.insertBefore(tipShotEl(name), lists[i] || null));
+    }
+  });
+}
+// About の本文は翻訳文に入れ、<div data-shot="..."> の位置に Tip と同じ説明図を描く
+function renderAbout() {
+  const el = $('#about');
+  el.innerHTML = tr('about.html');
+  withTipRepo(() => el.querySelectorAll('[data-shot]').forEach((d) => d.replaceWith(tipShotEl(d.dataset.shot))));
+}
+$('#open-tips').onclick = () => {
+  if (board) renderTipShots();
+  $('#tips-dlg').showModal();
+};
+// モーダルの外側 (backdrop) を押したら、そのモーダルの閉じるボタンを押したのと同じにする
+// 中で押し始めて外で離した (テキスト選択など) ときは閉じない。閉じるボタンが隠れている (同意前など) なら閉じない
+const onBackdrop = (ev) => {
+  if (ev.target.tagName !== 'DIALOG') return false;
+  const r = ev.target.getBoundingClientRect();
+  return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom;
+};
+let downOnBackdrop = false;
+document.addEventListener('mousedown', (ev) => (downOnBackdrop = onBackdrop(ev)));
+document.addEventListener('click', (ev) => {
+  if (downOnBackdrop && onBackdrop(ev)) ev.target.querySelector('.dlg-head [data-close]:not([hidden]), form.dlg-head button')?.click();
+});
+// カードに出す項目のうち隠すもの。タブごとにブラウザへ保存し、body のクラスで CSS から隠す
+const CARD_PARTS = ['branch', 'issue', 'stack', 'updated', 'applied', 'usage', 'reviewers', 'author'];
+// ロードマップは行の高さを JS で決めるので、クラスではなく描画時に読む
+const ROADMAP_PARTS = ['prs'];
+const partsOf = (v) => (v === 'sprint' ? ROADMAP_PARTS : CARD_PARTS);
+const cardHiddenKey = (v) => `rb-card-hidden:${v}`;
+const cardHiddenOf = (v) => { try { return JSON.parse(localStorage.getItem(cardHiddenKey(v))) || []; } catch { return []; } };
+const saveCardHidden = (v, list) => { try { localStorage.setItem(cardHiddenKey(v), JSON.stringify(list)); } catch {} };
+const applyCardHidden = () => { const h = cardHiddenOf(view()); CARD_PARTS.forEach((p) => document.body.classList.toggle(`hide-${p}`, h.includes(p))); };
+applyCardHidden();
+const otherBoard = () => (view() === 'review' ? 'receive' : 'review');
+let cardDisplayChanged = false;
+function openCardDisplay() {
+  const h = cardHiddenOf(view());
+  $('#display-dlg .dlg-body').innerHTML = partsOf(view()).map((p) => `<label><input type="checkbox" data-part="${p}"${h.includes(p) ? '' : ' checked'}> ${esc(tr(`cd.${p}`))}</label>`).join('');
+  $('#display-dlg .dlg-foot').hidden = true;
+  cardDisplayChanged = false;
+  $('#display-dlg').showModal();
+}
+$('#card-display').onclick = openCardDisplay;
+$('#display-dlg').onchange = (ev) => {
+  const p = ev.target.dataset.part;
+  const h = cardHiddenOf(view());
+  saveCardHidden(view(), ev.target.checked ? h.filter((x) => x !== p) : [...h, p]);
+  cardDisplayChanged = true;
+  if (view() === 'sprint') return renderSprint();
+  applyCardHidden();
+};
+// 閉じるとき、変更があってもう一方のボードと設定が違えば、同じ設定にするか聞く
+function closeCardDisplay() {
+  const dlg = $('#display-dlg');
+  const same = (a, b) => [...a].sort().join() === [...b].sort().join();
+  if (view() === 'sprint' || !cardDisplayChanged || !dlg.querySelector('.dlg-foot').hidden || same(cardHiddenOf(view()), cardHiddenOf(otherBoard()))) return dlg.close();
+  dlg.querySelector('.dlg-body').innerHTML = `<p>${esc(tr('cd.copy', { view: tr(`tab.${otherBoard()}`) }))}</p>`;
+  dlg.querySelector('.dlg-foot').hidden = false;
+}
+$('#display-dlg').oncancel = (ev) => { ev.preventDefault(); closeCardDisplay(); };
+$('#display-dlg').onclick = (ev) => {
+  if (ev.target.matches('[data-close]')) return closeCardDisplay();
+  if (!ev.target.matches('[data-copy]')) return;
+  if (ev.target.dataset.copy) saveCardHidden(otherBoard(), cardHiddenOf(view()));
+  $('#display-dlg').close();
+};
 
 load().then(() => view() === 'sprint' && loadSprint());
 // ローカル状態は設定した間隔で、GitHub はサーバー側の定期取得に任せる

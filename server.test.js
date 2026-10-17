@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readTail, isClaudeRun, pruneLogs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -45,6 +45,28 @@ test('mergeBoard: 依頼が外れた PR は未着手なら消し、作業中・�
   assert.equal(prs['acme/api#1'], undefined);
   assert.equal(prs['acme/api#2'].active, false);
   assert.equal(prs['acme/api#3'].status, 'commented');
+});
+
+test('mergeBoard: 依頼が外れた Done は DONE_KEEP_MS を過ぎたら消す (作業途中は残す)', () => {
+  const prev = {
+    'acme/api#1': { status: 'commented', commentedAt: 0 },
+    'acme/api#2': { status: 'reviewed', findings: [] },
+  };
+  assert.equal(mergeBoard(prev, [], DONE_KEEP_MS)['acme/api#1'].status, 'commented');
+  const prs = mergeBoard(prev, [], DONE_KEEP_MS + 1);
+  assert.equal(prs['acme/api#1'], undefined);
+  assert.equal(prs['acme/api#2'].status, 'reviewed');
+});
+
+test('boardEntry: 判断ダイアログを開けない状態では Claude の出力を送らない', () => {
+  const heavy = { raw: 'r', applyRaw: 'a', findings: [{ no: 1 }], summary: 's', postRaw: 'p', decisions: { 1: {} }, sessionId: 'x' };
+  const done = boardEntry('k', { status: 'commented', ...heavy });
+  assert.deepEqual(Object.keys(done).sort(), ['key', 'sessionId', 'status']);
+  const reviewed = boardEntry('k', { status: 'reviewed', ...heavy });
+  assert.deepEqual([reviewed.raw, reviewed.applyRaw, reviewed.summary, reviewed.findings.length], ['r', 'a', 's', 1]);
+  assert.equal(reviewed.postRaw, undefined);
+  assert.equal(reviewed.decisions, undefined);
+  assert.equal(boardEntry('k', { status: 'planned', ...heavy }).raw, 'r');
 });
 
 test('mergeBoard: commented 後に再度依頼されたら requested に戻す (投稿直後は戻さない)', () => {
@@ -106,6 +128,12 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   assert.match(prompt, /🤔💭/);
   assert.match(prompt, /🤖: /);
   assert.match(prompt, /---/);
+});
+
+test('buildPostPrompt: 非同意の意見のアイコンを指定できる', () => {
+  const prompt = buildPostPrompt({ url: 'https://x/1' }, [{ no: 1 }], { 1: { verdict: 'disagree', reason: 'r' } }, false, false, '🙋');
+  assert.match(prompt, /「🙋 」で始め/);
+  assert.doesNotMatch(prompt, /🤔💭/);
 });
 
 test('modelOptions: 指定したモデル・effort を渡し、サブエージェントも同じモデルにする。未指定なら何も足さない', () => {
@@ -191,6 +219,16 @@ test('readRun: 途中で止まった出力や出力ファイルが無い場合�
   fs.writeFileSync(path.join(dir, 'b.err'), 'killed');
   assert.equal(readRun(dir, 'b', null).ok, false);
   assert.equal(readRun(dir, 'missing', 0).ok, false);
+});
+
+test('readRun: .log を書けなくても例外を投げず失敗にする (投げると close ハンドラ内でサーバーが落ちる)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-'));
+  fs.writeFileSync(path.join(dir, 'c.out'), '{"type":"result","result":"x"}\n');
+  fs.writeFileSync(path.join(dir, 'c.err'), '');
+  fs.mkdirSync(path.join(dir, 'c.log'));
+  const res = readRun(dir, 'c', 0);
+  assert.equal(res.ok, false);
+  assert.equal(res.error.code, 'claudeReadFailed');
 });
 
 test('isAlive: 自プロセスは生存、終了済みプロセスは非生存', () => {
@@ -462,10 +500,32 @@ test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err
   const old = (Date.now() - 31 * 24 * 60 * 60 * 1000) / 1000;
   for (const name of ['old.log', 'new.log', 'run.out', 'run.err']) fs.writeFileSync(path.join(dir, name), '');
   for (const name of ['old.log', 'run.out', 'run.err']) fs.utimesSync(path.join(dir, name), old, old);
-  pruneLogs(dir, Date.now());
+  pruneLogs(dir, Date.now(), logKeepMs(30));
   assert.deepEqual(fs.readdirSync(dir).sort(), ['new.log', 'run.err', 'run.out']);
   fs.rmSync(dir, { recursive: true });
-  pruneLogs(path.join(dir, 'missing'), Date.now()); // ディレクトリが無くても落ちない
+  pruneLogs(path.join(dir, 'missing'), Date.now(), 0); // ディレクトリが無くても落ちない
+});
+
+test('pruneLogs: 指定した期間より古い .log を消して件数・容量を返す。0 なら終わった .log をすべて消す', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-prune-'));
+  const day = 24 * 60 * 60 * 1000;
+  const old = (Date.now() - 3 * day) / 1000;
+  fs.writeFileSync(path.join(dir, 'old.log'), 'abc');
+  fs.utimesSync(path.join(dir, 'old.log'), old, old);
+  for (const name of ['new.log', 'run.out']) fs.writeFileSync(path.join(dir, name), 'de');
+  assert.deepEqual(logStats(dir), { count: 2, bytes: 5 });
+  assert.deepEqual(pruneLogs(dir, Date.now(), 2 * day), { count: 1, bytes: 3 });
+  assert.deepEqual(pruneLogs(dir, Date.now(), 0), { count: 1, bytes: 2 });
+  assert.deepEqual(fs.readdirSync(dir), ['run.out']);
+  assert.deepEqual(logStats(path.join(dir, 'missing')), { count: 0, bytes: 0 });
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('logKeepMs: 1 日未満・不正な値は既定の 30 日にする (自動削除で全部消さないように)', () => {
+  const day = 24 * 60 * 60 * 1000;
+  assert.equal(logKeepMs(7), 7 * day);
+  assert.equal(logKeepMs(0), 30 * day);
+  assert.equal(logKeepMs(''), 30 * day);
 });
 
 test('isClaudeRun: 生きていても claude 以外のプロセスなら false', () => {
@@ -477,6 +537,20 @@ test('isClaudeRun: 生きていても claude 以外のプロセスなら false',
     sleep.kill();
   }
   assert.equal(isClaudeRun(2 ** 22 + 12345), false);
+});
+
+test('isClaudeRun: レビューボードが起動した claude (stream-json) だけを true にし、ユーザーの他の claude は止めない', () => {
+  const { spawn } = require('node:child_process');
+  const run = (...args) => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'claude', ...args]);
+  const ours = run('-p', 'x', '--output-format', 'stream-json');
+  const other = run('--resume');
+  try {
+    assert.equal(isClaudeRun(ours.pid), true);
+    assert.equal(isClaudeRun(other.pid), false);
+  } finally {
+    ours.kill();
+    other.kill();
+  }
 });
 
 test('normalizeNos: 番号が重複・欠落していれば 1 から振り直し、正しければそのまま返す', () => {
@@ -497,6 +571,7 @@ test('sanitizeConfig: 未知の項目と型が違う値を捨てる', () => {
     { maxConcurrent: 3, model: 'opus', authors: ['a'], repos: { 'o/r': {} } },
   );
   assert.deepEqual(sanitizeConfig(null), {});
+  assert.deepEqual(sanitizeConfig({ consentVersion: 1 }), {}); // 同意は設定画面からは変えられない
 });
 
 test('readTail: 末尾だけ読み、途中で切れた先頭行は捨てる', () => {

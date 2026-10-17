@@ -42,13 +42,27 @@ const DEFAULT_CONFIG = {
   roadmapPeriod: 'month',
   // Claude が PR に書く文章・ボードに出す指摘の言語: ja / ko / en
   outputLang: 'ja',
+  // 同意しない指摘を理由付きで投稿するとき、レビュアー本人の意見の頭に付けるアイコン
+  disagreeIcon: '🤔💭',
+  // 終わった実行のログ (.log) を残す日数。これより古いものは毎日自動で消す
+  logKeepDays: 30,
+  // 同意した「使用前の注意」の版。CONSENT_VERSION 未満なら claude を起動しない
+  consentVersion: 0,
 };
+
+// 「使用前の注意」の内容を大きく変えたら上げる (全員にもう一度同意を求める)
+const CONSENT_VERSION = 1;
+const needsConsent = () => (Number(config.consentVersion) || 0) < CONSENT_VERSION;
+// claude を起動する API。同意前は受け付けない
+const RUN_PATHS = ['/api/review', '/api/post', '/api/mine/run', '/api/mine/apply', '/api/mine/apply-comments'];
 
 // 画面に出すエラーは言語に依存しないコードで返し、ブラウザ側で翻訳する
 const E = (code, params) => ({ code, ...(params && { params }) });
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
 const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
+// 依頼が外れた Done は × で消さないと溜まり続け、5 秒ごとの /api/board も重くなるので、30 日で消す
+const DONE_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
   viewer { login avatarUrl }
@@ -135,6 +149,7 @@ function mergeBoard(prs, fetched, now) {
     if (seen.has(key)) continue;
     // 依頼が外れた未着手 PR は消し、作業途中・完了済みは残す
     if (entry.status === 'requested') continue;
+    if (entry.status === 'commented' && now - (entry.commentedAt || 0) > DONE_KEEP_MS) continue;
     next[key] = { ...entry, active: false };
   }
   return next;
@@ -206,7 +221,7 @@ function buildReviewPrompt(pr, mapping) {
 // 前回の投稿・対応が途中で失敗した後のやり直しでも、同じものを二重に投稿・返信しないようにする
 const NO_DUPLICATE = '始める前に PR の既存のレビュー・コメント・コミットを確認し、前回の実行で既に投稿・返信・push 済みのものは繰り返さず、残りだけを行う。';
 
-function buildPostPrompt(pr, findings, decisions, approve, humanRead) {
+function buildPostPrompt(pr, findings, decisions, approve, humanRead, icon = DEFAULT_CONFIG.disagreeIcon) {
   return `レビューボードでユーザーが各指摘を判断しました。以下に従って、このスキルの投稿手順 (Reviews API・インラインコメント・失敗時のフォールバック) で PR ${pr.url} に投稿してください。これがユーザーの投稿承認であり、追加の確認は不要です。
 
 ## Approve
@@ -223,7 +238,7 @@ ${decisionLines(findings, decisions)}
 - 非同意 (理由あり): 同じ箇所へ次の形式で 1 つのコメントを投稿する。AI の指摘をレビュアー本人が書いたように見せないため、AI の指摘と本人の意見をはっきり分ける。
   - 1 段落目: 「🤖: 」で始め、AI エージェントの元の指摘を要約して載せる。
   - 区切り線 \`---\`
-  - 2 段落目: 「🤔💭 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
+  - 2 段落目: 「${icon} 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 投稿しない。
 - 投稿対象が 0 件で、Approve もコード確認の表明もない場合は何も投稿しない。
 - ${NO_DUPLICATE}
@@ -530,7 +545,14 @@ function gh(args) {
   });
 }
 
-async function refreshFromGitHub() {
+// 定期取得と「更新」ボタンが重なっても GitHub を二重に叩かず、取得中のものを共有する
+// (別々に走ると後から終わった古い結果で state.prs を上書きし得る)
+let refreshing = null;
+function refreshFromGitHub() {
+  return (refreshing ||= fetchFromGitHub().finally(() => (refreshing = null)));
+}
+
+async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
   const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`]);
   const { data } = JSON.parse(out);
@@ -563,6 +585,7 @@ const ISSUE_FIELDS = `fragment iss on Issue {
   id number title url state stateReason repository { nameWithOwner }
   assignees(first: 5) { nodes { login avatarUrl } }
   subIssues { totalCount }
+  closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number url state isDraft } }
   projectItems(first: 20) { nodes {
     project { id }
     sprint: fieldValueByName(name: $sprint) { ... on ProjectV2ItemFieldIterationValue { iterationId } }
@@ -577,7 +600,10 @@ function normIssue(n, projectId) {
   return {
     id: n.id, number: n.number, title: n.title, url: n.url, repo: n.repository.nameWithOwner,
     state: n.state, stateReason: n.stateReason, assignees: n.assignees.nodes,
-    subCount: n.subIssues.totalCount, sprintId: item?.sprint?.iterationId || null,
+    subCount: n.subIssues.totalCount,
+    // 閉じただけの PR は出さない (マージ済み・オープン・Draft だけ)
+    prs: n.closedByPullRequestsReferences.nodes.filter((pr) => pr.state !== 'CLOSED'),
+    sprintId: item?.sprint?.iterationId || null,
     start: item?.start?.date || null, end: item?.end?.date || null, childIds: [],
   };
 }
@@ -629,9 +655,9 @@ const SUB_DEPTH = 6;
 async function issueTree(url, meta, queries, range) {
   const p = parseProjectUrl(url);
   const names = { sprint: meta.sprint || '-', start: meta.start || '-', end: meta.end || '-' };
-  const issues = new Map();
-  const ids = [];
-  for (const q of queries) {
+  // gh は 1 回ごとにプロセスを起動して遅いので、条件ごとに並行して取る (ページは条件ごとに順に辿る)
+  const pages = await Promise.all(queries.map(async (q) => {
+    const nodes = [];
     let after = null;
     do {
       const data = await ghql(`query($login: String!, $number: Int!, $q: String!, $after: String, $sprint: String!, $start: String!, $end: String!) { ${projectRoot(p)} {
@@ -639,13 +665,18 @@ async function issueTree(url, meta, queries, range) {
       } } }
       ${ISSUE_FIELDS}`, { login: p.login, number: p.number, q, ...(after && { after }), ...names });
       const page = data[p.owner].projectV2.items;
-      for (const n of page.nodes) {
-        if (!n.content?.id || issues.has(n.content.id)) continue; // Draft issue・PR は対象外
-        issues.set(n.content.id, normIssue(n.content, meta.id));
-        ids.push(n.content.id);
-      }
+      nodes.push(...page.nodes);
       after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
     } while (after);
+    return nodes;
+  }));
+  // 並び順が実行ごとに変わらないよう、条件の順にまとめる
+  const issues = new Map();
+  const ids = [];
+  for (const n of pages.flat()) {
+    if (!n.content?.id || issues.has(n.content.id)) continue; // Draft issue・PR は対象外
+    issues.set(n.content.id, normIssue(n.content, meta.id));
+    ids.push(n.content.id);
   }
   return expandTree(ids, issues, names, meta.id, range);
 }
@@ -656,12 +687,14 @@ async function expandTree(ids, issues, names, projectId, range) {
   let frontier = [...issues.values()].filter((i) => i.subCount > 0).map((i) => i.id);
   for (let depth = 0; depth < SUB_DEPTH && frontier.length; depth++) {
     const next = [];
-    for (let i = 0; i < frontier.length; i += 30) {
-      const chunk = frontier.slice(i, i + 30);
-      const data = await ghql(`query($sprint: String!, $start: String!, $end: String!) {
+    const chunks = [];
+    for (let i = 0; i < frontier.length; i += 30) chunks.push(frontier.slice(i, i + 30));
+    // ponytail: 同じ階層の chunk は並行数の上限なしで投げる。sub issue が数千件になり GitHub の secondary rate limit に当たるなら上限を付ける
+    const results = await Promise.all(chunks.map((chunk) => ghql(`query($sprint: String!, $start: String!, $end: String!) {
         nodes(ids: ${JSON.stringify(chunk)}) { ... on Issue { id subIssues(first: 100) { nodes { ...iss } } } }
       }
-      ${ISSUE_FIELDS}`, names);
+      ${ISSUE_FIELDS}`, names)));
+    for (const data of results) {
       for (const parent of data.nodes) {
         if (!parent) continue;
         issues.get(parent.id).childIds = parent.subIssues.nodes.map((c) => c.id);
@@ -678,8 +711,9 @@ async function expandTree(ids, issues, names, projectId, range) {
   return sprintTree(ids, issues, range);
 }
 
+// meta は画面の「今すぐ更新」が先に取り直しているので、ここではキャッシュを使う (refresh は issue だけ)
 async function sprintIssues(url, iterationId, refresh) {
-  const meta = await projectMeta(url, refresh);
+  const meta = await projectMeta(url, false);
   const sprint = meta.iterations.find((i) => i.id === iterationId);
   if (!sprint) throw E('sprintNotFound');
   return cached(`sprint:${url}:${iterationId}`, refresh, async () => (
@@ -691,7 +725,7 @@ const periodRange = () => ({ unit: PERIOD_UNITS[config.roadmapPeriod] !== undefi
 
 async function periodIssues(url, from, refresh) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw E('periodInvalid');
-  const meta = await projectMeta(url, refresh);
+  const meta = await projectMeta(url, false);
   if (!meta.start && !meta.end) throw E('noDateField');
   const { unit } = periodRange();
   const period = periodAt(from, unit);
@@ -703,7 +737,8 @@ async function periodIssues(url, from, refresh) {
 // 設定として知っている項目だけを、既定値と同じ型のときに受け付ける (型違いで後の処理が落ちないように)
 function sanitizeConfig(body) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
-  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v))));
+  // 同意は /api/consent でだけ記録する
+  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v))));
 }
 
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
@@ -787,32 +822,47 @@ function readRun(dir, logName, code) {
   try {
     stdout = fs.readFileSync(`${base}.out`, 'utf8');
     stderr = fs.readFileSync(`${base}.err`, 'utf8');
+    // close ハンドラ内で呼ばれるので、ここで投げるとサーバーごと落ちる
+    fs.writeFileSync(`${base}.log`, `exit=${code}\n--- stdout\n${stdout}\n--- stderr\n${stderr}`);
+    fs.rmSync(`${base}.out`, { force: true });
+    fs.rmSync(`${base}.err`, { force: true });
   } catch (e) {
     return { ok: false, error: E('claudeReadFailed', { message: e.message }) };
   }
-  fs.writeFileSync(`${base}.log`, `exit=${code}\n--- stdout\n${stdout}\n--- stderr\n${stderr}`);
-  fs.rmSync(`${base}.out`, { force: true });
-  fs.rmSync(`${base}.err`, { force: true });
   // stream-json は 1 行 1 イベントで、最後の result イベントに結果がまとまる
   const parsed = parseLines(stdout).findLast((ev) => ev.type === 'result');
   if (!parsed) return { ok: false, error: E('claudeParseFailed', { code, stderr: stderr.slice(-500) }) };
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
 }
 
-// 終わった実行の .log は溜まり続けるので古いものを消す (実行中の .out / .err は触らない)
-const LOG_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
-function pruneLogs(dir, now) {
+// 終わった実行の .log だけを数える・消す (実行中の .out / .err は触らない)
+function logFiles(dir) {
   let names = [];
   try {
     names = fs.readdirSync(dir);
   } catch {
-    return;
+    return [];
   }
-  for (const name of names) {
-    const file = path.join(dir, name);
-    if (name.endsWith('.log') && now - fs.statSync(file).mtimeMs > LOG_KEEP_MS) fs.rmSync(file, { force: true });
-  }
+  return names.filter((n) => n.endsWith('.log')).map((n) => {
+    const file = path.join(dir, n);
+    const { size, mtimeMs } = fs.statSync(file);
+    return { file, size, mtimeMs };
+  });
 }
+
+const sumLogs = (list) => ({ count: list.length, bytes: list.reduce((n, f) => n + f.size, 0) });
+const logStats = (dir) => sumLogs(logFiles(dir));
+
+// 溜まり続けるので keepMs より古いものを消す。0 なら終わった .log をすべて消す (設定画面の「すべて削除」)
+function pruneLogs(dir, now, keepMs) {
+  // 0 は時刻を比べない (書いた直後の mtime が now より少し後になることがある)
+  const old = logFiles(dir).filter((f) => keepMs === 0 || now - f.mtimeMs >= keepMs);
+  for (const f of old) fs.rmSync(f.file, { force: true });
+  return sumLogs(old);
+}
+
+// 設定の保存日数。空や 0 で自動削除が全部消してしまわないよう、1 日未満は既定に戻す
+const logKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.logKeepDays) * 24 * 60 * 60 * 1000;
 
 function isAlive(pid) {
   try {
@@ -825,10 +875,12 @@ function isAlive(pid) {
 
 // サーバー・マシンの再起動後は保存した PID が別のプロセスに再利用されていることがある。
 // 無関係なプロセスの終了を待ったり止めたりしないよう、まだ claude であることも確かめる
+// ユーザーが別に開いている claude を止めないよう、runClaude が付ける stream-json 出力の指定も見る (-ww: 長いプロンプトで切らせない)
 function isClaudeRun(pid) {
   if (!isAlive(pid)) return false;
   try {
-    return /claude/.test(execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }));
+    const command = execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+    return /claude/.test(command) && /--output-format stream-json/.test(command);
   } catch {
     return false;
   }
@@ -856,20 +908,27 @@ function waitForExit(pid) {
 // サーバーを再起動しても claude を止めず結果を回収できるよう、別プロセスグループで起動し出力をファイルに書かせる
 function runClaude(prompt, { key, cwd, resume, logName }) {
   return new Promise((resolve) => {
-    const model = modelOptions(config);
-    const args = ['-p', withOutputLang(prompt, config.outputLang), '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
-    if (resume) args.push('--resume', resume);
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-    const base = path.join(LOG_DIR, logName);
-    const out = fs.openSync(`${base}.out`, 'w');
-    const err = fs.openSync(`${base}.err`, 'w');
-    const child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
-    fs.closeSync(out);
-    fs.closeSync(err);
-    // lastLog: 実行が終わった後も画面からログを見られるよう残す (タグの再出力はおまけなので本体のログを残す)
-    if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
-    child.on('error', (e) => resolve({ ok: false, error: e.message }));
-    child.on('close', (code) => resolve(readRun(LOG_DIR, logName, code)));
+    // ログファイルを開けないなどで投げると呼び出し側のカードが実行中のまま止まるので、失敗として返す
+    // 起動後に投げた場合 (状態の保存失敗など) は claude が動いているので、close で結果を返す
+    let child;
+    try {
+      const model = modelOptions(config);
+      const args = ['-p', withOutputLang(prompt, config.outputLang), '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
+      if (resume) args.push('--resume', resume);
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+      const base = path.join(LOG_DIR, logName);
+      const out = fs.openSync(`${base}.out`, 'w');
+      const err = fs.openSync(`${base}.err`, 'w');
+      child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      fs.closeSync(out);
+      fs.closeSync(err);
+      child.on('error', (e) => resolve({ ok: false, error: e.message }));
+      child.on('close', (code) => resolve(readRun(LOG_DIR, logName, code)));
+      // lastLog: 実行が終わった後も画面からログを見られるよう残す (タグの再出力はおまけなので本体のログを残す)
+      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
+    } catch (e) {
+      if (!child) resolve({ ok: false, error: e.message });
+    }
   });
 }
 
@@ -905,7 +964,8 @@ function pump() {
     queue.splice(i, 1);
     running++;
     if (job.repo) busyRepos.add(job.repo);
-    job.run().finally(() => {
+    // 結果の保存に失敗するなどで投げても、未処理の rejection でサーバーごと落とさない
+    job.run().catch((e) => console.error(e)).finally(() => {
       running--;
       busyRepos.delete(job.repo);
       pump();
@@ -964,6 +1024,7 @@ function recoverRun(run, finish, repo) {
     // 終了コードは取れないが、result イベントは最後に出力されるので解析できれば正常終了とみなす
     .then(() => readRun(LOG_DIR, run.logName, 0))
     .then(finish)
+    .catch((e) => console.error(e))
     .finally(() => {
       running--;
       busyRepos.delete(repo);
@@ -984,7 +1045,7 @@ function enqueuePost(key, decisions, approve, humanRead) {
   const entry = state.prs[key];
   updateEntry(key, { status: 'posting', error: null, decisions, approve, humanRead });
   queue.push({ key, run: async () => {
-    const res = await runClaude(buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead), {
+    const res = await runClaude(buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon), {
       key,
       cwd: entry.cwd,
       resume: entry.sessionId,
@@ -1101,15 +1162,24 @@ function readBody(req) {
   });
 }
 
+// /api/board は 5 秒ごとに取られるので、Claude の出力は判断ダイアログを開ける状態のときだけ送る
+// postRaw・decisions は画面で使わない (判断の下書きはブラウザ側に持つ)
+function boardEntry(key, { postRaw, decisions, raw, applyRaw, findings, summary, ...e }) {
+  return { key, ...e, ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }) };
+}
+
 function boardPayload() {
   return {
     viewer: state.viewer,
     lastFetchedAt: state.lastFetchedAt,
     fetchError: state.fetchError,
     truncated: state.truncated,
-    prs: Object.entries(state.prs).map(([key, e]) => ({ key, ...e })),
-    mine: Object.entries(state.mine).map(([key, e]) => ({ key, ...e })),
+    consentVersion: CONSENT_VERSION,
+    prs: Object.entries(state.prs).map(([key, e]) => boardEntry(key, e)),
+    mine: Object.entries(state.mine).map(([key, e]) => boardEntry(key, e)),
     config,
+    // 設定画面の「すべて既定に戻す」用
+    defaults: DEFAULT_CONFIG,
   };
 }
 
@@ -1149,6 +1219,7 @@ async function handle(req, res) {
     } catch {}
     return send(res, 200, { running: !!run, lines: logLines(text) });
   }
+  if (req.method === 'GET' && url.pathname === '/api/logs') return send(res, 200, logStats(LOG_DIR));
   if (req.method === 'GET' && url.pathname === '/api/skills') {
     const roots = [config.workdir, ...Object.values(config.repos).map((m) => m.cwd), ...url.searchParams.getAll('dir')];
     return send(res, 200, { skills: listSkills(roots) });
@@ -1165,7 +1236,7 @@ async function handle(req, res) {
         if (id) return send(res, 200, await periodIssues(project, id, refresh));
         const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
         const { unit, ...range } = periodRange();
-        return send(res, 200, { meta: await projectMeta(project, refresh), periods: periodWindows(today, unit, range) });
+        return send(res, 200, { meta: await projectMeta(project, false), periods: periodWindows(today, unit, range) });
       }
       if (!iteration) return send(res, 200, { meta: await projectMeta(project, refresh) });
       return send(res, 200, await sprintIssues(project, iteration, refresh));
@@ -1175,6 +1246,17 @@ async function handle(req, res) {
   }
 
   const body = await readBody(req);
+  if (req.method === 'POST' && url.pathname === '/api/consent') {
+    config = { ...config, consentVersion: CONSENT_VERSION };
+    writeJson(CONFIG_FILE, config);
+    return send(res, 200, { ok: true });
+  }
+  if (req.method === 'POST' && RUN_PATHS.includes(url.pathname) && needsConsent()) return send(res, 403, { error: E('consentRequired') });
+  // all: 終わったログをすべて消す。それ以外は days (画面で入力中の保存日数) より古いものだけ
+  if (req.method === 'POST' && url.pathname === '/api/logs/clear') {
+    const removed = pruneLogs(LOG_DIR, Date.now(), body.all ? 0 : logKeepMs(body.days ?? config.logKeepDays));
+    return send(res, 200, { removed, ...logStats(LOG_DIR) });
+  }
   if (req.method === 'PUT' && url.pathname === '/api/config') {
     config = { ...config, ...sanitizeConfig(body) };
     writeJson(CONFIG_FILE, config);
@@ -1296,8 +1378,8 @@ function main() {
     state.fetchError = e.message;
   });
   schedulePoll();
-  pruneLogs(LOG_DIR, Date.now());
-  setInterval(() => pruneLogs(LOG_DIR, Date.now()), 24 * 60 * 60 * 1000);
+  pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays));
+  setInterval(() => pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays)), 24 * 60 * 60 * 1000);
 
   http
     .createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: e.message })))
@@ -1306,4 +1388,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { readTail, isClaudeRun, pruneLogs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
