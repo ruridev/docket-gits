@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS } = require('./server');
+const { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -103,6 +103,8 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   assert.match(prompt, /- #3 非同意 \/ 理由なし/);
   assert.match(prompt, /event: APPROVE/);
   assert.match(prompt, /🤔💭/);
+  assert.match(prompt, /🤖: /);
+  assert.match(prompt, /---/);
 });
 
 test('modelOptions: 指定したモデル・effort を渡し、サブエージェントも同じモデルにする。未指定なら何も足さない', () => {
@@ -228,6 +230,13 @@ test('mergeMine: マージ可能に移した PR は新しい指摘が来たら�
   assert.equal(mine['mine:acme/api#2'].mergeReady, true);
 });
 
+test('mergeMine: Done に移した PR は新しい指摘が来たら外れる', () => {
+  const prev = { 'mine:acme/api#1': { status: 'idle', done: true }, 'mine:acme/api#2': { status: 'idle', done: true } };
+  const mine = mergeMine(prev, [{ ...node(1), reviewThreads: { nodes: [thread(false, 'bob')] } }, node(2)], 'me');
+  assert.equal(mine['mine:acme/api#1'].done, false);
+  assert.equal(mine['mine:acme/api#2'].done, true);
+});
+
 test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信をさせず計画だけ返させる', () => {
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix', fixArgs: '{pr-number} --repo {repo-name}' });
   assert.match(prompt, /^\/review-fix 3 --repo api\n/);
@@ -246,6 +255,15 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済み
   assert.match(self, /event: COMMENT/);
   assert.match(self, /コミット SHA を含む返信/);
   assert.match(self, /<review-board-applied>/);
+});
+
+test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として、承認済みで修正・push・返信させる', () => {
+  const prompt = buildCommentApplyPrompt({ url: 'https://x/3' });
+  assert.match(prompt, /https:\/\/x\/3/);
+  assert.match(prompt, /PR 作成者.*コメント/);
+  assert.match(prompt, /承認/);
+  assert.match(prompt, /force-push はしない/);
+  assert.match(prompt, /<review-board-applied>/);
 });
 
 test('runForTag: 最後のメッセージにタグが無ければ同じセッションを 1 回だけ再開して再出力させる', async () => {

@@ -28,9 +28,10 @@
   header .grow { flex: 1; }
   header .meta { color: var(--muted); font-size: 12px; }
   nav.tabs { display: flex; gap: 4px; }
-  nav.tabs a { padding: 4px 12px; border-radius: 6px; color: var(--text); }
+  nav.tabs a { padding: 4px 12px; border-radius: 6px; color: var(--text); white-space: nowrap; }
   nav.tabs a.on { background: var(--accent); color: var(--accent-text); }
   nav.tabs a:hover { text-decoration: none; }
+  nav.tabs .badge { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; color: #fff; }
   nav.tabs a.changed::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
   .avatar { width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; }
   .banner { margin: 12px 16px 0; padding: 8px 12px; border: 1px solid var(--danger); color: var(--danger); border-radius: 6px; white-space: pre-wrap; }
@@ -61,6 +62,7 @@
   .stack { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
   .stack a { color: var(--muted); text-decoration: underline; }
   .card.hl { border: 3px solid var(--accent); padding: 8px; }
+  .card.viewing { outline: 3px solid var(--accent); outline-offset: 1px; }
   .reviewers { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
   .rv { position: relative; }
   .rv .st { position: absolute; right: -4px; bottom: -4px; font-size: 10px; background: var(--panel); border-radius: 50%; line-height: 1; }
@@ -103,11 +105,12 @@
 <body>
 <header>
   <h1>Review Board</h1>
-  <nav class="tabs"><a href="#review" data-view="review">レビューする</a><a href="#receive" data-view="receive">レビューを受ける</a></nav>
+  <nav class="tabs"><a href="#review" data-view="review">レビューする<span class="badges"></span></a><a href="#receive" data-view="receive">レビューを受ける<span class="badges"></span></a></nav>
   <span class="grow"></span>
   <span class="meta" id="meta"></span>
   <span id="viewer"></span>
   <button id="refresh">更新</button>
+  <button id="stack-order" title="同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)">スタック順</button>
   <button id="open-tips">Tip</button>
   <button id="edit-lanes">レーン配置</button>
   <button id="lane-save" class="primary" hidden>配置を保存</button>
@@ -141,18 +144,20 @@
 
 <script>
 const LANES = [
-  { id: 'requested', label: 'Requested', color: '#1a7f37', statuses: ['requested'] },
-  { id: 'reviewing', label: 'Reviewing', color: '#9a6700', statuses: ['queued', 'reviewing'] },
+  { id: 'requested', label: 'Requested', color: '#1a7f37', statuses: ['requested'], badge: true },
+  { id: 'reviewing', label: 'Reviewing', color: '#9a6700', statuses: ['queued', 'reviewing'], badge: true },
   { id: 'reviewed', label: 'Reviewed', color: '#0969da', statuses: ['reviewed', 'posting'] },
   { id: 'commented', label: 'Done', color: '#8250df', statuses: ['commented'] },
 ];
 // レビューを受ける (自分の PR)
 const MINE_LANES = [
-  { id: 'mine', label: 'レビュー待ち', color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pending && !e.mergeReady },
-  { id: 'pending', label: '指摘あり', color: '#cf222e', match: (e) => e.status === 'idle' && e.pending > 0 },
-  { id: 'running', label: '実行中', color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status) },
-  { id: 'planned', label: '判断待ち', color: '#0969da', match: (e) => e.status === 'planned' },
-  { id: 'mergeable', label: 'マージ可能', color: '#8250df', match: (e) => e.status === 'idle' && e.mergeReady },
+  { id: 'draft', label: 'Draft', color: '#8c959f', match: (e) => e.status === 'idle' && e.pr.isDraft && !e.done },
+  { id: 'mine', label: 'レビュー待ち', color: '#1a7f37', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && !e.mergeReady && !e.done, badge: true },
+  { id: 'pending', label: '指摘あり', color: '#cf222e', match: (e) => e.status === 'idle' && !e.pr.isDraft && e.pending > 0, badge: true },
+  { id: 'running', label: '実行中', color: '#9a6700', match: (e) => ['queued', 'running', 'applying'].includes(e.status), badge: true },
+  { id: 'planned', label: '判断待ち', color: '#0969da', match: (e) => e.status === 'planned', badge: true },
+  { id: 'mergeable', label: 'マージ可能', color: '#8250df', match: (e) => e.status === 'idle' && !e.pr.isDraft && !e.pending && e.mergeReady && !e.done },
+  { id: 'done', label: 'Done', color: '#656d76', match: (e) => e.status === 'idle' && !e.pending && e.done },
 ];
 // レーンの並び順はブラウザごとに保存する。「レーン配置」モード中だけドラッグで並び替えられる
 const laneOrderKey = (v) => `rb-lane-order:${v}`;
@@ -163,6 +168,7 @@ function lanesFor(v) {
   const rank = (l) => (order.includes(l.id) ? order.indexOf(l.id) : order.length + lanes.indexOf(l));
   return [...lanes].sort((a, b) => rank(a) - rank(b));
 }
+const laneMatch = (lane) => lane.match || ((p) => lane.statuses.includes(p.status));
 let laneEdit = null; // 編集中の lane id 配列
 let laneDrag = null;
 const view = () => (location.hash === '#receive' ? 'receive' : 'review');
@@ -272,13 +278,21 @@ function render() {
     if (board.lastFetchedAt && (v === view() || seenSig[v] === undefined)) seenSig[v] = tabSig(v);
     a.classList.toggle('on', v === view());
     a.classList.toggle('changed', seenSig[v] !== undefined && seenSig[v] !== tabSig(v));
+    // 残作業の件数をレーンの色で表示 (0 件は出さない)
+    const entries = v === 'receive' ? board.mine : board.prs;
+    a.querySelector('.badges').innerHTML = lanesFor(v).filter((l) => l.badge).map((l) => {
+      const n = entries.filter(laneMatch(l)).length;
+      return n ? `<span class="badge" style="background:${l.color}" title="${l.label}">${n}</span>` : '';
+    }).join('');
   });
   const prs = [...(mine ? board.mine : board.prs)].sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
   $('#edit-lanes').hidden = !!laneEdit;
+  $('#stack-order').classList.toggle('primary', stackOrder);
   $('#lane-save').hidden = $('#lane-cancel').hidden = !laneEdit;
   $('#board').classList.toggle('editing', !!laneEdit);
   $('#board').innerHTML = lanesFor(view()).map((lane) => {
-    const cards = prs.filter(lane.match || ((p) => lane.statuses.includes(p.status)));
+    let cards = prs.filter(laneMatch(lane));
+    if (stackOrder) cards = stackSort(cards);
     return `<section class="lane" data-lane="${lane.id}" ${laneEdit ? 'draggable="true"' : ''}>
       <h2><span class="dot" style="border-color:${lane.color}"></span>${lane.label}<span class="count">${cards.length}</span></h2>
       ${cards.map(mine ? mineCardHtml : cardHtml).join('') || '<div class="muted" style="padding:4px">なし</div>'}
@@ -343,8 +357,8 @@ function mineCardHtml(e) {
     action = `<span class="muted"><span class="spin"></span> 修正・push・返信中…</span><button data-log="${esc(e.key)}">ログ</button>`;
   }
   const clickable = e.status === 'planned';
-  // 自分の PR ⇄ マージ可能 の D&D で手動で移す
-  const dragFrom = e.status === 'idle' && !e.pending ? (e.mergeReady ? 'mergeable' : 'mine') : null;
+  // 自分の PR ⇄ マージ可能 ⇄ Done の D&D で手動で移す。判断待ちは実行中に移すと PR 上のコメントどおりに対応する
+  const dragFrom = e.status === 'planned' && e.sessionId ? 'planned' : e.status === 'idle' && !e.pending && (e.done || !e.pr.isDraft) ? (e.done ? 'done' : e.mergeReady ? 'mergeable' : 'mine') : null;
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open-mine="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'planned');
 }
 
@@ -360,8 +374,27 @@ function stackHtml(pr) {
   return `<div class="stack">スタック: ${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
 }
 
+// レーン内のカードをスタックごとにまとめ、親 → 子 → 孫 の順にする。親がレーン内にないカードを起点に、更新順を保って辿る
+let stackOrder = false;
+function stackSort(cards) {
+  const isChild = (c, p) => c !== p && c.pr.repo === p.pr.repo && c.pr.base === p.pr.head;
+  const out = [];
+  const seen = new Set();
+  const visit = (c) => {
+    if (seen.has(c)) return;
+    seen.add(c);
+    out.push(c);
+    cards.filter((x) => isChild(x, c)).forEach(visit);
+  };
+  cards.filter((c) => !cards.some((p) => isChild(c, p))).forEach(visit);
+  cards.forEach(visit); // 循環していて起点がないもの
+  return out;
+}
+
 // スタックのリンク先カードを一時的に強調する。再描画されても消えないよう状態で持つ
 let highlight = null;
+// 右のタブ (rb-viewer) で最後に開いたリンクのカード
+let viewing = null;
 function jumpTo(id) {
   highlight = id;
   render();
@@ -376,7 +409,7 @@ function cardShell(e, action, attrs, showError) {
     ...pr.reviews.map((r) => `<span class="rv" title="${esc(r.login)}: ${esc(r.state)}"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""><span class="st">${REVIEW_ICON[r.state] || ''}</span></span>`),
     ...pr.requested.filter((r) => !reviewed.has(r.login)).map((r) => `<span class="rv pending" title="${esc(r.login)}: レビュー待ち"><img class="avatar" src="${esc(r.avatarUrl)}" alt=""></span>`),
   ].join('');
-  return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}`)}>
+  return `<article ${attrs.replace('class="card', `data-pr="${esc(prId(pr))}" class="card${highlight === prId(pr) ? ' hl' : ''}${viewing === prId(pr) ? ' viewing' : ''}`)}>
     <div class="top">
       <img class="avatar" src="${esc(pr.author?.avatarUrl)}" alt="" title="${esc(pr.author?.login)}">
       <span class="grow"><a href="${esc(pr.url)}" target="rb-viewer">${esc(pr.repo.split('/')[1])} #${pr.number}</a></span>
@@ -765,7 +798,13 @@ $('#board').addEventListener('click', async (ev) => {
   const t = ev.target;
   const jump = t.closest('[data-jump]');
   if (jump && $(`#board [data-pr="${CSS.escape(jump.dataset.jump)}"]`)) { ev.preventDefault(); return jumpTo(jump.dataset.jump); }
-  if (t.closest('a[target]')) return;
+  if (t.closest('a[target]')) {
+    viewing = jump?.dataset.jump ?? t.closest('[data-pr]')?.dataset.pr ?? viewing;
+    // リンクの既定動作を妨げないよう、再描画せずクラスだけ付け替える
+    document.querySelectorAll('#board .card.viewing').forEach((c) => c.classList.remove('viewing'));
+    if (viewing) $(`#board [data-pr="${CSS.escape(viewing)}"]`)?.classList.add('viewing');
+    return;
+  }
   if (t.matches('[data-review]')) return review(t.dataset.review);
   if (t.matches('[data-settings]')) { ev.preventDefault(); return openSettings(); }
   if (t.matches('[data-cancel]')) {
@@ -807,7 +846,7 @@ $('#board').addEventListener('click', async (ev) => {
 });
 
 let dragging = null;
-const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], mine: ['mergeable'], mergeable: ['mine'] };
+const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], mine: ['mergeable', 'done'], planned: ['running'], mergeable: ['mine', 'done'], done: ['mine', 'mergeable'] };
 const dropLane = (ev) => {
   const lane = ev.target.closest('[data-lane]');
   if (laneEdit) return laneDrag && lane?.dataset.lane !== laneDrag ? lane : null;
@@ -853,7 +892,13 @@ $('#board').addEventListener('drop', async (ev) => {
   try {
     if (lane.dataset.lane === 'commented') await api('/api/skip', { method: 'POST', body: { key } });
     else if (from === 'reviewing') await api('/api/cancel', { method: 'POST', body: { key } });
-    else await api('/api/mine/merge-ready', { method: 'POST', body: { key, ready: from === 'mine' } });
+    else if (from === 'planned') {
+      if (!confirm('PR 上の自分のコメントを指示として修正・push・返信します。よろしいですか？')) return;
+      await api('/api/mine/apply-comments', { method: 'POST', body: { key } });
+      saveDraft(key, {});
+    }
+    else if (lane.dataset.lane === 'done') await api('/api/mine/done', { method: 'POST', body: { key, done: true } });
+    else await api('/api/mine/merge-ready', { method: 'POST', body: { key, ready: lane.dataset.lane === 'mergeable' } });
   } catch (e) {
     toast(e.message);
   }
@@ -865,6 +910,7 @@ $('#board').addEventListener('dragend', () => {
   render();
 });
 $('#refresh').onclick = () => load(true);
+$('#stack-order').onclick = () => { stackOrder = !stackOrder; render(); };
 window.addEventListener('hashchange', () => {
   laneEdit = null; // タブ切替で編集は破棄
   render();

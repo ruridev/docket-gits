@@ -138,8 +138,8 @@ function mergeMine(mine, fetched, login) {
   for (const node of fetched) {
     const key = mineKey(node);
     const pending = pendingThreads(node, login);
-    // マージ可能に移した PR でも、新しい指摘が来たら指摘ありに戻す
-    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, ...(pending && { mergeReady: false }) };
+    // マージ可能・Done に移した PR でも、新しい指摘が来たら指摘ありに戻す
+    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, ...(pending && { mergeReady: false, done: false }) };
   }
   for (const [key, entry] of Object.entries(mine)) {
     if (!next[key] && ['queued', 'running', 'applying'].includes(entry.status)) next[key] = entry;
@@ -199,7 +199,10 @@ ${decisionLines(findings, decisions)}
 
 ## 投稿ルール
 - 同意: 指摘を投稿する。理由が書かれていれば、その内容を本文に自然に反映する。
-- 非同意 (理由あり): 元の指摘は投稿しない。代わりに同じ箇所へ「🤔💭 」で始まるコメントを投稿し、レビュアー本人がこの点についてどう考えたかを伝える。人間の意見であることが伝わるようにし、ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
+- 非同意 (理由あり): 同じ箇所へ次の形式で 1 つのコメントを投稿する。AI の指摘をレビュアー本人が書いたように見せないため、AI の指摘と本人の意見をはっきり分ける。
+  - 1 段落目: 「🤖: 」で始め、AI エージェントの元の指摘を要約して載せる。
+  - 区切り線 \`---\`
+  - 2 段落目: 「🤔💭 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 投稿しない。
 - 投稿対象が 0 件で、Approve もコード確認の表明もない場合は何も投稿しない。
 - 完了後、最終回答の末尾に次を必ず出力する。投稿に失敗した場合は posted を false にし、error に理由を入れる。
@@ -270,6 +273,17 @@ ${decisionLines(findings, decisions)}
 ## ルール
 - 非同意の指摘は投稿も修正もしない。
 - 同意が 0 件なら何もしない。
+- ${APPLIED_TAG}`;
+}
+
+// 判断ダイアログを使わず、ユーザーが PR に直接書いたコメントを指示として対応させる
+function buildCommentApplyPrompt(pr) {
+  return `ユーザーは対応計画への判断をレビューボードではなく、PR ${pr.url} 上のコメントで行いました。PR のレビュースレッドとコメントを取得し、PR 作成者 (ユーザー) が最後に書いたコメントを指示として、このスキルの修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
+
+## ルール
+- ユーザーのコメントで指示された内容だけ対応する。指示が無いスレッドには触れない。
+- 返信はユーザーのコメントと重複させず、対応したコミット SHA を含める。
+- resolve はしない。force-push はしない。
 - ${APPLIED_TAG}`;
 }
 
@@ -637,9 +651,10 @@ function enqueueMine(key, mode) {
   pump();
 }
 
+// decisions が無ければ PR 上のコメントを指示として対応する
 function enqueueApply(key, decisions) {
   const entry = state.mine[key];
-  const prompt = entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
+  const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     finishApply(key, await runClaude(prompt, { key, cwd: entry.cwd, resume: entry.sessionId, logName: logName(key, 'apply') }));
@@ -771,9 +786,20 @@ async function handle(req, res) {
       enqueueApply(body.key, body.decisions);
       return send(res, 200, { ok: true });
     }
+    if (url.pathname === '/api/mine/apply-comments') {
+      if (mine.status !== 'planned' || !mine.sessionId) return send(res, 409, { error: '対応できる状態ではありません' });
+      enqueueApply(body.key, null);
+      return send(res, 200, { ok: true });
+    }
     if (url.pathname === '/api/mine/merge-ready') {
       if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: '移動できる状態ではありません' });
-      updateEntry(body.key, { mergeReady: !!body.ready });
+      updateEntry(body.key, { mergeReady: !!body.ready, done: false });
+      return send(res, 200, { ok: true });
+    }
+    if (url.pathname === '/api/mine/done') {
+      // 未対応の指摘が残っていると次の取得で指摘ありに戻るので移せない
+      if (mine.status !== 'idle' || (body.done && mine.pending)) return send(res, 409, { error: '移動できる状態ではありません' });
+      updateEntry(body.key, { done: !!body.done, mergeReady: false });
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/cancel') {
@@ -862,4 +888,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };
+module.exports = { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };
