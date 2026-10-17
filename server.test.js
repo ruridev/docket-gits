@@ -295,3 +295,81 @@ test('pollIntervalMs: 分をミリ秒にし、1 分未満や不正値は既定�
   assert.equal(pollIntervalMs('2'), 2 * 60 * 1000);
   for (const v of [0, -1, '', undefined, 'abc']) assert.equal(pollIntervalMs(v), 5 * 60 * 1000);
 });
+
+const { parseProjectUrl, detectFields, barRange, sprintTree } = require('./server');
+
+test('parseProjectUrl: org / user のプロジェクト URL を解析し、それ以外は null', () => {
+  assert.deepEqual(parseProjectUrl('https://github.com/orgs/docket/projects/76/views/1'), { owner: 'organization', login: 'docket', number: 76 });
+  assert.deepEqual(parseProjectUrl('https://github.com/users/alice/projects/3'), { owner: 'user', login: 'alice', number: 3 });
+  assert.equal(parseProjectUrl('https://github.com/docket/repo'), null);
+});
+
+test('detectFields: 最初の Iteration と、名前から開始日・終了日の Date フィールドを選ぶ', () => {
+  const fields = [
+    { name: 'Status', dataType: 'SINGLE_SELECT' },
+    { name: '[必須]Sprint', dataType: 'ITERATION', configuration: { iterations: [{ id: 'b', title: 'S2', startDate: '2026-10-24', duration: 14 }], completedIterations: [{ id: 'a', title: 'S1', startDate: '2026-10-10', duration: 14 }] } },
+    { name: '終了日', dataType: 'DATE' },
+    { name: '開始日', dataType: 'DATE' },
+  ];
+  const f = detectFields(fields);
+  assert.equal(f.sprint, '[必須]Sprint');
+  assert.equal(f.start, '開始日');
+  assert.equal(f.end, '終了日');
+  assert.deepEqual(f.iterations.map((i) => [i.id, i.endDate, i.completed]), [['b', '2026-11-06', false], ['a', '2026-10-23', true]]);
+  assert.deepEqual(detectFields([{ name: 'Target', dataType: 'DATE' }, { name: 'Begin', dataType: 'DATE' }]), { sprint: null, start: 'Begin', end: 'Target', iterations: [] });
+});
+
+test('barRange: スプリント外・未設定の日付はスプリントの開始日・終了日として扱う', () => {
+  const s = { startDate: '2026-10-10', endDate: '2026-10-23' };
+  assert.deepEqual(barRange(null, null, s), { start: '2026-10-10', end: '2026-10-23' });
+  assert.deepEqual(barRange('2026-10-12', '2026-10-15', s), { start: '2026-10-12', end: '2026-10-15' });
+  assert.deepEqual(barRange('2026-09-01', '2026-12-01', s), { start: '2026-10-10', end: '2026-10-23' });
+  assert.deepEqual(barRange('2026-10-20', null, s), { start: '2026-10-20', end: '2026-10-23' });
+  assert.deepEqual(barRange('2026-11-01', '2026-11-05', s), { start: '2026-10-10', end: '2026-10-23' });
+  // 開始 > 終了の矛盾はスプリント全体にする
+  assert.deepEqual(barRange('2026-10-20', '2026-10-12', s), { start: '2026-10-10', end: '2026-10-23' });
+});
+
+test('sprintTree: 同じスプリントの子孫は最上位の親の下にだけ出し、別スプリント・未登録の子孫も含める', () => {
+  const sprint = { id: 'S', startDate: '2026-10-10', endDate: '2026-10-23' };
+  const iss = (id, childIds = [], extra = {}) => ({ id, title: id, childIds, sprintId: null, start: null, end: null, ...extra });
+  const issues = new Map([
+    ['A', iss('A', ['B'], { sprintId: 'S', end: '2026-12-01' })],
+    ['B', iss('B', ['C', 'D'], { sprintId: 'X' })],
+    ['C', iss('C', [], { sprintId: 'S' })],
+    ['D', iss('D', [], { start: '2026-10-15' })],
+    ['E', iss('E', [], { sprintId: 'S' })],
+  ]);
+  const roots = sprintTree(['A', 'C', 'E'], issues, sprint);
+  assert.deepEqual(roots.map((r) => r.id), ['A', 'E']);
+  const a = roots[0];
+  assert.deepEqual(a.children.map((c) => c.id), ['B']);
+  assert.deepEqual(a.children[0].children.map((c) => [c.id, c.start, c.end]), [['C', '2026-10-10', '2026-10-23'], ['D', '2026-10-15', '2026-10-23']]);
+  // 元の日付はスプリントからはみ出した表示用に残す
+  assert.equal(a.end, '2026-10-23');
+  assert.equal(a.rawEnd, '2026-12-01');
+});
+
+test('sprintTree: 親子が循環していても止まる', () => {
+  const sprint = { id: 'S', startDate: '2026-10-10', endDate: '2026-10-23' };
+  const issues = new Map([
+    ['A', { id: 'A', childIds: ['B'], sprintId: 'S' }],
+    ['B', { id: 'B', childIds: ['A'], sprintId: 'S' }],
+  ]);
+  const roots = sprintTree(['A', 'B'], issues, sprint);
+  assert.ok(roots.length >= 1);
+});
+
+const { pickIterations } = require('./server');
+
+test('pickIterations: 現在と前後 N 個に絞り、未来は issue があるものだけ、新しい順に並べる', () => {
+  const it = (id, startDate, endDate, count) => ({ id, startDate, endDate, count });
+  const all = [
+    it('p2', '2026-09-12', '2026-09-25', 5), it('p1', '2026-09-26', '2026-10-09', 3), it('now', '2026-10-10', '2026-10-23', 27),
+    it('f1', '2026-10-24', '2026-11-06', 0), it('f2', '2026-11-07', '2026-11-20', 2), it('f3', '2026-11-21', '2026-12-04', 1),
+  ];
+  assert.deepEqual(pickIterations(all, '2026-10-16', { past: 1, future: 1 }).map((i) => i.id), ['f2', 'now', 'p1']);
+  assert.deepEqual(pickIterations(all, '2026-10-16', { past: 0, future: 2 }).map((i) => i.id), ['f3', 'f2', 'now']);
+  // 件数を数える前は未来をすべて候補にする
+  assert.deepEqual(pickIterations(all.map((i) => ({ ...i, count: undefined })), '2026-10-16', { past: 2, future: Infinity }).map((i) => i.id), ['f3', 'f2', 'f1', 'now', 'p1', 'p2']);
+});

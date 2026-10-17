@@ -11,6 +11,7 @@ const DATA_DIR = process.env.REVIEW_BOARD_DATA || path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
+const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
 
 const DEFAULT_CONFIG = {
   workdir: os.homedir(),
@@ -29,6 +30,11 @@ const DEFAULT_CONFIG = {
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
   // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
   repos: {},
+  // スプリント画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
+  projects: [],
+  // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
+  sprintPast: 1,
+  sprintFuture: 1,
 };
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
@@ -327,6 +333,75 @@ function canDecideAll(findings, decisions) {
   return findings.every((f) => ['agree', 'disagree'].includes(decisions?.[f.no]?.verdict));
 }
 
+// ---------- スプリント (GitHub Projects) ----------
+
+function parseProjectUrl(url) {
+  const m = /github\.com\/(orgs|users)\/([^/]+)\/projects\/(\d+)/.exec(url || '');
+  return m && { owner: m[1] === 'orgs' ? 'organization' : 'user', login: m[2], number: Number(m[3]) };
+}
+
+const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+// 最初の Iteration フィールドをスプリント、名前で開始日・終了日の Date フィールドを選ぶ (見つからなければ Date フィールドの 1・2 個目)
+function detectFields(fields) {
+  const iter = fields.find((f) => f.dataType === 'ITERATION');
+  const dates = fields.filter((f) => f.dataType === 'DATE').map((f) => f.name);
+  const start = dates.find((n) => /開始|start|begin/i.test(n)) || dates[0] || null;
+  const end = dates.find((n) => /終了|end|due|target|deadline/i.test(n)) || dates.find((n) => n !== start) || null;
+  const toIter = (completed) => (i) => ({ id: i.id, title: i.title, startDate: i.startDate, endDate: addDays(i.startDate, i.duration - 1), completed });
+  const iterations = iter ? [...iter.configuration.iterations.map(toIter(false)), ...iter.configuration.completedIterations.map(toIter(true))] : [];
+  return { sprint: iter?.name || null, start, end, iterations };
+}
+
+// 現在のスプリントと、過去 past 個・未来 future 個 (issue があるものだけ) に絞り、新しい順に並べる
+function pickIterations(iterations, today, { past, future }) {
+  const asc = [...iterations].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const before = asc.filter((i) => i.endDate < today);
+  return [
+    ...before.slice(Math.max(0, before.length - past)),
+    ...asc.filter((i) => i.startDate <= today && today <= i.endDate),
+    ...asc.filter((i) => i.startDate > today && i.count !== 0).slice(0, future),
+  ].reverse();
+}
+
+// 日付が未設定・スプリント外なら、スプリントの開始日・終了日として扱う (YYYY-MM-DD は文字列比較できる)
+function barRange(start, end, sprint) {
+  const inside = (d) => d && d >= sprint.startDate && d <= sprint.endDate;
+  const s = inside(start) ? start : sprint.startDate;
+  const e = inside(end) ? end : sprint.endDate;
+  return s <= e ? { start: s, end: e } : { start: sprint.startDate, end: sprint.endDate };
+}
+
+// sprintIds: スプリントに紐づく issue。issues: id → { childIds, start, end, ... } (子孫も含む)
+// 他のスプリント issue の子孫になっているものは、最上位の親の下にだけ出す
+function sprintTree(sprintIds, issues, sprint) {
+  const descendants = (id) => {
+    const seen = new Set();
+    const walk = (i) => (issues.get(i)?.childIds || []).forEach((c) => !seen.has(c) && (seen.add(c), walk(c)));
+    walk(id);
+    seen.delete(id);
+    return seen;
+  };
+  const under = new Set(sprintIds.flatMap((id) => [...descendants(id)]));
+  const roots = sprintIds.filter((id) => !under.has(id));
+  // 循環で全員が誰かの子孫になった場合は、まだ出ていないものを起点にする
+  const shown = new Set(roots.flatMap((id) => [id, ...descendants(id)]));
+  for (const id of sprintIds) if (!shown.has(id)) { roots.push(id); descendants(id).forEach((d) => shown.add(d)); shown.add(id); }
+
+  const build = (id, path) => {
+    const { childIds = [], ...issue } = issues.get(id);
+    const next = new Set(path).add(id);
+    return {
+      ...issue,
+      ...barRange(issue.start, issue.end, sprint),
+      rawStart: issue.start || null,
+      rawEnd: issue.end || null,
+      children: childIds.filter((c) => issues.has(c) && !next.has(c)).map((c) => build(c, next)),
+    };
+  };
+  return roots.map((id) => build(id, new Set()));
+}
+
 // ---------- 永続化 ----------
 
 function readJson(file, fallback) {
@@ -385,6 +460,135 @@ async function refreshFromGitHub() {
   state.lastFetchedAt = Date.now();
   state.fetchError = null;
   saveState();
+}
+
+// ---------- スプリント ----------
+
+async function ghql(query, vars = {}) {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  for (const [k, v] of Object.entries(vars)) args.push(typeof v === 'string' ? '-f' : '-F', `${k}=${v}`);
+  const json = JSON.parse(await gh(args));
+  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('\n'));
+  return json.data;
+}
+
+const projectRoot = (p) => `${p.owner}(login: $login) { projectV2(number: $number)`;
+
+const ISSUE_FIELDS = `fragment iss on Issue {
+  id number title url state stateReason repository { nameWithOwner }
+  assignees(first: 5) { nodes { login avatarUrl } }
+  subIssues { totalCount }
+  projectItems(first: 20) { nodes {
+    project { id }
+    sprint: fieldValueByName(name: $sprint) { ... on ProjectV2ItemFieldIterationValue { iterationId } }
+    start: fieldValueByName(name: $start) { ... on ProjectV2ItemFieldDateValue { date } }
+    end: fieldValueByName(name: $end) { ... on ProjectV2ItemFieldDateValue { date } }
+  } }
+}`;
+
+// 開始日・終了日・スプリントはこのプロジェクトの値だけ使う (プロジェクトに無い issue は未設定)
+function normIssue(n, projectId) {
+  const item = n.projectItems.nodes.find((i) => i.project?.id === projectId);
+  return {
+    id: n.id, number: n.number, title: n.title, url: n.url, repo: n.repository.nameWithOwner,
+    state: n.state, stateReason: n.stateReason, assignees: n.assignees.nodes,
+    subCount: n.subIssues.totalCount, sprintId: item?.sprint?.iterationId || null,
+    start: item?.start?.date || null, end: item?.end?.date || null, childIds: [],
+  };
+}
+
+// サーバーを再起動しても取り直さないようファイルにも保存する
+const sprintCache = new Map(Object.entries(readJson(SPRINT_CACHE_FILE, {})));
+// 全体スケジュールの把握用なので自動では取り直さない。最新にしたいときは画面の「今すぐ更新」で refresh=1 を送る
+const SPRINT_CACHE_MS = 24 * 60 * 60 * 1000;
+async function cached(key, refresh, fn) {
+  const hit = sprintCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < SPRINT_CACHE_MS) return hit.data;
+  const data = await fn();
+  sprintCache.set(key, { at: Date.now(), data });
+  for (const [k, v] of sprintCache) if (Date.now() - v.at >= SPRINT_CACHE_MS) sprintCache.delete(k);
+  writeJson(SPRINT_CACHE_FILE, Object.fromEntries(sprintCache));
+  return data;
+}
+
+const filterQuery = (field, title) => `${JSON.stringify(field)}:${JSON.stringify(title)}`;
+
+async function projectMeta(url, refresh) {
+  const p = parseProjectUrl(url);
+  if (!p) throw new Error(`プロジェクト URL を解析できません: ${url}`);
+  const range = { past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) };
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return cached(`meta:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
+    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title url fields(first: 50) { nodes {
+      ... on ProjectV2FieldCommon { name dataType }
+      ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
+    } } } } }`, { login: p.login, number: p.number });
+    const project = data[p.owner].projectV2;
+    const fields = detectFields(project.fields.nodes);
+    // スプリントごとの件数はエイリアスでまとめて取る
+    // 件数で未来のスプリントを絞るので、未来はいったんすべて数える
+    fields.iterations = pickIterations(fields.iterations, today, { past: range.past, future: Infinity });
+    if (fields.iterations.length) {
+      const counts = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} {
+        ${fields.iterations.map((it, i) => `c${i}: items(first: 0, query: ${JSON.stringify(filterQuery(fields.sprint, it.title))}) { totalCount }`).join('\n')}
+      } } }`, { login: p.login, number: p.number });
+      fields.iterations.forEach((it, i) => (it.count = counts[p.owner].projectV2[`c${i}`].totalCount));
+    }
+    fields.iterations = pickIterations(fields.iterations, today, range);
+    return { url, id: project.id, title: project.title, ...fields };
+  });
+}
+
+const SUB_DEPTH = 6;
+async function sprintIssues(url, iterationId, refresh) {
+  const meta = await projectMeta(url, refresh);
+  const sprint = meta.iterations.find((i) => i.id === iterationId);
+  if (!sprint) throw new Error('スプリントが見つかりません');
+  return cached(`sprint:${url}:${iterationId}`, refresh, async () => {
+    const p = parseProjectUrl(url);
+    const names = { sprint: meta.sprint, start: meta.start || '-', end: meta.end || '-' };
+    const issues = new Map();
+    const sprintIds = [];
+    let after = null;
+    do {
+      const data = await ghql(`query($login: String!, $number: Int!, $q: String!, $after: String, $sprint: String!, $start: String!, $end: String!) { ${projectRoot(p)} {
+        items(first: 50, after: $after, query: $q) { pageInfo { hasNextPage endCursor } nodes { content { ...iss } } }
+      } } }
+      ${ISSUE_FIELDS}`, { login: p.login, number: p.number, q: filterQuery(meta.sprint, sprint.title), ...(after && { after }), ...names });
+      const page = data[p.owner].projectV2.items;
+      for (const n of page.nodes) {
+        if (!n.content?.id) continue; // Draft issue・PR は対象外
+        issues.set(n.content.id, normIssue(n.content, meta.id));
+        sprintIds.push(n.content.id);
+      }
+      after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+    } while (after);
+
+    // sub issue を 1 階層ずつまとめて取る
+    let frontier = [...issues.values()].filter((i) => i.subCount > 0).map((i) => i.id);
+    for (let depth = 0; depth < SUB_DEPTH && frontier.length; depth++) {
+      const next = [];
+      for (let i = 0; i < frontier.length; i += 30) {
+        const ids = frontier.slice(i, i + 30);
+        const data = await ghql(`query($sprint: String!, $start: String!, $end: String!) {
+          nodes(ids: ${JSON.stringify(ids)}) { ... on Issue { id subIssues(first: 100) { nodes { ...iss } } } }
+        }
+        ${ISSUE_FIELDS}`, names);
+        for (const parent of data.nodes) {
+          if (!parent) continue;
+          issues.get(parent.id).childIds = parent.subIssues.nodes.map((c) => c.id);
+          for (const c of parent.subIssues.nodes) {
+            if (issues.has(c.id)) continue;
+            const child = normIssue(c, meta.id);
+            issues.set(c.id, child);
+            if (child.subCount > 0) next.push(c.id);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { sprint, roots: sprintTree(sprintIds, issues, sprint), fetchedAt: Date.now() };
+  });
 }
 
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
@@ -760,6 +964,19 @@ async function handle(req, res) {
     return send(res, 200, { skills: listSkills(roots) });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/sprint') {
+    const project = url.searchParams.get('project');
+    const iteration = url.searchParams.get('iteration');
+    const refresh = url.searchParams.get('refresh') === '1';
+    if (!config.projects.includes(project)) return send(res, 404, { error: 'プロジェクトが設定にありません' });
+    try {
+      if (!iteration) return send(res, 200, { meta: await projectMeta(project, refresh) });
+      return send(res, 200, await sprintIssues(project, iteration, refresh));
+    } catch (e) {
+      return send(res, 502, { error: e.message });
+    }
+  }
+
   const body = await readBody(req);
   if (req.method === 'PUT' && url.pathname === '/api/config') {
     config = { ...config, ...body };
@@ -888,4 +1105,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };
+module.exports = { pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, fillTemplate, buildReviewPrompt, buildPostPrompt, buildFixPlanPrompt, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, canDecideAll, pollIntervalMs, RE_REQUEST_GRACE_MS };
