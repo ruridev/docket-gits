@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { killRun, readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -610,28 +610,35 @@ test('logKeepMs: 1 日未満・不正な値は既定の 30 日にする (自動�
   assert.equal(logKeepMs(''), 30 * day);
 });
 
-test('isClaudeRun: 生きていても claude 以外のプロセスなら false', () => {
+test('isAgentRun: 生きていても claude 以外のプロセスなら false', () => {
   const sleep = require('node:child_process').spawn('sleep', ['5']);
   try {
     assert.equal(isAlive(sleep.pid), true);
-    assert.equal(isClaudeRun(sleep.pid), false);
+    assert.equal(isAgentRun(sleep.pid), false);
   } finally {
     sleep.kill();
   }
-  assert.equal(isClaudeRun(2 ** 22 + 12345), false);
+  assert.equal(isAgentRun(2 ** 22 + 12345), false);
 });
 
-test('isClaudeRun: レビューボードが起動した claude (stream-json) だけを true にし、ユーザーの他の claude は止めない', () => {
+test('isAgentRun: レビューボードが起動した claude (stream-json) だけを true にし、ユーザーの他の claude は止めない', () => {
   const { spawn } = require('node:child_process');
   const run = (...args) => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'claude', ...args]);
   const ours = run('-p', 'x', '--output-format', 'stream-json');
   const other = run('--resume');
+  const codex = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'codex', 'exec', '--json']);
+  const interactive = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'codex']);
   try {
-    assert.equal(isClaudeRun(ours.pid), true);
-    assert.equal(isClaudeRun(other.pid), false);
+    assert.equal(isAgentRun(ours.pid), true);
+    assert.equal(isAgentRun(other.pid), false);
+    assert.equal(isAgentRun(codex.pid, 'codex'), true);
+    assert.equal(isAgentRun(codex.pid), false);
+    assert.equal(isAgentRun(interactive.pid, 'codex'), false);
   } finally {
     ours.kill();
     other.kill();
+    codex.kill();
+    interactive.kill();
   }
 });
 
@@ -706,7 +713,7 @@ test('起動: 待機中の指摘への対応 (fix) が残っていても、事�
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
   const pr = { repo: 'acme/api', number: 3, url: 'https://x/3' };
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ repos: { 'acme/api': { fixSkill: 'review-fix' } }, consentVersion: 1 }));
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ repos: { 'acme/api': { fixSkill: 'review-fix' } }, consentVersion: 2 }));
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ prs: {}, mine: { 'mine:acme/api#3': { status: 'queued', mode: 'fix', triage, pr } } }));
   // PATH を空にして gh / claude を実際には起動しない
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: dir, PORT: '0', PATH: '' } });

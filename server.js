@@ -15,6 +15,10 @@ const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
 
 const DEFAULT_CONFIG = {
   workdir: os.homedir(),
+  provider: 'claude',
+  codexModel: '',
+  codexEffort: '',
+  codexArgs: '--approve-for-me -c sandbox_workspace_write.network_access=true',
   claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(cat:*),Bash(ls:*)',
   // 空なら claude の既定。model はサブエージェントにも使わせる
   model: '',
@@ -67,7 +71,7 @@ const DEFAULT_CONFIG = {
 };
 
 // 「使用前の注意」の内容を大きく変えたら上げる (全員にもう一度同意を求める)
-const CONSENT_VERSION = 1;
+const CONSENT_VERSION = 2;
 const needsConsent = () => (Number(config.consentVersion) || 0) < CONSENT_VERSION;
 // claude を起動する API。同意前は受け付けない
 const RUN_PATHS = ['/api/review', '/api/post', '/api/mine/run', '/api/mine/apply', '/api/mine/apply-comments'];
@@ -251,7 +255,21 @@ function usageOf(parsed) {
 
 function addUsage(prev, u) {
   if (!u) return prev;
-  return { tokens: (prev?.tokens || 0) + u.tokens, costUsd: (prev?.costUsd || 0) + u.costUsd };
+  return { tokens: (prev?.tokens || 0) + u.tokens, costUsd: u.costUsd == null || (prev && prev.costUsd == null) ? null : (prev?.costUsd || 0) + u.costUsd };
+}
+
+const validProvider = (value) => value === 'claude' || value === 'codex';
+// Old cards belong to Claude even after the user changes the default.
+const sessionProvider = (entry) => entry.provider || 'claude';
+// Keep legacy mappings for Claude; Codex has its own skills and argument templates.
+function repoTool(mapping = {}, provider = 'claude') {
+  return provider === 'codex' ? { ...mapping.codex, cwd: mapping.cwd } : mapping;
+}
+
+function codexOptions(cfg, prompt, resume) {
+  return [...splitArgs(cfg.codexArgs), 'exec', ...(resume ? ['resume', resume] : []), '--json', '--skip-git-repo-check',
+    ...(cfg.codexModel ? ['--model', cfg.codexModel] : []),
+    ...(cfg.codexEffort ? ['-c', `model_reasoning_effort=${JSON.stringify(cfg.codexEffort)}`] : []), prompt];
 }
 
 function fillTemplate(template, pr) {
@@ -267,10 +285,10 @@ function fillTemplate(template, pr) {
 // スキルの選択肢のうち、ローカルの skill ではなく設定の reviewPrompt を使うことを表す値
 const PROMPT_SKILL = '(prompt)';
 
-function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_CONFIG.reviewPrompt) {
+function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_CONFIG.reviewPrompt, provider = 'claude', cwd) {
   const head = mapping.skill === PROMPT_SKILL
     ? fillTemplate(reviewPrompt?.trim() || DEFAULT_CONFIG.reviewPrompt, pr)
-    : `/${mapping.skill} ${fillTemplate(mapping.args, pr)}`;
+    : skillInvocation(mapping.skill, fillTemplate(mapping.args, pr), provider, cwd);
   return `${head}
 
 ---
@@ -347,7 +365,7 @@ function triageFrom(threads, decisions) {
 const triageTargets = (triage) => triage.filter((t) => t.verdict !== 'skip');
 
 // review-fix は手順 1〜3 (取得・チェックアウト・分類) で止め、対応計画だけを返させる
-function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_CONFIG.fixPrompt) {
+function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_CONFIG.fixPrompt, provider = 'claude', cwd) {
   const lines = triageTargets(triage).map((t) => {
     const loc = t.path ? ` ${t.path}${t.line ? `:${t.line}` : ''}` : '';
     const summary = t.comment.replace(/\s+/g, ' ').slice(0, 80);
@@ -355,7 +373,7 @@ function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_CONFIG.fixP
   });
   const head = mapping.fixSkill === PROMPT_SKILL
     ? fillTemplate(fixPrompt?.trim() || DEFAULT_CONFIG.fixPrompt, pr)
-    : `/${mapping.fixSkill} ${fillTemplate(mapping.fixArgs, pr)}`;
+    : skillInvocation(mapping.fixSkill, fillTemplate(mapping.fixArgs, pr), provider, cwd);
   return `${head}
 
 ---
@@ -851,7 +869,7 @@ async function periodIssues(url, from, refresh) {
 function sanitizeConfig(body) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
   // 同意は /api/consent でだけ記録する
-  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v))));
+  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v)) && (k !== 'provider' || validProvider(v))));
 }
 
 // 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
@@ -903,6 +921,12 @@ function parseLines(text) {
 function logLines(text, limit = 50) {
   const lines = [];
   for (const ev of parseLines(text)) {
+    if (ev.type === 'item.completed' || ev.type === 'item.started') {
+      const item = ev.item || {};
+      if (ev.type === 'item.completed' && item.type === 'agent_message' && item.text?.trim()) lines.push(`💬 ${item.text.trim()}`);
+      if (ev.type === 'item.started' && item.type === 'command_execution') lines.push(`🔧 ${item.command}`);
+      if (ev.type === 'item.completed' && item.type === 'file_change') lines.push(`🔧 ${JSON.stringify(item.changes)}`);
+    }
     if (ev.type !== 'assistant') continue;
     const indent = ev.parent_tool_use_id ? '  ↳ ' : '';
     for (const c of ev.message?.content || []) {
@@ -929,7 +953,7 @@ function readTail(file, bytes = 1024 * 1024) {
 }
 
 // stdout/stderr をファイルに書き出した claude の結果を読む。合わせて .log にまとめ、元ファイルは消す
-function readRun(dir, logName, code) {
+function readRun(dir, logName, code, provider = 'claude') {
   const base = path.join(dir, logName);
   let stdout;
   let stderr;
@@ -944,9 +968,25 @@ function readRun(dir, logName, code) {
     return { ok: false, error: E('claudeReadFailed', { message: e.message }) };
   }
   // stream-json は 1 行 1 イベントで、最後の result イベントに結果がまとまる
+  if (provider === 'codex') return readCodexResult(stdout, stderr, code);
   const parsed = parseLines(stdout).findLast((ev) => ev.type === 'result');
   if (!parsed) return { ok: false, error: E('claudeParseFailed', { code, stderr: stderr.slice(-500) }) };
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
+}
+
+function readCodexResult(stdout, stderr, code) {
+  const events = parseLines(stdout);
+  const completed = events.filter((ev) => ev.type === 'turn.completed');
+  const failure = events.findLast((ev) => ev.type === 'turn.failed' || ev.type === 'error');
+  const result = events.filter((ev) => ev.type === 'item.completed' && ev.item?.type === 'agent_message').map((ev) => ev.item.text).join('\n\n');
+  return {
+    ok: code === 0 && completed.length > 0 && !failure,
+    result,
+    sessionId: events.find((ev) => ev.type === 'thread.started')?.thread_id,
+    // cached_input_tokens is a subset of input_tokens. JSONL does not report a billed dollar amount.
+    usage: completed.length ? { tokens: completed.reduce((n, ev) => n + (ev.usage?.input_tokens || 0) + (ev.usage?.output_tokens || 0), 0), costUsd: null } : null,
+    error: failure?.error?.message || failure?.message || (code !== 0 || !completed.length ? stderr.slice(-500) || E('runFailed') : null),
+  };
 }
 
 // 終わった実行の .log だけを数える・消す (実行中の .out / .err は触らない)
@@ -994,12 +1034,12 @@ function isAlive(pid) {
 
 // サーバー・マシンの再起動後は保存した PID が別のプロセスに再利用されていることがある。
 // 無関係なプロセスの終了を待ったり止めたりしないよう、まだ claude であることも確かめる
-// ユーザーが別に開いている claude を止めないよう、runClaude が付ける stream-json 出力の指定も見る (-ww: 長いプロンプトで切らせない)
-function isClaudeRun(pid) {
+// ユーザーが別に開いている claude を止めないよう、runAgent が付ける stream-json 出力の指定も見る (-ww: 長いプロンプトで切らせない)
+function isAgentRun(pid, provider = 'claude') {
   if (!isAlive(pid)) return false;
   try {
     const command = execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
-    return /claude/.test(command) && /--output-format stream-json/.test(command);
+    return provider === 'codex' ? /codex/.test(command) && /\bexec\b/.test(command) && /--json/.test(command) : /claude/.test(command) && /--output-format stream-json/.test(command);
   } catch {
     return false;
   }
@@ -1017,10 +1057,10 @@ function killRun(pid) {
   }
 }
 
-function waitForExit(pid) {
+function waitForExit(pid, provider) {
   return new Promise((resolve) => {
     const timer = setInterval(() => {
-      if (isClaudeRun(pid)) return;
+      if (isAgentRun(pid, provider)) return;
       clearInterval(timer);
       resolve();
     }, 5000);
@@ -1028,26 +1068,30 @@ function waitForExit(pid) {
 }
 
 // サーバーを再起動しても claude を止めず結果を回収できるよう、別プロセスグループで起動し出力をファイルに書かせる
-function runClaude(prompt, { key, cwd, resume, logName }) {
+function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude' }) {
   return new Promise((resolve) => {
     // ログファイルを開けないなどで投げると呼び出し側のカードが実行中のまま止まるので、失敗として返す
     // 起動後に投げた場合 (状態の保存失敗など) は claude が動いているので、close で結果を返す
     let child;
     try {
       const model = modelOptions(config);
-      const args = ['-p', withOutputLang(prompt, config.outputLang), '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
-      if (resume) args.push('--resume', resume);
+      const instruction = withOutputLang(prompt, config.outputLang);
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...splitArgs(config.claudeArgs)];
+      if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true });
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w');
       const err = fs.openSync(`${base}.err`, 'w');
-      child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn(provider, args, { cwd, env: { ...childEnv(process.env), ...(provider === 'claude' && model.env) }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
-      child.on('close', (code) => resolve(readRun(LOG_DIR, logName, code)));
+      child.on('close', (code) => {
+        const result = readRun(LOG_DIR, logName, code, provider);
+        resolve({ ...result, sessionId: result.sessionId || resume });
+      });
       // lastLog: 実行が終わった後も画面からログを見られるよう残す (タグの再出力はおまけなので本体のログを残す)
-      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
+      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd, provider }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
     } catch (e) {
       if (!child) resolve({ ok: false, error: e.message });
     }
@@ -1057,7 +1101,7 @@ function runClaude(prompt, { key, cwd, resume, logName }) {
 // claude -p の result は最後のメッセージだけなので、サブエージェントの完了通知などで回答が続くと
 // 先に出力したタグが落ちる。その場合は同じセッションを 1 回だけ再開してタグを再出力させる
 // opts.cancelled: 最初の実行中にキャンセルされたら再開しない
-async function runForTag(tag, prompt, opts, run = runClaude) {
+async function runForTag(tag, prompt, opts, run = runAgent) {
   const res = await run(prompt, opts);
   if (!res.ok || !res.sessionId || extractTagJson(res.result, tag) || opts.cancelled?.()) return res;
   const retry = await run(`直前までに出力した <${tag}> ブロックを、内容を変えずにもう一度そのまま出力してください。まだ出力していなければ、指示どおりの形式で出力してください。`, {
@@ -1127,15 +1171,16 @@ function finishPost(key, res) {
   updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: posted.url || null, postRaw: res.result });
 }
 
-function enqueueReview(key) {
+function enqueueReview(key, provider = config.provider) {
   const entry = state.prs[key];
-  const mapping = config.repos[entry.pr.repo];
+  const mapping = repoTool(config.repos[entry.pr.repo], provider);
   const cwd = mapping.cwd || config.workdir;
   const runId = newRunId();
-  updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
+  const prompt = buildReviewPrompt(entry.pr, mapping, config.reviewPrompt, provider, cwd);
+  updateEntry(key, { status: 'queued', provider, runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await runForTag('docket-findings', buildReviewPrompt(entry.pr, mapping, config.reviewPrompt), { key, cwd, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
+    finishReview(key, cwd, await runForTag('docket-findings', prompt, { key, cwd, provider, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
   } });
   pump();
 }
@@ -1144,9 +1189,9 @@ function enqueueReview(key) {
 function recoverRun(run, finish, repo) {
   running++;
   if (repo) busyRepos.add(repo);
-  waitForExit(run.pid)
+  waitForExit(run.pid, run.provider)
     // 終了コードは取れないが、result イベントは最後に出力されるので解析できれば正常終了とみなす
-    .then(() => readRun(LOG_DIR, run.logName, 0))
+    .then(() => readRun(LOG_DIR, run.logName, 0, run.provider))
     .then(finish)
     .catch((e) => console.error(e))
     .finally(() => {
@@ -1161,7 +1206,7 @@ function cancelReview(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
   const pid = state.prs[key]?.run?.pid;
-  if (pid && isClaudeRun(pid)) killRun(pid);
+  if (pid && isAgentRun(pid, state.prs[key]?.run?.provider)) killRun(pid);
   updateEntry(key, { status: 'requested', error: null });
 }
 
@@ -1169,8 +1214,9 @@ function enqueuePost(key, decisions, approve, humanRead) {
   const entry = state.prs[key];
   updateEntry(key, { status: 'posting', error: null, decisions, approve, humanRead });
   queue.push({ key, run: async () => {
-    const res = await runClaude(buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon), {
+    const res = await runAgent(buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon), {
       key,
+      provider: sessionProvider(entry),
       cwd: entry.cwd,
       resume: entry.sessionId,
       logName: logName(key, 'post'),
@@ -1223,16 +1269,16 @@ function skipThreads(key, triage) {
 }
 
 // mode: 'self' (セルフレビュー) / 'fix' (指摘への対応計画。triage: 人の事前判断)
-function enqueueMine(key, mode, triage = null) {
+function enqueueMine(key, mode, triage = null, provider = config.provider) {
   const entry = state.mine[key];
-  const mapping = config.repos[entry.pr.repo];
+  const mapping = repoTool(config.repos[entry.pr.repo], provider);
   const cwd = mapping.cwd || config.workdir;
-  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, config.reviewPrompt) : buildFixPlanPrompt(entry.pr, mapping, triage, config.fixPrompt);
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, config.reviewPrompt, provider, cwd) : buildFixPlanPrompt(entry.pr, mapping, triage, config.fixPrompt, provider, cwd);
   const runId = newRunId();
-  updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {} });
+  updateEntry(key, { status: 'queued', provider, mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, cwd, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
+    finishMine(key, cwd, await runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, cwd, provider, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
   } });
   pump();
 }
@@ -1243,7 +1289,7 @@ function enqueueApply(key, decisions) {
   const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
-    finishApply(key, await runClaude(prompt, { key, cwd: entry.cwd, resume: entry.sessionId, logName: logName(key, 'apply') }));
+    finishApply(key, await runAgent(prompt, { key, cwd: entry.cwd, provider: sessionProvider(entry), resume: entry.sessionId, logName: logName(key, 'apply') }));
   } });
   pump();
 }
@@ -1253,17 +1299,20 @@ function cancelMine(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
   const pid = state.mine[key]?.run?.pid;
-  if (pid && isClaudeRun(pid)) killRun(pid);
+  if (pid && isAgentRun(pid, state.mine[key]?.run?.provider)) killRun(pid);
   updateEntry(key, { status: 'idle', error: null });
 }
 
 // ---------- スキル候補 ----------
 
 // roots: 設定画面で編集中 (未保存) の作業ディレクトリも候補に含める
-function listSkills(roots) {
-  const dirs = new Set([path.join(os.homedir(), '.claude', 'skills')]);
-  for (const root of roots) if (root) dirs.add(path.join(root, '.claude', 'skills'));
-  const names = new Set();
+function skillFiles(roots, provider = 'claude') {
+  const scopes = provider === 'codex' ? ['.agents', '.codex'] : ['.claude'];
+  const dirs = new Set();
+  for (const root of [...roots.filter(Boolean), os.homedir()]) {
+    for (const scope of scopes) dirs.add(path.join(root, scope, 'skills'));
+  }
+  const files = new Map();
   for (const dir of dirs) {
     let entries = [];
     try {
@@ -1271,9 +1320,22 @@ function listSkills(roots) {
     } catch {
       continue;
     }
-    for (const name of entries) if (fs.existsSync(path.join(dir, name, 'SKILL.md'))) names.add(name);
+    for (const name of entries) {
+      const file = path.join(dir, name, 'SKILL.md');
+      if (!files.has(name) && fs.existsSync(file)) files.set(name, file);
+    }
   }
-  return [...names].sort();
+  return files;
+}
+
+const listSkills = (roots, provider) => [...skillFiles(roots, provider).keys()].sort();
+
+function skillInvocation(skill, args, provider, cwd) {
+  if (provider === 'claude') return `/${skill} ${args}`;
+  const file = cwd && skillFiles([cwd], provider).get(skill);
+  // Use the selected tool's instruction file, without looking in another tool's directories.
+  return file ? `次のスキルの SKILL.md を読み、その手順に従ってください: ${JSON.stringify(file)}\n引数: ${args}`
+    : `$${skill} ${args}\n指定されたスキルが利用できなければ、代わりの作業をせずエラーを返してください。`;
 }
 
 // ---------- HTTP ----------
@@ -1358,8 +1420,10 @@ async function handle(req, res) {
   }
   if (req.method === 'GET' && url.pathname === '/api/logs') return send(res, 200, logStats(LOG_DIR));
   if (req.method === 'GET' && url.pathname === '/api/skills') {
+    const provider = url.searchParams.get('provider') || 'claude';
+    if (!validProvider(provider)) return send(res, 400, { error: E('invalidProvider') });
     const roots = [config.workdir, ...Object.values(config.repos).map((m) => m.cwd), ...url.searchParams.getAll('dir')];
-    return send(res, 200, { skills: listSkills(roots) });
+    return send(res, 200, { skills: listSkills(roots, provider) });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/sprint') {
@@ -1395,6 +1459,7 @@ async function handle(req, res) {
     return send(res, 200, { removed, ...logStats(LOG_DIR) });
   }
   if (req.method === 'PUT' && url.pathname === '/api/config') {
+    if (body.provider !== undefined && !validProvider(body.provider)) return send(res, 400, { error: E('invalidProvider') });
     config = { ...config, ...sanitizeConfig(body) };
     writeJson(CONFIG_FILE, config);
     pump();
@@ -1406,7 +1471,8 @@ async function handle(req, res) {
     const mine = state.mine[body.key];
     if (!mine) return send(res, 404, { error: 'not found' });
     if (url.pathname === '/api/mine/run') {
-      const skill = config.repos[mine.pr.repo]?.[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
+      if (body.provider !== undefined && !validProvider(body.provider)) return send(res, 400, { error: E('invalidProvider') });
+      const skill = repoTool(config.repos[mine.pr.repo], body.provider ?? config.provider)[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
       if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: E('skillMissing', { repo: mine.pr.repo }) });
       if (!['idle', 'planned'].includes(mine.status)) return send(res, 409, { error: E('running') });
       let triage = null;
@@ -1418,7 +1484,7 @@ async function handle(req, res) {
         // すべて対象外なら AI は動かさず、覚えるだけで終わる
         if (triageTargets(triage).length === 0) return send(res, 200, { ok: true });
       }
-      enqueueMine(body.key, body.mode, triage);
+      enqueueMine(body.key, body.mode, triage, body.provider ?? config.provider);
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/apply') {
@@ -1456,9 +1522,10 @@ async function handle(req, res) {
   if (req.method !== 'POST' || !entry) return send(res, 404, { error: 'not found' });
 
   if (url.pathname === '/api/review') {
-    if (!config.repos[entry.pr.repo]?.skill) return send(res, 400, { error: E('skillMissing', { repo: entry.pr.repo }) });
+    if (body.provider !== undefined && !validProvider(body.provider)) return send(res, 400, { error: E('invalidProvider') });
+    if (!repoTool(config.repos[entry.pr.repo], body.provider ?? config.provider).skill) return send(res, 400, { error: E('skillMissing', { repo: entry.pr.repo }) });
     if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: E('running') });
-    enqueueReview(body.key);
+    enqueueReview(body.key, body.provider ?? config.provider);
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/post') {
@@ -1490,6 +1557,7 @@ async function handle(req, res) {
 
 function main() {
   config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+  if (!validProvider(config.provider)) config.provider = 'claude';
   state = { mine: {}, ...readJson(STATE_FILE, { prs: {} }) };
   // claude を起動済みのジョブは別プロセスグループで動き続けているので結果を回収する
   // 未起動のレビュー・計画は副作用がないのでキューに積み直し、投稿・対応は二重実行を避けて戻す
@@ -1500,7 +1568,7 @@ function main() {
       continue;
     }
     if (e.status === 'queued' || e.status === 'reviewing') {
-      if (config.repos[e.pr.repo]?.skill) requeue.push(() => enqueueReview(key));
+      if (repoTool(config.repos[e.pr.repo], sessionProvider(e)).skill) requeue.push(() => enqueueReview(key, sessionProvider(e)));
       else state.prs[key] = { ...e, status: 'requested', error: E('restartInterrupted') };
     }
     if (e.status === 'posting') state.prs[key] = { ...e, status: 'reviewed', error: E('restartPostInterrupted') };
@@ -1512,7 +1580,7 @@ function main() {
     }
     if (e.status === 'queued' || e.status === 'running') {
       // 指摘への対応は事前判断 (triage) が無いとプロンプトを作れないので、引き継げなければ戻す
-      if (config.repos[e.pr.repo]?.[e.mode === 'self' ? 'selfSkill' : 'fixSkill'] && (e.mode === 'self' || e.triage)) requeue.push(() => enqueueMine(key, e.mode, e.triage));
+      if (repoTool(config.repos[e.pr.repo], sessionProvider(e))[e.mode === 'self' ? 'selfSkill' : 'fixSkill'] && (e.mode === 'self' || e.triage)) requeue.push(() => enqueueMine(key, e.mode, e.triage, sessionProvider(e)));
       else state.mine[key] = { ...e, status: 'idle', error: E('restartInterrupted') };
     }
     if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: E('restartApplyInterrupted') };
@@ -1536,4 +1604,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { killRun, readTail, isClaudeRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
