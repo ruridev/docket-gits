@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -47,6 +47,15 @@ test('mergeBoard: 依頼が外れた PR は未着手なら消し、作業中・�
   assert.equal(prs['acme/api#3'].status, 'commented');
 });
 
+test('mergeBoard: Done を残す日数は設定で変えられる (既定 7 日、1 未満は既定値)', () => {
+  const day = 24 * 60 * 60 * 1000;
+  assert.equal(DONE_KEEP_MS, 7 * day);
+  assert.equal(doneKeepMs(0), 7 * day);
+  const prev = { 'acme/api#1': { status: 'commented', commentedAt: 0 } };
+  assert.equal(mergeBoard(prev, [], 3 * day, [], null, doneKeepMs(3))['acme/api#1'].status, 'commented');
+  assert.equal(mergeBoard(prev, [], 3 * day + 1, [], null, doneKeepMs(3))['acme/api#1'], undefined);
+});
+
 test('mergeBoard: 依頼が外れた Done は DONE_KEEP_MS を過ぎたら消す (作業途中は残す)', () => {
   const prev = {
     'acme/api#1': { status: 'commented', commentedAt: 0 },
@@ -56,6 +65,46 @@ test('mergeBoard: 依頼が外れた Done は DONE_KEEP_MS を過ぎたら消す
   const prs = mergeBoard(prev, [], DONE_KEEP_MS + 1);
   assert.equal(prs['acme/api#1'], undefined);
   assert.equal(prs['acme/api#2'].status, 'reviewed');
+});
+
+const myThread = (root, last, isResolved = false) => ({ isResolved, root: { nodes: [{ author: { login: root } }] }, comments: { nodes: [{ author: { login: last } }] } });
+const reviewed = (number, threads) => ({ ...node(number), reviewThreads: { nodes: threads } });
+
+test('mergeBoard: 自分の指摘に作成者が全部対応したら Done から requested に戻す', () => {
+  let prs = { 'acme/api#1': { status: 'commented', commentedAt: 0, usage: { tokens: 5 } } };
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'me'), myThread('me', 'me')])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'commented');
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice'), myThread('me', 'me')])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'commented');
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice'), myThread('me', 'me', true)])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'requested');
+  assert.equal(prs['acme/api#1'].active, false);
+  assert.deepEqual(prs['acme/api#1'].usage, { tokens: 5 });
+  // 依頼が外れたままでも、PR が開いている間は消さない
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'requested');
+  assert.equal(mergeBoard(prs, [], 0, [], 'me')['acme/api#1'], undefined);
+});
+
+test('mergeBoard: 自分の指摘が無い Done (Approve のみ・他人のスレッドだけ)・スキップは戻さない', () => {
+  const prs = { 'acme/api#1': { status: 'commented', commentedAt: 0 }, 'acme/api#2': { status: 'commented', commentedAt: 0, skipped: true } };
+  const next = mergeBoard(prs, [], 0, [reviewed(1, [myThread('bob', 'alice')]), reviewed(2, [myThread('me', 'alice')])], 'me');
+  assert.equal(next['acme/api#1'].status, 'commented');
+  assert.equal(next['acme/api#2'].status, 'commented');
+});
+
+test('mergeBoard: 戻した PR を再レビューして Done にしたら、新しい指摘が対応されるまで戻さない', () => {
+  const answered = [reviewed(1, [myThread('me', 'alice', true)])];
+  let prs = mergeBoard({ 'acme/api#1': { status: 'commented', commentedAt: 0 } }, [], 0, answered, 'me');
+  assert.equal(prs['acme/api#1'].status, 'requested');
+  // 再レビューで指摘なし (Approve) → 古いスレッドだけでは戻らない
+  prs['acme/api#1'] = { ...prs['acme/api#1'], status: 'commented', commentedAt: 0 };
+  assert.equal(mergeBoard(prs, [], 0, answered, 'me')['acme/api#1'].status, 'commented');
+  // 再レビューで新しい指摘 → 対応待ち → 対応されたら戻る
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice', true), myThread('me', 'me')])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'commented');
+  prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice', true), myThread('me', 'alice')])], 'me');
+  assert.equal(prs['acme/api#1'].status, 'requested');
 });
 
 test('boardEntry: 判断ダイアログを開けない状態では Claude の出力を送らない', () => {
@@ -380,6 +429,11 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済み
   assert.match(self, /event: COMMENT/);
   assert.match(self, /コミット SHA を含む返信/);
   assert.match(self, /<docket-applied>/);
+  // 指摘 0 件でも所感をレビュー本文として投稿させる
+  const empty = buildSelfApplyPrompt({ url: 'https://x/3' }, [], {}, '問題は見つかりませんでした');
+  assert.match(empty, /問題は見つかりませんでした/);
+  assert.match(empty, /同意が 0 件でも所感だけのレビューを投稿する/);
+  assert.doesNotMatch(empty, /同意が 0 件なら何もしない/);
 });
 
 test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として、承認済みで修正・push・返信させる', () => {
@@ -776,4 +830,13 @@ test('GitHub 取得: 一部のノードだけ権限エラー (gh は失敗で終
   } finally {
     child.kill();
   }
+});
+
+test('isTruncated: ページが上限まで埋まり、まだ続きがあるときだけ true', () => {
+  const page = (n, total) => ({ issueCount: total, nodes: Array(n).fill({}) });
+  // GitHub の検索がたまに issueCount より少ない nodes を返しても、上限未満なら出さない
+  assert.equal(isTruncated({ open: page(4, 5), merged: page(3, 3), mine: page(20, 21) }), false);
+  assert.equal(isTruncated({ open: page(100, 101), mine: page(20, 20) }), true);
+  assert.equal(isTruncated({ open: page(4, 4), mine: page(50, 51) }), true);
+  assert.equal(isTruncated({ open: page(100, 100), mine: page(50, 50) }), false);
 });

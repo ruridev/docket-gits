@@ -66,6 +66,8 @@ const DEFAULT_CONFIG = {
   disagreeIcon: '🤔💭',
   // 終わった実行のログ (.log) を残す日数。これより古いものは毎日自動で消す
   logKeepDays: 30,
+  // 依頼が外れた Done (完了) を残す日数。投稿・スキップした日から数える
+  doneKeepDays: 7,
   // 同意した「使用前の注意」の版。CONSENT_VERSION 未満なら claude を起動しない
   consentVersion: 0,
 };
@@ -81,10 +83,11 @@ const E = (code, params) => ({ code, ...(params && { params }) });
 
 // 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
 const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
-// 依頼が外れた Done は × で消さないと溜まり続け、5 秒ごとの /api/board も重くなるので、30 日で消す
-const DONE_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+// 依頼が外れた Done は × で消さないと溜まり続け、5 秒ごとの /api/board も重くなるので、設定の日数で消す
+const doneKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.doneKeepDays) * 24 * 60 * 60 * 1000;
+const DONE_KEEP_MS = doneKeepMs();
 
-const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
+const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!, $reviewed: String!) {
   viewer { login avatarUrl }
   open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...pr } }
   merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...pr } }
@@ -94,6 +97,11 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
       comments(last: 1) { nodes { author { login } body url } } } }
     comments(last: 30) { nodes { author { login } body url createdAt } }
     reviews(last: 30) { nodes { author { login } body url submittedAt } }
+  } } }
+  reviewed: search(query: $reviewed, type: ISSUE, first: 50) { nodes { ...pr ... on PullRequest {
+    reviewThreads(first: 100) { nodes { isResolved
+      root: comments(first: 1) { nodes { author { login } } }
+      comments(last: 1) { nodes { author { login } } } } }
   } } }
 }
 fragment pr on PullRequest {
@@ -116,7 +124,9 @@ function searchQueries(mergedDays, now) {
   // 日付はローカル時刻で数える (UTC だと JST の朝 9 時前は 1 日ずれる)
   const from = now - mergedDays * 24 * 60 * 60 * 1000;
   const since = new Date(from - new Date(from).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open' };
+  return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open',
+    // ponytail: 最近更新された 50 件だけ見る。古い Done は再依頼でしか戻らない
+    reviewed: 'is:pr archived:false reviewed-by:@me is:open sort:updated-desc' };
 }
 
 // GraphQL の Bot login には "[bot]" が付かないので揃えて比較する
@@ -156,8 +166,17 @@ function normalizePr(node) {
   };
 }
 
+// 自分が始めたスレッドのうち、未解決で最後の発言も自分 = 作成者の対応待ち、それ以外 = 対応済み
+function myThreadCounts(node, login) {
+  const mine = (node.reviewThreads?.nodes || []).filter((t) => t.root?.nodes[0]?.author?.login === login);
+  const waiting = mine.filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login === login).length;
+  return { waiting, answered: mine.length - waiting };
+}
+
 // GitHub の検索結果とローカル状態を突き合わせる
-function mergeBoard(prs, fetched, now) {
+// reviewed: 自分がレビューした open PR。指摘すると依頼が外れるので、指摘への対応状況はこちらで見る
+function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DONE_KEEP_MS) {
+  const reviewedByKey = new Map(reviewed.map((n) => [prKey(n), n]));
   const next = {};
   const seen = new Set();
   for (const node of fetched) {
@@ -170,12 +189,20 @@ function mergeBoard(prs, fetched, now) {
     }
     next[key] = { ...entry, pr: normalizePr(node), active: true };
   }
-  for (const [key, entry] of Object.entries(prs)) {
+  for (let [key, entry] of Object.entries(prs)) {
     if (seen.has(key)) continue;
-    // 依頼が外れた未着手 PR は消し、作業途中・完了済みは残す
-    if (entry.status === 'requested') continue;
-    if (entry.status === 'commented' && now - (entry.commentedAt || 0) > DONE_KEEP_MS) continue;
-    next[key] = { ...entry, active: false };
+    const node = reviewedByKey.get(key);
+    // 自分の指摘に作成者が全部返信・解決したら、再レビューできるよう依頼に戻す
+    // 一度戻した PR は古いスレッドで戻り続けないよう、新しい指摘が対応待ちになってからにする
+    if (entry.status === 'commented' && !entry.skipped && node) {
+      const { waiting, answered } = myThreadCounts(node, login);
+      if (waiting > 0 && !entry.awaitingAuthor) entry = { ...entry, awaitingAuthor: true };
+      if (waiting === 0 && (entry.awaitingAuthor || (!entry.reopened && answered > 0))) entry = { status: 'requested', reopened: true, ...(entry.usage && { usage: entry.usage }) };
+    }
+    // 依頼が外れた未着手 PR は消し (戻した PR は open の間だけ残す)、作業途中・完了済みは残す
+    if (entry.status === 'requested' && !(entry.reopened && node)) continue;
+    if (entry.status === 'commented' && now - (entry.commentedAt || 0) > keepMs) continue;
+    next[key] = { ...entry, ...(node && { pr: normalizePr(node) }), active: false };
   }
   return next;
 }
@@ -427,22 +454,26 @@ ${decisionLines(items, decisions)}
 - ${APPLIED_TAG}`;
 }
 
-// セルフレビューで同意した指摘は、PR に投稿 → 修正・push → 投稿した指摘へ返信、までを行う
-function buildSelfApplyPrompt(pr, findings, decisions) {
+// セルフレビューは所感を本文に同意した指摘と合わせて PR に投稿 → 修正・push → 投稿した指摘へ返信、までを行う
+// 同意 0 件でも所感は投稿し、セルフレビューした記録を PR に残す
+function buildSelfApplyPrompt(pr, findings, decisions, summary) {
   return `レビューボードでユーザーがセルフレビューの各指摘を判断しました。PR ${pr.url} について次を行ってください。これがユーザーの投稿・push の承認であり、追加の確認は不要です。
+
+## セルフレビューの所感
+${summary?.trim() || '(なし)'}
 
 ## 判断
 ${decisionLines(findings, decisions)}
 
 ## 手順
-1. 同意した指摘を、このスキルの投稿手順で PR に投稿する (Approve はしない。event: COMMENT)。理由が書かれていれば本文に反映する。
+1. 上の所感をレビュー本文 (body) にし、同意した指摘と合わせて、このスキルの投稿手順で 1 つのレビューとして PR に投稿する (Approve はしない。event: COMMENT)。理由が書かれていれば本文に反映する。同意が 0 件でも所感だけのレビューを投稿する。
 2. AGENTS.md の規約に従い対象リポジトリの clone で PR ブランチをチェックアウトし、同意した指摘ごとに修正して 1 指摘 1 コミットにする。
 3. push する (force-push はしない)。
 4. 1 で投稿した各指摘コメントに、対応したコミット SHA を含む返信をする (例: 「修正しました ( commit abc123 )」。SHA と括弧の間の半角スペースは GitHub の自動リンクのため残す)。resolve はしない。
 
 ## ルール
 - 非同意の指摘は投稿も修正もしない。
-- 同意が 0 件なら何もしない。
+- 同意が 0 件なら 1 の投稿だけ行い、修正・push・返信はしない。
 - ${GH_POST}
 - ${NO_DUPLICATE}
 - ${APPLIED_TAG}`;
@@ -676,11 +707,18 @@ function refreshFromGitHub() {
   return (refreshing ||= fetchFromGitHub().finally(() => (refreshing = null)));
 }
 
+// ponytail: ページングせず 1 ページだけ取る。上限を超えたら画面で知らせる (超えるようなら after でページングする)
+// GitHub の検索はたまに issueCount より少ない nodes を返すので、ページが上限まで埋まったときだけ見る
+const SEARCH_LIMITS = { open: 100, merged: 100, mine: 50 };
+function isTruncated(data) {
+  return Object.entries(SEARCH_LIMITS).some(([k, limit]) => data[k] && data[k].nodes.length >= limit && data[k].issueCount > limit);
+}
+
 async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
   // SAML で保護された org の PR など一部のノードだけ読めないと gh は失敗で終わる。取れた分は反映し、エラーも画面に出す
   let partialError = null;
-  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`]).catch((e) => {
+  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
     try {
       if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
     } catch {}
@@ -689,12 +727,11 @@ async function fetchFromGitHub() {
   const { data } = JSON.parse(out);
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
-  state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now());
+  state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now(), (data.reviewed?.nodes || []).filter((n) => n?.number), data.viewer.login, doneKeepMs(config.doneKeepDays));
   // 個人リポジトリなどを混ぜないよう、設定に登録したリポジトリの PR だけ扱う (未登録なら全件)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
   state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n?.number && registered(n)), data.viewer.login);
-  // ponytail: ページングせず 1 ページだけ取る。上限を超えたら画面で知らせる (超えるようなら after でページングする)
-  state.truncated = ['open', 'merged', 'mine'].some((k) => data[k] && data[k].issueCount > data[k].nodes.length);
+  state.truncated = isTruncated(data);
   state.lastFetchedAt = Date.now();
   state.fetchError = partialError;
   saveState();
@@ -719,7 +756,8 @@ const ISSUE_FIELDS = `fragment iss on Issue {
   closedByPullRequestsReferences(first: 10, includeClosedPrs: true) { nodes { number url state isDraft } }
   projectItems(first: 20) { nodes {
     project { id }
-    sprint: fieldValueByName(name: $sprint) { ... on ProjectV2ItemFieldIterationValue { iterationId } }
+    sprint: fieldValueByName(name: $sprint) { ... on ProjectV2ItemFieldIterationValue { iterationId title } }
+    status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name color } }
     start: fieldValueByName(name: $start) { ... on ProjectV2ItemFieldDateValue { date } }
     end: fieldValueByName(name: $end) { ... on ProjectV2ItemFieldDateValue { date } }
   } }
@@ -735,6 +773,9 @@ function normIssue(n, projectId) {
     // 閉じただけの PR は出さない (マージ済み・オープン・Draft だけ)
     prs: n.closedByPullRequestsReferences.nodes.filter((pr) => pr.state !== 'CLOSED'),
     sprintId: item?.sprint?.iterationId || null,
+    sprintTitle: item?.sprint?.title || null,
+    status: item?.status?.name ? item.status : null,
+    inProject: !!item,
     start: item?.start?.date || null, end: item?.end?.date || null, childIds: [],
   };
 }
@@ -1286,7 +1327,7 @@ function enqueueMine(key, mode, triage = null, provider = config.provider) {
 // decisions が無ければ PR 上のコメントを指示として対応する
 function enqueueApply(key, decisions) {
   const entry = state.mine[key];
-  const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
+  const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions, entry.summary) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     finishApply(key, await runAgent(prompt, { key, cwd: entry.cwd, provider: sessionProvider(entry), resume: entry.sessionId, logName: logName(key, 'apply') }));
@@ -1604,4 +1645,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, periodQueries, pickIterations, parseProjectUrl, detectFields, barRange, sprintTree, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
