@@ -160,6 +160,19 @@ test('canDecideAll: 全指摘に同意/非同意がないと false', () => {
   assert.equal(canDecideAll([], {}), true);
 });
 
+test('canDecideAll: 対象外は許可したときだけ判断済みになる', () => {
+  const findings = [{ no: 1 }, { no: 2 }];
+  const decisions = { 1: { verdict: 'agree' }, 2: { verdict: 'skip' } };
+  assert.equal(canDecideAll(findings, decisions), false);
+  assert.equal(canDecideAll(findings, decisions, true), true);
+});
+
+test('buildPostPrompt: 対象外の指摘は投稿しない', () => {
+  const prompt = buildPostPrompt({ url: 'https://x/1' }, [{ no: 1 }], { 1: { verdict: 'skip' } }, false, false);
+  assert.match(prompt, /- #1 対象外 \/ 理由なし/);
+  assert.match(prompt, /- 対象外: 投稿しない。/);
+});
+
 test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   const prompt = buildPostPrompt(
     { url: 'https://x/1' },
@@ -292,6 +305,16 @@ test('pendingThreads: 未解決かつ最後の発言が自分以外のスレッ�
   const n = { reviewThreads: { nodes: [thread(false, 'bob'), thread(false, 'me'), thread(true, 'bob'), { isResolved: false, comments: { nodes: [] } }] } };
   assert.equal(pendingThreads(n, 'me').length, 2);
   assert.equal(pendingThreads({}, 'me').length, 0);
+});
+
+test('pendingThreads: 返信の無い自分だけのスレッド (セルフ指摘) は数え、自分が返信したものは数えない', () => {
+  const c = (login, url) => ({ author: { login }, body: '', url });
+  const n = { reviewThreads: { nodes: [
+    { isResolved: false, root: { nodes: [c('me', 'u1')] }, comments: { nodes: [c('me', 'u1')] } },
+    { isResolved: false, root: { nodes: [c('me', 'u2')] }, comments: { nodes: [c('me', 'u3')] } },
+    { isResolved: false, root: { nodes: [c('bob', 'u4')] }, comments: { nodes: [c('me', 'u5')] } },
+  ] } };
+  assert.deepEqual(pendingThreads(n, 'me').map((t) => t.url), ['u1']);
 });
 
 test('pendingThreads: 人が判断できるよう最初の指摘と、返信が続いていれば最新の発言を持つ', () => {
@@ -505,7 +528,7 @@ test('parseProjectUrl: org / user のプロジェクト URL を解析し、そ�
 
 test('detectFields: 最初の Iteration と、名前から開始日・終了日の Date フィールドを選ぶ', () => {
   const fields = [
-    { name: 'Status', dataType: 'SINGLE_SELECT' },
+    { name: 'Status', dataType: 'SINGLE_SELECT', options: [{ name: 'Todo' }, { name: 'Done' }] },
     { name: '[必須]Sprint', dataType: 'ITERATION', configuration: { iterations: [{ id: 'b', title: 'S2', startDate: '2026-10-24', duration: 14 }], completedIterations: [{ id: 'a', title: 'S1', startDate: '2026-10-10', duration: 14 }] } },
     { name: '終了日', dataType: 'DATE' },
     { name: '開始日', dataType: 'DATE' },
@@ -514,8 +537,9 @@ test('detectFields: 最初の Iteration と、名前から開始日・終了日�
   assert.equal(f.sprint, '[必須]Sprint');
   assert.equal(f.start, '開始日');
   assert.equal(f.end, '終了日');
+  assert.deepEqual(f.statuses, ['Todo', 'Done']);
   assert.deepEqual(f.iterations.map((i) => [i.id, i.endDate, i.completed]), [['b', '2026-11-06', false], ['a', '2026-10-23', true]]);
-  assert.deepEqual(detectFields([{ name: 'Target', dataType: 'DATE' }, { name: 'Begin', dataType: 'DATE' }]), { sprint: null, start: 'Begin', end: 'Target', iterations: [] });
+  assert.deepEqual(detectFields([{ name: 'Target', dataType: 'DATE' }, { name: 'Begin', dataType: 'DATE' }]), { sprint: null, start: 'Begin', end: 'Target', iterations: [], statuses: [] });
 });
 
 test('barRange: スプリント外・未設定の日付はスプリントの開始日・終了日として扱う', () => {

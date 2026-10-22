@@ -210,9 +210,13 @@ function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DON
 // 未解決スレッドのうち最後の発言が自分以外 = まだ自分が応答していない指摘
 // 返信すると最後の発言が自分になるので、状態を持たずに「新しい指摘」を判定できる
 // AI 実行前に人が判断できるよう、最初の指摘と (返信が続いていれば) 最新の発言も持つ
+// 返信の無い自分だけのスレッド (自分の PR へのセルフ指摘) は、まだ誰も応答していないので数える
 function pendingThreads(node, login) {
   return (node.reviewThreads?.nodes || [])
-    .filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login !== login)
+    .filter((t) => {
+      const last = t.comments.nodes.at(-1);
+      return !t.isResolved && (last?.author?.login !== login || (last.url && last.url === t.root?.nodes[0]?.url));
+    })
     .map((t, i) => {
       const root = t.root?.nodes[0];
       const last = t.comments.nodes.at(-1);
@@ -355,6 +359,7 @@ ${decisionLines(findings, decisions)}
   - 区切り線 \`---\`
   - 2 段落目: 「${icon} 」で始め、レビュアー本人がこの点についてどう考えたかを伝える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 投稿しない。
+- 対象外: 投稿しない。
 - 投稿対象が 0 件で、Approve もコード確認の表明もない場合は何も投稿しない。
 - ${GH_POST}
 - ${NO_DUPLICATE}
@@ -369,7 +374,7 @@ ${decisionLines(findings, decisions)}
 function decisionLines(items, decisions) {
   return items.map((f) => {
     const d = decisions[f.no] || {};
-    const verdict = d.verdict === 'agree' ? '同意' : '非同意';
+    const verdict = { agree: '同意', skip: '対象外' }[d.verdict] || '非同意';
     const reason = d.reason?.trim() ? `理由: ${d.reason.trim()}` : '理由なし';
     const title = f.title || f.comment;
     return `- #${f.no}${title ? `「${title}」` : ''} ${verdict} / ${reason}`;
@@ -549,8 +554,10 @@ function normalizeNos(items) {
   return list.map((f, i) => ({ ...f, no: i + 1 }));
 }
 
-function canDecideAll(findings, decisions) {
-  return findings.every((f) => ['agree', 'disagree'].includes(decisions?.[f.no]?.verdict));
+// 対象外 (skip) はレビュー投稿だけで選べる
+function canDecideAll(findings, decisions, allowSkip = false) {
+  const verdicts = allowSkip ? ['agree', 'disagree', 'skip'] : ['agree', 'disagree'];
+  return findings.every((f) => verdicts.includes(decisions?.[f.no]?.verdict));
 }
 
 // ---------- スプリント (GitHub Projects) ----------
@@ -563,6 +570,7 @@ function parseProjectUrl(url) {
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
 // 最初の Iteration フィールドをスプリント、名前で開始日・終了日の Date フィールドを選ぶ (見つからなければ Date フィールドの 1・2 個目)
+// statuses: Status フィールドの選択肢 (プロジェクトでの並び順)
 function detectFields(fields) {
   const iter = fields.find((f) => f.dataType === 'ITERATION');
   const dates = fields.filter((f) => f.dataType === 'DATE').map((f) => f.name);
@@ -570,7 +578,8 @@ function detectFields(fields) {
   const end = dates.find((n) => /終了|end|due|target|deadline/i.test(n)) || dates.find((n) => n !== start) || null;
   const toIter = (completed) => (i) => ({ id: i.id, title: i.title, startDate: i.startDate, endDate: addDays(i.startDate, i.duration - 1), completed });
   const iterations = iter ? [...iter.configuration.iterations.map(toIter(false)), ...iter.configuration.completedIterations.map(toIter(true))] : [];
-  return { sprint: iter?.name || null, start, end, iterations };
+  const statuses = (fields.find((f) => f.name === 'Status')?.options || []).map((o) => o.name);
+  return { sprint: iter?.name || null, start, end, iterations, statuses };
 }
 
 // 現在のスプリントと、過去 past 個・未来 future 個 (issue があるものだけ) に絞り、新しい順に並べる
@@ -805,6 +814,7 @@ async function projectMeta(url, refresh) {
     const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title url fields(first: 50) { nodes {
       ... on ProjectV2FieldCommon { name dataType }
       ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
+      ... on ProjectV2SingleSelectField { options { name } }
     } } } } }`, { login: p.login, number: p.number });
     const project = data[p.owner].projectV2;
     const fields = detectFields(project.fields.nodes);
@@ -1571,7 +1581,7 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/post') {
     if (entry.status !== 'reviewed' || !entry.findings || !entry.sessionId) return send(res, 409, { error: E('cannotPost') });
-    if (!canDecideAll(entry.findings, body.decisions)) return send(res, 400, { error: E('undecided') });
+    if (!canDecideAll(entry.findings, body.decisions, true)) return send(res, 400, { error: E('undecided') });
     enqueuePost(body.key, body.decisions, !!body.approve, !!body.humanRead);
     return send(res, 200, { ok: true });
   }

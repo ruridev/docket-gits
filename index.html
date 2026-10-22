@@ -74,7 +74,7 @@
   .board-bar { display: flex; gap: 6px; align-items: flex-end; padding: 12px 16px 0; }
   .board-bar > * { white-space: nowrap; flex-shrink: 0; }
   /* フィルタ枠の右に並ぶものは枠内の選択欄の下端にそろえる (枠の padding + border 分上げる) */
-  .board-bar > :not(.sp-people), .sp-right { margin-bottom: 9px; }
+  .board-bar > :not(.sp-people), .sp-row > :not(.sp-people) { margin-bottom: 9px; }
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 8px 16px 16px; overflow-x: auto; }
   /* ボードは画面の残りの高さでスクロールさせ、ヘッダ・フィルタ・レーン見出しを固定する */
   body:has(#board:not([hidden])), body:has(#sprint:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
@@ -236,7 +236,7 @@
   #sprint { padding: 12px 16px; }
   .sp-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
   .sp-tags button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  .sp-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+  .sp-row { display: flex; gap: 6px; align-items: flex-end; margin-bottom: 8px; }
   /* 表示方法の切り替えはボタンをくっつけて 1 つの部品に見せる */
   .seg { display: inline-flex; }
   .seg button:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
@@ -245,6 +245,13 @@
   .sp-people { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
   .sp-people .avatar { width: 28px; height: 28px; cursor: pointer; border: 2px solid transparent; opacity: .3; }
   .sp-people .avatar.on { border-color: var(--accent); opacity: 1; }
+  /* フィルタ枠は既定で畳み、ボタンを押すとボタンの右にドロップダウンとして重ねて出す (下のレイアウトは動かさない) */
+  body:not(.filters-open) .sp-people { display: none; }
+  .filter-wrap { position: relative; flex: none; }
+  .filter-wrap .sp-people { position: absolute; z-index: 25; top: 0; left: calc(100% + 6px); width: max-content; max-width: calc(100vw - 120px); box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
+  .filter-toggle::before { content: ''; display: inline-block; width: 14px; height: 14px; vertical-align: -2px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 2h14l-5.5 6.5V14l-3-1.5V8.5Z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .filter-toggle::after { content: ' ▸'; }
+  body.filters-open .filter-toggle::after { content: ' ▾'; }
   .sp-people label { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border); display: flex; align-items: center; gap: 4px; }
   /* 複数選択のドロップダウン (multiSelect) */
   .ms { position: relative; }
@@ -313,7 +320,7 @@
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
     .board-bar, header, .sp-row { flex-wrap: wrap; }
-    .board-bar > *, .sp-right { margin-bottom: 0; }
+    .board-bar > *, .sp-row > * { margin-bottom: 0; }
     .board { grid-auto-columns: 85vw; }
     .form-row { grid-template-columns: 1fr; }
     .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -330,7 +337,7 @@
 </header>
 <div id="banner"></div>
 <div class="board-bar" id="board-bar">
-  <div id="repo-filter" class="sp-people" hidden></div>
+  <div class="filter-wrap" hidden><button id="filter-toggle" class="filter-toggle" data-i18n-title="filter"></button><div id="repo-filter" class="sp-people"></div></div>
   <button id="stack-order" data-i18n="stackOrder" data-i18n-title="stackOrder.title"></button>
   <button id="edit-lanes" data-i18n="editLanes"></button>
   <button id="card-display" data-i18n="cardDisplay"></button>
@@ -404,7 +411,7 @@ const I18N = {
     'home.left': '残りのレビュー依頼', 'home.decide': '判断待ち', 'home.comments': '未対応の指摘', 'home.cost': 'AI の費用', 'home.byRepo': 'リポジトリ別の残りのレビュー依頼', 'home.usage': 'AI の使用量', 'home.usageNote': 'ボードに残っている PR の分だけを合計します', 'home.open': '開く →', 'home.total': '全 {n} 件',
     'tab.review': 'レビューする', 'tab.receive': 'レビューを受ける', 'tab.roadmap': 'ロードマップ', settings: '設定',
     'stackOrder': 'スタック順', 'stackOrder.title': '同じレーン内で スタックの親 → 子 → 孫 の順に並べる (もう一度押すと更新順に戻る)',
-    editLanes: 'レーン編集', cardDisplay: '表示設定', 'cd.branch': 'ブランチ名', 'cd.issue': 'issue 名', 'cd.stack': 'スタック PR', 'cd.updated': 'PR 更新日時', 'cd.applied': '対応日時', 'cd.usage': 'トークン使用量', 'cd.reviewers': 'レビュワー画像', 'cd.author': 'PR 作成者画像 (「レビューを受ける」では常に非表示)', 'cd.status': 'issue の Status', 'cd.sprint': 'issue のスプリント', 'cd.prs': 'issue に紐づく PR', 'cd.copy': '「{view}」にも同じ表示設定を適用しますか？', 'cd.yes': 'はい', 'cd.no': 'いいえ', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'AI の出力',
+    editLanes: 'レーン編集', cardDisplay: '表示設定', filter: 'フィルタ', 'cd.branch': 'ブランチ名', 'cd.issue': 'issue 名', 'cd.stack': 'スタック PR', 'cd.updated': 'PR 更新日時', 'cd.applied': '対応日時', 'cd.usage': 'トークン使用量', 'cd.reviewers': 'レビュワー画像', 'cd.author': 'PR 作成者画像 (「レビューを受ける」では常に非表示)', 'cd.status': 'issue の Status', 'cd.sprint': 'issue のスプリント', 'cd.prs': 'issue に紐づく PR', 'cd.copy': '「{view}」にも同じ表示設定を適用しますか？', 'cd.yes': 'はい', 'cd.no': 'いいえ', cancel: 'キャンセル', close: '閉じる', claudeOutput: 'AI の出力',
     'about.html': '<h2>Docket について</h2><p class="lead">AI エージェントと一緒にコードをレビューし、受けた指摘を直す。それを 1 つの画面で。ただし、最後に判断するのはいつも人間です。</p><h3>AI は速い。だからこそ気をつけたい</h3><p>AI エージェントでコードを書き、レビューすることはすでに日常になり、生産性は驚くほど上がりました。AI の進化の速さを考えると、この流れはこれからさらに加速していくはずです。</p><p>ただ、便利になるほど気になることが 1 つあります。人が少しずつ怠けてしまうことです。「AI がうまくやってくれただろう」と中身を見ずに Approve を押すようになると、作っているサービスが本当に望んだものになっているのか、だんだん誰にも分からなくなっていきます。</p><p>コーディングスタイルのようなことは、もう AI に任せて構いません。大事なのは<b>自分の意図がコードにきちんと込められているか</b>です。それが抜けていれば、AI でどれだけ早く完成させても意味がありません。</p><blockquote>仕事は AI に任せられても、責任までは任せられない。コードと成果物の最終的な責任は人間にある。</blockquote><h3>人と AI が一緒にレビューしたことを、当たり前に保証する</h3><p>そこで Docket では、AI に仕事を渡すところに、あえて人が判断するステップを入れています。</p><div class="about-flow"><b>🔍 レビューする側</b><span>🤖 AI が一次レビュー</span><i>→</i><span class="human">👤 コードを読み、指摘ごとに同意 / 非同意 (+意見)</span><i>→</i><span>💬 PR に投稿</span></div><div class="about-flow"><b>✍️ レビューを受ける側</b><span>💬 指摘を受ける</span><i>→</i><span class="human">👤 指摘の妥当性に同意 / 非同意 (+ 理由) / 対象外</span><i>→</i><span>🤖 AI が修正方針・反論を提案</span><i>→</i><span class="human">👤 方針と反論に同意 / 非同意</span><i>→</i><span>🤖 AI が修正を反映</span></div><ul><li><b>レビューする側</b>: 一次レビューは AI に任せます。ただし投稿の前に「コードを読みました」のチェックボックスで、人が一度は自分でコードを読むようにしています。AI の指摘を採用するかどうかも 1 件ずつ人が「同意 / 非同意」で決め、必要なら自分の意見を添えます。</li><li><b>レビューを受ける側</b>: 受けた指摘を直す手間は AI に任せます。ただし、AI の方針に引きずられないよう、その指摘がそもそも妥当かは AI を動かす前に人が判断します。AI はその判断に沿って修正方針を出し、人の判断が誤りだと考えれば反論します。最後にどうするかを決めるのも人です。</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>こうすることで、レビューする側もされる側も、相手のコメントの裏に人の判断があると分かります。だからお互いの意見を、より安心して信頼できるようになります。</p><h3>疲れないために: 画面設計の原則</h3><p>AI エージェントのおかげでレビューも修正も楽になりました。それでも、その周りの細かな作業がかえって疲れを溜めていました。Docket の画面は、その疲れを減らすことを目指しています。</p><ul><li><b>ブラウザのタブを無限に開かない</b>: レビュー依頼・自分の PR・スプリントを 1 つの画面で見られます。GitHub のリンクもいつも同じ 1 つのタブで開きます。</li><li><b>ツールを行き来しない</b>: ブラウザで PR を見て、ターミナルに移って Claude に skill の実行を指示して、また戻って……という往復を、ボタン 1 つにまとめました。</li><li><b>新しい情報を探しに行かない</b>: GitHub Notifications を定期的に確認しなくても、新しいレビュー依頼や指摘がボードに自動で入ってきます。</li></ul><div data-shot="review"></div><blockquote>スピードは AI に。判断と責任は人間に。</blockquote>',
     'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (docket-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
     'tips.lanes': '<summary>レーンの見方</summary><p><b>レビューする</b> タブ (他の人の PR)</p><ul><li>レビュー依頼: 自分にレビューが依頼された PR。「レビューする」で Claude のレビューを始めます。</li><li>レビュー中: Claude がレビュー中、または順番待ち。</li><li>レビュー済み: 指摘が出て、自分の判断を待っています。カードを開いて確認してください。</li><li>完了: PR に投稿した、またはスキップしたもの。自分の指摘に作成者が全部返信・解決すると、再レビューできるようレビュー依頼に戻ります。</li></ul><p><b>レビューを受ける</b> タブ (自分の PR)</p><ul><li>下書き: Draft の PR。</li><li>レビュー待ち: レビューを待っている PR。</li><li>指摘あり: 未解決スレッドのうち、最後の発言が自分でないものがある PR (対象外にしたものは、新しい発言が付くまで除きます)。</li><li>実行中: セルフレビューや指摘対応が進行中。</li><li>判断待ち: セルフレビューの指摘や対応計画が出て、自分の判断を待っています。</li><li>マージ可能 / 完了: 自分で移すレーンです。カードをドラッグしてレビュー待ち ↔ マージ可能 ↔ 完了 の間を移せます。</li></ul>', 'tips.review': '<summary>指摘を判断して投稿する</summary><ol><li>カードを開くと指摘が 1 件ずつ並びます。それぞれ「同意」か「同意しない」を選び、必要ならメモを書きます。</li><li>レビューするタブ: 同意した指摘だけが PR にコメントとして投稿されます。同意しない指摘も理由を書けば <span data-disagree-icon>🤔💭</span> 付きで投稿されます。Approve するかもここで選びます。</li><li>レビューを受けるタブ: セルフレビューは同意した指摘を投稿し、修正・push・返信まで進めます。「指摘に対応」は AI を動かす前に、まず各指摘に「同意 / 非同意 (理由必須) / 対象外」を選びます (下の図)。AI は同意した指摘の対応計画と、非同意の指摘への反論か返信案を返すので、それを見てもう一度判断すると、修正・push・返信します。</li><li>「コードを読みました」は AI のレビューをそのまま出さないためのチェックです。自分でコードを読んでからチェックしてください。</li></ol><p class="muted">選んだ内容はブラウザに保存されるので、閉じて開き直しても残っています。投稿・Approve・再レビューなどのボタンは誤操作防止のため 2 回押すと実行されます。</p>', 'tips.buttons': '<summary>ボード上部のボタン</summary><ul><li>スタック順: 同じレーンの中でスタック PR を 親 → 子 → 孫 の順に並べます。もう一度押すと更新順に戻ります。</li><li>Approve 済み: 押すたびに すべて → のみ → 除外 と切り替わります。</li><li>レーン編集: レーンをドラッグして順番を変えたり、名前を変えたりできます。「保存」を押すと反映されます。</li><li>カード表示: カードに出す項目 (ブランチ名、issue、スタック、トークン使用量、レビュアー画像など) を選びます。</li><li>右端の更新ボタン: GitHub からすぐに取り直します。</li></ul>', 'tips.roadmap': '<summary>ロードマップ画面</summary><ul><li>設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を入れると、issue の予定がバーで表示されます。</li><li>スプリント別はプロジェクトの Iteration (スプリント) ごと、期間別は 1 週間 / 1 か月ごとに開始日・終了日で表示します。</li><li>「親 issue の担当者で絞る」をオンにすると、担当者の絞り込みを最上位 issue の担当者で行います。</li><li>データは 24 時間キャッシュされます。すぐに最新を見たいときは取り直しボタンを押してください。</li></ul>', 'tips.settings': '<summary>設定のコツ</summary><ul><li>リポジトリとスキルの対応の引数テンプレートでは {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name} が使えます。</li><li>GitHub 自動取得の時間帯の外では自動で取得しません。更新ボタンで手動取得はいつでもできます。</li><li>同時実行数を超えたレビューは「待機中」として順番に実行されます。</li><li>各設定画面の「すべて既定に戻す」で初期状態に戻せます。</li></ul>', 'tips.cost': '<summary>トークン使用量とログ</summary><ul><li>カードのトークン使用量は、その PR で使ったトークン (キャッシュ含む) と費用の累計です。「カード表示」でオン / オフできます。</li><li>実行中のカードの「ログ」で Claude の出力を見られます。</li><li>終わった実行のログは設定の「ログ保持日数」だけ残り、毎日自動で削除されます。設定画面からすぐに削除することもできます。</li></ul>',
@@ -469,7 +476,7 @@ const I18N = {
     'sp.emptyPeriod': 'この期間に開始日・終了日が入った issue はありません。', 'sp.emptySprint': 'このスプリントの issue はありません。',
     loading: '読み込み中…', 'sp.openAll': '▸ すべて開く', 'sp.foldAll': '▾ すべて畳む',
     'sp.noProject': '[Project なし]', 'sp.project': 'プロジェクト', 'sp.view': '表示', 'sp.period': '期間', 'sp.sprint': 'スプリント',
-    'sp.refetchTitle': 'キャッシュ (24 時間) を使わず GitHub から取り直す', 'sp.assignee': '担当者', 'sp.rootOnly': '親 issue の担当者で絞る',
+    'sp.refetchTitle': 'キャッシュ (24 時間) を使わず GitHub から取り直す', 'sp.assignee': '担当者', 'sp.rootOnly': '親 issue の担当者で絞る', 'sp.openOnly': '進行中のみ', 'sp.status': 'Status',
     'sp.barSet': '(設定: {start} – {end})', 'sp.unsetDate': '未設定', 'sp.noDates': '(日付未設定)',
     'period.week': '{date} からの週', 'period.2week': '{date} からの 2 週間',
     noOutputYet: 'まだ出力がありません', runEnded: '実行は終了しました',
@@ -501,7 +508,7 @@ const I18N = {
     'home.left': '남은 리뷰 요청', 'home.decide': '결정 대기', 'home.comments': '미대응 코멘트', 'home.cost': 'AI 비용', 'home.byRepo': '리포지토리별 남은 리뷰 요청', 'home.usage': 'AI 사용량', 'home.usageNote': '보드에 남아 있는 PR 분만 합산합니다', 'home.open': '열기 →', 'home.total': '전체 {n}건',
     'tab.review': '리뷰하기', 'tab.receive': '리뷰 받기', 'tab.roadmap': '로드맵', settings: '설정',
     'stackOrder': '스택 순', 'stackOrder.title': '같은 레인 안에서 스택의 부모 → 자식 → 손자 순으로 정렬 (다시 누르면 업데이트 순으로 돌아감)',
-    editLanes: '레인 편집', cardDisplay: '표시 설정', 'cd.branch': '브랜치명', 'cd.issue': 'issue 이름', 'cd.stack': '스택 PR', 'cd.updated': 'PR 업데이트 일시', 'cd.applied': '반영 일시', 'cd.usage': '토큰 사용량', 'cd.reviewers': '리뷰어 이미지', 'cd.author': 'PR 작성자 이미지 (\'리뷰 받기\'에서는 항상 숨김)', 'cd.status': 'issue의 Status', 'cd.sprint': 'issue의 스프린트', 'cd.prs': 'issue에 연결된 PR', 'cd.copy': '\'{view}\'에도 같은 표시 설정을 적용할까요?', 'cd.yes': '예', 'cd.no': '아니오', cancel: '취소', close: '닫기', claudeOutput: 'AI 출력',
+    editLanes: '레인 편집', cardDisplay: '표시 설정', filter: '필터', 'cd.branch': '브랜치명', 'cd.issue': 'issue 이름', 'cd.stack': '스택 PR', 'cd.updated': 'PR 업데이트 일시', 'cd.applied': '반영 일시', 'cd.usage': '토큰 사용량', 'cd.reviewers': '리뷰어 이미지', 'cd.author': 'PR 작성자 이미지 (\'리뷰 받기\'에서는 항상 숨김)', 'cd.status': 'issue의 Status', 'cd.sprint': 'issue의 스프린트', 'cd.prs': 'issue에 연결된 PR', 'cd.copy': '\'{view}\'에도 같은 표시 설정을 적용할까요?', 'cd.yes': '예', 'cd.no': '아니오', cancel: '취소', close: '닫기', claudeOutput: 'AI 출력',
     'about.html': '<h2>Docket에 대하여</h2><p class="lead">AI 에이전트와 함께 코드를 리뷰하고, 받은 지적을 고치는 일을 한 화면에서. 단, 마지막 판단은 언제나 사람이 합니다.</p><h3>AI는 빠르다. 그래서 더 조심해야 한다</h3><p>AI 에이전트로 코드를 쓰고 리뷰하는 일은 이미 일상이 되었고, 생산성은 놀라울 만큼 올라갔습니다. AI의 발전 속도를 생각하면 이 흐름은 앞으로 더 빨라질 것입니다.</p><p>하지만 편해질수록 마음에 걸리는 것이 하나 있습니다. 사람이 조금씩 게을러진다는 것입니다. "AI가 알아서 잘 했겠지" 하는 마음으로 내용을 보지 않고 Approve를 누르기 시작하면, 지금 만들고 있는 서비스가 정말 원하던 모습인지 점점 아무도 확신할 수 없게 됩니다.</p><p>코딩 스타일 같은 것은 이제 AI에게 맡겨도 괜찮습니다. 중요한 것은 <b>내가 의도한 것이 코드에 제대로 담겨 있는가</b>입니다. 그것이 빠져 있다면 AI로 아무리 빨리 완성했어도 의미가 없습니다.</p><blockquote>일은 AI에게 맡길 수 있어도, 책임까지 맡길 수는 없다. 코드와 결과물에 대한 최종 책임은 사람에게 있다.</blockquote><h3>사람과 AI가 함께 리뷰했다는 것을, 기본으로 보장하기</h3><p>그래서 Docket은 AI에게 일을 넘기는 곳마다, 일부러 사람이 판단하는 단계를 넣었습니다.</p><div class="about-flow"><b>🔍 리뷰하는 쪽</b><span>🤖 AI가 1차 리뷰</span><i>→</i><span class="human">👤 코드를 읽고, 지적마다 동의 / 동의 안 함 (+의견)</span><i>→</i><span>💬 PR에 게시</span></div><div class="about-flow"><b>✍️ 리뷰받는 쪽</b><span>💬 지적을 받음</span><i>→</i><span class="human">👤 지적의 타당성에 동의 / 동의 안 함 (+ 이유) / 대상 아님</span><i>→</i><span>🤖 AI가 수정 방침·반론 제안</span><i>→</i><span class="human">👤 방침과 반론에 동의 / 동의 안 함</span><i>→</i><span>🤖 AI가 수정 반영</span></div><ul><li><b>리뷰하는 쪽</b>: 1차 리뷰는 AI에게 맡깁니다. 하지만 게시하기 전에 「코드를 읽었습니다」 체크박스로, 사람이 코드를 한 번은 직접 읽도록 했습니다. AI의 지적을 채택할지도 하나하나 사람이 「동의 / 동의 안 함」으로 정하고, 필요하면 자기 의견을 덧붙입니다.</li><li><b>리뷰받는 쪽</b>: 받은 지적을 고치는 수고는 AI에게 맡깁니다. 하지만 AI의 방침에 끌려가지 않도록, 그 지적이 애초에 타당한지는 AI를 돌리기 전에 사람이 먼저 판단합니다. AI는 그 판단에 따라 수정 방침을 내고, 사람의 판단이 틀렸다고 보면 반론합니다. 마지막에 어떻게 할지 정하는 것도 사람입니다.</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>이렇게 하면 리뷰하는 쪽도, 리뷰받는 쪽도 상대의 코멘트 뒤에 사람의 판단이 있다는 것을 알 수 있습니다. 그래서 서로의 의견을 더 안심하고 신뢰할 수 있게 됩니다.</p><h3>피곤하지 않게: 화면 설계의 원칙</h3><p>AI 에이전트 덕분에 리뷰도 수정도 편해졌습니다. 그런데도 그 주변의 자잘한 일들이 오히려 피로를 쌓고 있었습니다. Docket의 화면은 그 피로를 줄이는 것을 목표로 합니다.</p><ul><li><b>브라우저 탭을 끝없이 열지 않는다</b>: 리뷰 요청, 내 PR, 스프린트를 한 화면에서 봅니다. GitHub 링크도 항상 같은 탭 하나에서 열립니다.</li><li><b>도구 사이를 오가지 않는다</b>: 브라우저에서 PR을 보고, 터미널로 가서 Claude에게 skill 실행을 지시하고, 다시 돌아오는… 그 왕복을 버튼 하나로 줄였습니다.</li><li><b>새 소식을 찾으러 가지 않는다</b>: GitHub Notifications를 주기적으로 확인하지 않아도, 새 리뷰 요청과 지적이 보드에 알아서 들어옵니다.</li></ul><div data-shot="review"></div><blockquote>속도는 AI에게. 판단과 책임은 사람에게.</blockquote>',
     'tips.html': '<summary>GitHub 페이지를 오른쪽에 고정해서 열기</summary><p>보드 안의 PR / Issue 링크는 모두 같은 탭 하나(docket-viewer)에서 열립니다. 여러 번 클릭해도 탭이 늘어나지 않습니다.</p><ol><li>보드 안의 링크를 하나 클릭해서 GitHub 탭을 엽니다.</li><li>브라우저의 분할 화면(Chrome 분할 보기, Edge 분할 화면, Arc Split View 등)으로 보드를 왼쪽, 열린 GitHub 탭을 오른쪽에 둡니다.</li><li>이후로는 링크를 클릭할 때마다 오른쪽 화면만 바뀝니다.</li></ol><p class="muted">이 보드보다 먼저 연 GitHub 탭은 재사용되지 않습니다. 오른쪽 탭을 닫았다면 다음 클릭 때 새로 열리므로 2단계부터 다시 하세요.</p>',
     'tips.lanes': '<summary>레인 보는 법</summary><p><b>리뷰하기</b> 탭 (다른 사람의 PR)</p><ul><li>리뷰 요청: 나에게 리뷰가 요청된 PR. 「리뷰하기」로 Claude 리뷰를 시작합니다.</li><li>리뷰 중: Claude가 리뷰하고 있거나 차례를 기다리는 중.</li><li>리뷰 완료: 리뷰 의견이 나와서 내 결정을 기다리는 중. 카드를 열어 검토하세요.</li><li>완료: PR에 게시했거나 건너뛴 것. 내 코멘트에 작성자가 모두 답글을 달거나 resolve하면, 다시 리뷰할 수 있게 리뷰 요청으로 돌아옵니다.</li></ul><p><b>리뷰 받기</b> 탭 (내 PR)</p><ul><li>드래프트: Draft 상태의 PR.</li><li>리뷰 대기: 리뷰를 기다리는 PR.</li><li>코멘트 있음: 해결되지 않은 스레드 중 마지막 발언이 내가 아닌 것이 있는 PR (대상 아님으로 둔 것은 새 발언이 달릴 때까지 제외).</li><li>실행 중: 셀프 리뷰나 코멘트 반영이 진행 중.</li><li>결정 대기: 셀프 리뷰 의견이나 반영 계획이 나와서 내 결정을 기다리는 중.</li><li>머지 가능 / 완료: 직접 옮기는 레인입니다. 카드를 끌어서 리뷰 대기 ↔ 머지 가능 ↔ 완료 사이를 옮길 수 있습니다.</li></ul>', 'tips.review': '<summary>리뷰 의견 결정하고 게시하기</summary><ol><li>카드를 열면 리뷰 의견이 하나씩 나옵니다. 각각 「동의」 또는 「동의 안 함」을 고르고, 필요하면 메모를 남깁니다.</li><li>리뷰하기 탭: 동의한 의견만 PR에 코멘트로 게시됩니다. 동의하지 않은 의견도 이유를 쓰면 <span data-disagree-icon>🤔💭</span>와 함께 게시됩니다. Approve할지도 여기서 고릅니다.</li><li>리뷰 받기 탭: 셀프 리뷰는 동의한 의견을 게시하고 수정·push·답글까지 진행합니다. 「코멘트 반영」은 AI를 돌리기 전에 먼저 각 코멘트에 「동의 / 동의 안 함 (이유 필수) / 대상 아님」을 고릅니다 (아래 그림). AI가 동의한 코멘트의 반영 계획과 동의하지 않은 코멘트에 대한 반론이나 답글 초안을 돌려주면, 그것을 보고 한 번 더 결정한 뒤 수정·push·답글을 진행합니다.</li><li>「코드를 읽었습니다」는 AI 리뷰를 그대로 내보내지 않기 위한 체크입니다. 직접 코드를 읽은 뒤 체크하세요.</li></ol><p class="muted">고른 내용은 브라우저에 저장되므로 창을 닫았다가 다시 열어도 남아 있습니다. 게시·Approve·다시 리뷰 같은 버튼은 실수 방지를 위해 두 번 눌러야 실행됩니다.</p>', 'tips.buttons': '<summary>보드 위쪽 버튼</summary><ul><li>스택 순: 같은 레인 안에서 스택 PR을 부모 → 자식 → 손자 순으로 정렬합니다. 다시 누르면 업데이트 순으로 돌아갑니다.</li><li>Approve 완료: 누를 때마다 전체 → 만 보기 → 제외 순으로 바뀝니다.</li><li>레인 편집: 레인을 끌어서 순서를 바꾸거나 이름을 바꿀 수 있습니다. 「저장」을 눌러야 반영됩니다.</li><li>표시 설정: 카드에 보여 줄 항목(브랜치명, issue, 스택, 토큰 사용량, 리뷰어 이미지 등)을 고릅니다.</li><li>오른쪽 끝 새로고침 버튼: GitHub에서 바로 다시 가져옵니다.</li></ul>', 'tips.roadmap': '<summary>로드맵 화면</summary><ul><li>설정의 「로드맵 화면의 GitHub Projects」에 프로젝트 URL을 넣으면 issue 일정이 막대로 나옵니다.</li><li>스프린트별은 프로젝트의 Iteration(스프린트)마다, 기간별은 1주 / 1개월 단위로 시작일·종료일 기준으로 보여 줍니다.</li><li>「부모 issue 담당자로 필터」를 켜면 담당자 필터를 최상위 issue의 담당자 기준으로 적용합니다.</li><li>데이터는 24시간 캐시됩니다. 바로 최신으로 보려면 다시 가져오기 버튼을 누르세요.</li></ul>', 'tips.settings': '<summary>설정 요령</summary><ul><li>저장소와 스킬 매핑의 인자 템플릿에는 {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}를 쓸 수 있습니다.</li><li>GitHub 자동 가져오기 시간대 밖에서는 자동으로 가져오지 않습니다. 새로고침 버튼으로 직접 가져오는 건 언제든 됩니다.</li><li>동시 실행 수를 넘는 리뷰는 「대기 중」으로 줄을 서서 차례로 실행됩니다.</li><li>각 설정 화면의 「모두 기본값으로 되돌리기」로 처음 상태로 돌릴 수 있습니다.</li></ul>', 'tips.cost': '<summary>토큰 사용량과 로그</summary><ul><li>카드의 토큰 사용량은 그 PR에서 쓴 토큰(캐시 포함)과 비용의 누계입니다. 「표시 설정」에서 켜고 끌 수 있습니다.</li><li>실행 중인 카드의 「로그」로 Claude 출력을 볼 수 있습니다.</li><li>끝난 실행의 로그는 설정의 「로그 보관 일수」만큼 남고 매일 자동으로 지워집니다. 설정 화면에서 바로 지울 수도 있습니다.</li></ul>',
@@ -565,7 +572,7 @@ const I18N = {
     'sp.emptyPeriod': '이 기간에 시작일·종료일이 들어간 issue가 없습니다.', 'sp.emptySprint': '이 스프린트의 issue가 없습니다.',
     loading: '불러오는 중…', 'sp.openAll': '▸ 모두 펼치기', 'sp.foldAll': '▾ 모두 접기',
     'sp.noProject': '[Project 없음]', 'sp.project': '프로젝트', 'sp.view': '표시', 'sp.period': '기간', 'sp.sprint': '스프린트',
-    'sp.refetchTitle': '캐시(24시간)를 쓰지 않고 GitHub에서 다시 가져오기', 'sp.assignee': '담당자', 'sp.rootOnly': '부모 issue 담당자로 필터',
+    'sp.refetchTitle': '캐시(24시간)를 쓰지 않고 GitHub에서 다시 가져오기', 'sp.assignee': '담당자', 'sp.rootOnly': '부모 issue 담당자로 필터', 'sp.openOnly': '진행 중만', 'sp.status': 'Status',
     'sp.barSet': '(설정: {start} – {end})', 'sp.unsetDate': '미설정', 'sp.noDates': '(날짜 미설정)',
     'period.week': '{date}부터 1주', 'period.2week': '{date}부터 2주',
     noOutputYet: '아직 출력이 없습니다', runEnded: '실행이 끝났습니다',
@@ -597,7 +604,7 @@ const I18N = {
     'home.left': 'Review requests left', 'home.decide': 'Needs decision', 'home.comments': 'Unanswered comments', 'home.cost': 'AI cost', 'home.byRepo': 'Review requests left by repository', 'home.usage': 'AI usage', 'home.usageNote': 'Totals only the PRs still on the board', 'home.open': 'Open →', 'home.total': '{n} total',
     'tab.review': 'Review', 'tab.receive': 'Get reviewed', 'tab.roadmap': 'Roadmap', settings: 'Settings',
     'stackOrder': 'Stack order', 'stackOrder.title': 'Sort cards in each lane by stack: parent → child → grandchild (click again to sort by last update)',
-    editLanes: 'Edit lanes', cardDisplay: 'Display', 'cd.branch': 'Branch name', 'cd.issue': 'Issue title', 'cd.stack': 'Stacked PRs', 'cd.updated': 'PR updated time', 'cd.applied': 'Addressed time', 'cd.usage': 'Token usage', 'cd.reviewers': 'Reviewer avatars', 'cd.author': 'PR author avatar (always hidden in "Get reviewed")', 'cd.status': 'Issue status', 'cd.sprint': 'Issue sprint', 'cd.prs': 'PRs linked to issues', 'cd.copy': 'Apply the same display settings to "{view}" too?', 'cd.yes': 'Yes', 'cd.no': 'No', cancel: 'Cancel', close: 'Close', claudeOutput: 'AI output',
+    editLanes: 'Edit lanes', cardDisplay: 'Display', filter: 'Filter', 'cd.branch': 'Branch name', 'cd.issue': 'Issue title', 'cd.stack': 'Stacked PRs', 'cd.updated': 'PR updated time', 'cd.applied': 'Addressed time', 'cd.usage': 'Token usage', 'cd.reviewers': 'Reviewer avatars', 'cd.author': 'PR author avatar (always hidden in "Get reviewed")', 'cd.status': 'Issue status', 'cd.sprint': 'Issue sprint', 'cd.prs': 'PRs linked to issues', 'cd.copy': 'Apply the same display settings to "{view}" too?', 'cd.yes': 'Yes', 'cd.no': 'No', cancel: 'Cancel', close: 'Close', claudeOutput: 'AI output',
     'about.html': '<h2>About Docket</h2><p class="lead">Review code with AI agents and fix the feedback you get, all on one screen. But the final call always belongs to a human.</p><h3>AI is fast. That’s exactly why we need to be careful</h3><p>Writing and reviewing code with AI agents is already part of everyday work, and productivity has gone up dramatically. Given how fast AI is improving, this will only speed up.</p><p>But the more convenient it gets, the more one thing worries me: people slowly getting complacent. Once we start hitting Approve without reading, thinking “the AI probably got it right,” it gets harder and harder for anyone to say whether the service we are building is really what we wanted.</p><p>Things like coding style can be left to AI now. What matters is <b>whether what I intended actually made it into the code</b>. If it didn’t, it doesn’t matter how fast AI helped us finish.</p><blockquote>You can hand work to AI, but not responsibility. The final responsibility for the code and what it produces stays with people.</blockquote><h3>Making “reviewed by a human and AI together” the default</h3><p>So wherever Docket hands work to AI, it deliberately puts a human decision in the loop.</p><div class="about-flow"><b>🔍 Reviewing</b><span>🤖 AI does the first review</span><i>→</i><span class="human">👤 Read the code, Agree / Disagree on each finding (+ comment)</span><i>→</i><span>💬 Post to the PR</span></div><div class="about-flow"><b>✍️ Being reviewed</b><span>💬 Receive feedback</span><i>→</i><span class="human">👤 Agree / Disagree (+ reason) / Skip on each comment</span><i>→</i><span>🤖 AI proposes a fix plan or pushes back</span><i>→</i><span class="human">👤 Agree / Disagree on the plan and pushback</span><i>→</i><span>🤖 AI applies the fix</span></div><ul><li><b>Reviewing</b>: AI does the first pass. But before anything is posted, an “I read the code” checkbox asks you to read the code yourself at least once. You also decide on each AI finding with “Agree / Disagree”, adding your own comment when needed.</li><li><b>Being reviewed</b>: AI takes on the work of fixing the feedback you received. But so you aren’t swayed by the AI’s take, you decide whether each comment is valid before the AI runs. The AI then plans fixes along your calls, and pushes back if it thinks you got one wrong. The final call is still yours.</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>This way, both reviewers and authors know there is human judgment behind every comment, so they can trust each other’s feedback with more confidence.</p><h3>Less fatigue: the design principles</h3><p>AI agents made reviewing and fixing easier. Yet the small chores around them kept piling up fatigue. Docket’s screens are built to cut that fatigue.</p><ul><li><b>No endless browser tabs</b>: review requests, your own PRs and sprints on one screen. GitHub links always open in the same single tab.</li><li><b>No hopping between tools</b>: reading a PR in the browser, switching to a terminal to tell Claude to run a skill, then coming back… that round trip is now one button.</li><li><b>No hunting for news</b>: no need to keep checking GitHub Notifications. New review requests and feedback land on the board on their own.</li></ul><div data-shot="review"></div><blockquote>Speed from AI. Judgment and responsibility from people.</blockquote>',
     'tips.html': '<summary>Keep GitHub pages open on the right side</summary><p>Every PR / issue link on the board opens in the same single tab (docket-viewer). Clicking again never adds tabs.</p><ol><li>Click any link on the board to open the GitHub tab.</li><li>Use your browser\'s split view (Chrome split view, Edge split screen, Arc Split View, etc.) to put the board on the left and the GitHub tab on the right.</li><li>From then on, each link click only switches the right side.</li></ol><p class="muted">GitHub tabs opened before this board are not reused. If you close the right tab, the next click opens a new one, so start again from step 2.</p>',
     'tips.lanes': '<summary>What each lane means</summary><p><b>Review</b> tab (other people\'s PRs)</p><ul><li>Requested: your review was requested. Press "Review" to start a Claude review.</li><li>Reviewing: Claude is reviewing, or waiting its turn.</li><li>Reviewed: findings are ready and waiting for your decision. Open the card to go through them.</li><li>Done: posted to the PR, or skipped. Once the author has replied to or resolved all your comments, it moves back to Requested so you can review again.</li></ul><p><b>Receive</b> tab (your PRs)</p><ul><li>Draft: PRs in Draft.</li><li>Awaiting review: PRs waiting for review.</li><li>Has comments: an unresolved thread whose last comment is not yours (ones you skipped are left out until someone posts again).</li><li>Running: a self-review or comment fix is in progress.</li><li>Needs decision: self-review findings or a fix plan are waiting for your decision.</li><li>Ready to merge / Done: lanes you move cards into yourself. Drag a card between Awaiting review, Ready to merge and Done.</li></ul>', 'tips.review': '<summary>Decide on findings and post</summary><ol><li>Open a card to see the findings one by one. Pick "Agree" or "Disagree" for each and add a note if needed.</li><li>Review tab: only agreed findings are posted as PR comments. A disagreed finding is also posted with <span data-disagree-icon>🤔💭</span> if you write a reason. You also choose whether to approve here.</li><li>Receive tab: self-review posts the agreed findings, then fixes, pushes and replies. "Address comments" first has you mark each comment Agree / Disagree (reason required) / Skip before the AI runs (see below). The AI returns a plan for the agreed ones and pushback or a draft reply for the disagreed ones; you decide once more, then it fixes, pushes and replies.</li><li>"I read the code" keeps AI reviews from going out unread. Check it after reading the code yourself.</li></ol><p class="muted">Your choices are saved in the browser, so they survive closing and reopening. Buttons such as post, approve and re-review need two clicks to avoid mistakes.</p>', 'tips.buttons': '<summary>Buttons above the board</summary><ul><li>Stack order: sorts stacked PRs in each lane as parent → child → grandchild. Click again to sort by last update.</li><li>Approved: each click cycles All → Only → Exclude.</li><li>Edit lanes: drag lanes to reorder them, or rename them. Press "Save" to apply.</li><li>Card display: choose what cards show (branch, issue, stack, token usage, reviewer avatars and more).</li><li>Refresh button at the far right: fetches from GitHub right away.</li></ul>', 'tips.roadmap': '<summary>Roadmap screen</summary><ul><li>Add project URLs to "GitHub Projects for the roadmap" in settings to see issue schedules as bars.</li><li>By sprint groups by the project Iteration (sprint); by period shows 1-week or 1-month spans based on start and end dates.</li><li>"Filter by parent issue assignee" applies the assignee filter to the top-level issue assignee.</li><li>Data is cached for 24 hours. Press the fetch-again button to see the latest right away.</li></ul>', 'tips.settings': '<summary>Settings tips</summary><ul><li>Argument templates in the repo-to-skill mapping can use {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}.</li><li>Outside the GitHub auto-fetch hours nothing is fetched automatically. The refresh button still works any time.</li><li>Reviews beyond the concurrency limit wait as "Queued" and run in order.</li><li>"Reset all to defaults" on each settings pane restores the initial values.</li></ul>', 'tips.cost': '<summary>Token usage and logs</summary><ul><li>Token usage on a card is the running total of tokens (including cache) and cost spent on that PR. Turn it on or off in "Card display".</li><li>"Log" on a running card shows the Claude output.</li><li>Logs of finished runs are kept for the "log retention days" in settings and deleted automatically every day. You can also delete them right away from settings.</li></ul>',
@@ -661,7 +668,7 @@ const I18N = {
     'sp.emptyPeriod': 'No issues with start / end dates in this period.', 'sp.emptySprint': 'No issues in this sprint.',
     loading: 'Loading…', 'sp.openAll': '▸ Expand all', 'sp.foldAll': '▾ Collapse all',
     'sp.noProject': '[No project]', 'sp.project': 'Project', 'sp.view': 'View', 'sp.period': 'Period', 'sp.sprint': 'Sprint',
-    'sp.refetchTitle': 'Fetch again from GitHub, bypassing the 24h cache', 'sp.assignee': 'Assignee', 'sp.rootOnly': 'Filter by parent issue assignee',
+    'sp.refetchTitle': 'Fetch again from GitHub, bypassing the 24h cache', 'sp.assignee': 'Assignee', 'sp.rootOnly': 'Filter by parent issue assignee', 'sp.openOnly': 'In progress only', 'sp.status': 'Status',
     'sp.barSet': '(set: {start} – {end})', 'sp.unsetDate': 'not set', 'sp.noDates': '(no dates)',
     'period.week': 'Week of {date}', 'period.2week': '2 weeks from {date}',
     noOutputYet: 'No output yet', runEnded: 'Run finished',
@@ -903,7 +910,7 @@ function render() {
   const order = Object.keys(board.config.repos || {});
   const rank = (r) => (order.includes(r) ? order.indexOf(r) : order.length);
   const repos = [...new Set(all.map((p) => p.pr.repo))].sort().sort((a, b) => rank(a) - rank(b));
-  $('#repo-filter').hidden = !repos.length;
+  $('#filter-toggle').parentElement.hidden = !repos.length;
   const shown = repos.filter((r) => !hidden.includes(r));
   // 両方組み立ててから入れる (先に入れると後のドロップダウンの開閉状態が消える)
   const repoSelect = multiSelect('repos', tr('repo'),
@@ -936,6 +943,8 @@ function render() {
   $('#repo-filter').innerHTML = repoSelect + authorSelect + approvedSeg;
   const nq = qAt && $(`#repo-filter [data-ms="${qAt[0]}"] [data-ms-q]`);
   if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
+  // 畳んでいても絞り込み中だと分かるようにする
+  $('#filter-toggle').classList.toggle('primary', !!(approved || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
   const prs = all.filter((p) => !hidden.includes(p.pr.repo) && !hiddenAuthors.includes(p.pr.author?.login)
     && (approved === 'only' ? isApproved(p) : approved === 'exclude' ? !isApproved(p) : true)).sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
   $('#edit-lanes').hidden = !!laneEdit;
@@ -1258,7 +1267,7 @@ function openReview(key) {
       <div class="dlg-body">
         ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(errText(e.error))}</div>` : ''}
         ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
-        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {})).join('') : `<p class="muted">${tr('noFindings')}</p>`)
+        ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, undefined, true)).join('') : `<p class="muted">${tr('noFindings')}</p>`)
           : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
         ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
       </div>
@@ -1851,9 +1860,9 @@ async function openSettings() {
 // ---------- スプリント ----------
 
 // 選んだプロジェクト・スプリントはブラウザごとに覚える (折りたたみはメモリのみ)
-// people: 表示する担当者の login (null なら全員)。repos: 表示するリポジトリ (null なら全部)。rootOnly: 最上位 issue の担当者だけで絞る
+// people: 表示する担当者の login (null なら全員)。repos: 表示するリポジトリ (null なら全部)。statuses: 表示する Status 名 (null なら全部、'' は未設定)。rootOnly: 最上位 issue の担当者だけで絞る。openOnly: 進行中 (OPEN) の issue だけ出す
 // periods: 期間別の区切り (設定で変わるので毎回取る)
-const sp = { meta: {}, periods: {}, data: {}, error: null, loading: false, collapsed: new Set(), people: null, rootOnly: false, repos: null };
+const sp = { meta: {}, periods: {}, data: {}, error: null, loading: false, collapsed: new Set(), people: null, rootOnly: false, repos: null, statuses: null, openOnly: false };
 const spGet = (k) => { try { return localStorage.getItem(`docket-sprint:${k}`); } catch { return null; } };
 const spSet = (k, v) => { try { localStorage.setItem(`docket-sprint:${k}`, v); } catch {} };
 const spProject = () => {
@@ -1889,6 +1898,15 @@ function spRepos(roots) {
   return set;
 }
 
+// スプリントに出てくる Status (子孫も含む)。プロジェクトの選択肢の順に並べ、Status が無い issue があれば '' (未設定) を末尾に足す
+function spStatuses(roots) {
+  const set = new Set();
+  const walk = (n) => { set.add(n.status?.name || ''); n.children.forEach(walk); };
+  roots.forEach(walk);
+  const order = sp.meta[spProject()]?.statuses || [];
+  return [...order.filter((s) => set.has(s)), ...[...set].filter((s) => s && !order.includes(s)), ...(set.has('') ? [''] : [])];
+}
+
 // 当たらない issue は外す (当たる子孫がいれば階層が分かるよう薄く残す)
 const spPrune = (roots, hit) => {
   const prune = (n) => {
@@ -1902,6 +1920,8 @@ const spPrune = (roots, hit) => {
 // 担当者は rootOnly なら最上位だけで判定して子孫はすべて出す
 function spFilter(roots) {
   if (sp.repos) roots = spPrune(roots, (n) => sp.repos.has(n.repo));
+  if (sp.statuses) roots = spPrune(roots, (n) => sp.statuses.has(n.status?.name || ''));
+  if (sp.openOnly) roots = spPrune(roots, (n) => n.state === 'OPEN');
   if (!sp.people) return roots;
   const hit = (n) => (n.assignees.length ? n.assignees.some((a) => sp.people.has(a.login)) : sp.people.has(''));
   return sp.rootOnly ? roots.filter(hit) : spPrune(roots, hit);
@@ -2009,8 +2029,15 @@ function spPeopleBar(data, foldAll, lead = '') {
   const summary = `${!sp.people ? tr('all') : on.length ? on.map((a) => (a.login ? `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">` : tr('unset'))).join('') : tr('none')}`;
   const select = people.length && multiSelect('people', tr('sp.assignee'), summary, people.map((a) => ({ value: a.login, text: a.login || tr('unset'), img: a.avatarUrl })), (l) => !sp.people || sp.people.has(l),
     `<label class="ms-extra"><input type="checkbox" data-sp-root-only ${sp.rootOnly ? 'checked' : ''}>${tr('sp.rootOnly')}</label>`);
-  const parts = [lead, repoSelect, select].filter(Boolean);
-  return parts.length ? `<div class="sp-row"><div class="sp-people">${parts.join('<span class="sep"></span>')}</div><button data-sp-display>${tr('cardDisplay')}</button>${foldAll}</div>` : '';
+  const statuses = data ? spStatuses(data.roots) : [];
+  const statusOn = statuses.filter((s) => !sp.statuses || sp.statuses.has(s));
+  const statusSelect = statuses.length && multiSelect('sp-statuses', tr('sp.status'),
+    `${!sp.statuses ? tr('all') : statusOn.length ? esc(statusOn.map((s) => s || tr('unset')).join(', ')) : tr('none')}`,
+    statuses.map((s) => ({ value: s, text: s || tr('unset') })), (s) => !sp.statuses || sp.statuses.has(s));
+  const openOnly = data?.roots.length && `<label><input type="checkbox" data-sp-open-only ${sp.openOnly ? 'checked' : ''}>${tr('sp.openOnly')}</label>`;
+  const parts = [lead, repoSelect, select, statusSelect, openOnly].filter(Boolean);
+  const active = sp.repos || sp.people || sp.statuses || sp.openOnly;
+  return parts.length ? `<div class="sp-row"><div class="filter-wrap"><button class="filter-toggle${active ? ' primary' : ''}" title="${tr('filter')}"></button><div class="sp-people">${parts.join('<span class="sep"></span>')}</div></div><button data-sp-display>${tr('cardDisplay')}</button>${foldAll}</div>` : '';
 }
 
 const SP_DAY = 64;
@@ -2104,6 +2131,8 @@ $('#sprint').addEventListener('click', (ev) => {
   if (people) { sp.people = people.dataset.msBulk === 'all' ? null : new Set(); return renderSprint(); }
   const repos = t.closest('[data-ms="sp-repos"] [data-ms-bulk]');
   if (repos) { sp.repos = repos.dataset.msBulk === 'all' ? null : new Set(); return renderSprint(); }
+  const statuses = t.closest('[data-ms="sp-statuses"] [data-ms-bulk]');
+  if (statuses) { sp.statuses = statuses.dataset.msBulk === 'all' ? null : new Set(); return renderSprint(); }
   const toggle = t.closest('[data-sp-toggle]');
   if (toggle) {
     const id = toggle.dataset.spToggle;
@@ -2136,7 +2165,15 @@ $('#sprint').addEventListener('change', (ev) => {
     sp.repos = all.every((r) => set.has(r)) ? null : set; // 全部選んだら絞り込みなしに戻す
     return renderSprint();
   }
+  if (ev.target.matches('[data-ms="sp-statuses"] [data-ms-value]')) {
+    const all = spStatuses(spData()?.roots || []);
+    const set = sp.statuses || new Set(all);
+    ev.target.checked ? set.add(ev.target.dataset.msValue) : set.delete(ev.target.dataset.msValue);
+    sp.statuses = all.every((s) => set.has(s)) ? null : set; // 全部選んだら絞り込みなしに戻す
+    return renderSprint();
+  }
   if (ev.target.matches('[data-sp-root-only]')) { sp.rootOnly = ev.target.checked; return renderSprint(); }
+  if (ev.target.matches('[data-sp-open-only]')) { sp.openOnly = ev.target.checked; return renderSprint(); }
   if (ev.target.matches('[data-sp-iteration]')) { spSet(spSelKey(spProject()), ev.target.value); return loadSprint(); }
   if (ev.target.matches('[data-sp-project]')) { spSet('project', ev.target.value); return loadSprint(); }
 });
@@ -2529,6 +2566,11 @@ const onBackdrop = (ev) => {
   const r = ev.target.getBoundingClientRect();
   return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom;
 };
+// ドロップダウンと同じく、ボタンで開閉し枠の外を押すと閉じる (中の操作で再描画されて押した要素が消えても閉じないよう composedPath で見る)
+document.addEventListener('click', (ev) => {
+  if (ev.target.closest('.filter-toggle')) return document.body.classList.toggle('filters-open');
+  if (!ev.composedPath().some((el) => el.classList?.contains('filter-wrap'))) document.body.classList.remove('filters-open');
+});
 let downOnBackdrop = false;
 document.addEventListener('mousedown', (ev) => (downOnBackdrop = onBackdrop(ev)));
 document.addEventListener('click', (ev) => {
