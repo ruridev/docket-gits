@@ -2062,13 +2062,15 @@ function roadmapHtml({ sprint, roots }, empty) {
 
   // 折りたたまれていない行を親 → 子 → 孫 の順に並べる
   // 開始日が親以前の子は、親の棒より少し右にずらして階層を見せる (開始日が親より後なら実際の日付どおり)
-  const groups = roots.map((root) => {
+  // 開始日が設定されている issue は開始日の早い順、未設定は元の順のまま後ろへ
+  const byStart = (list) => [...list].sort((a, b) => (a.rawStart ? 0 : 1) - (b.rawStart ? 0 : 1) || (a.rawStart || '').localeCompare(b.rawStart || ''));
+  const groups = byStart(roots).map((root) => {
     const rows = [];
     const walk = (n, depth, parent) => {
       const shift = parent && n.start <= parent.n.start ? parent.shift + SP_INDENT : 0;
       const row = { n, depth, shift };
       rows.push(row);
-      if (!sp.collapsed.has(n.id)) n.children.forEach((c) => walk(c, depth + 1, row));
+      if (!sp.collapsed.has(n.id)) byStart(n.children).forEach((c) => walk(c, depth + 1, row));
     };
     walk(root, 0, null);
     return { rows };
