@@ -2067,8 +2067,10 @@ function roadmapHtml({ sprint, roots }, empty) {
   const groups = byStart(roots).map((root) => {
     const rows = [];
     const walk = (n, depth, parent) => {
-      const shift = parent && n.start <= parent.n.start ? parent.shift + SP_INDENT : 0;
-      const row = { n, depth, shift };
+      // 開始日が未設定の子は親の棒の開始位置から描く
+      const start = parent && !n.rawStart && parent.start <= n.end ? parent.start : n.start;
+      const shift = parent && start <= parent.start ? parent.shift + SP_INDENT : 0;
+      const row = { n, depth, shift, start };
       rows.push(row);
       if (!sp.collapsed.has(n.id)) byStart(n.children).forEach((c) => walk(c, depth + 1, row));
     };
@@ -2085,7 +2087,7 @@ function roadmapHtml({ sprint, roots }, empty) {
   let r = 2;
   const heights = [];
   for (const { rows } of groups) {
-    rows.forEach(({ n, depth, shift }, i) => {
+    rows.forEach(({ n, depth, shift, start }, i) => {
       const row = r + i;
       const sep = i === 0 ? ' sep' : '';
       const stCls = (n.state === 'OPEN' ? 's-open' : n.stateReason === 'NOT_PLANNED' ? 's-np' : 's-done') + (n.dim ? ' dim' : '');
@@ -2108,7 +2110,7 @@ function roadmapHtml({ sprint, roots }, empty) {
       heights.push(sub ? '48px' : '30px');
       const head = `${toggle}${avatars}<a class="t" href="${esc(safeUrl(n.url))}" target="docket-viewer">${esc(n.title)}</a><span class="muted">#${n.number}</span>`;
       const line = sub ? `<div class="ln">${head}</div><div class="ln prs">${sub}</div>` : head;
-      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}${sub ? ' two' : ''}" style="grid-row:${row};grid-column:${col(n.start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(n.start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${n.start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${line}</div>`);
+      cells.push(`<div class="bar ${stCls}${depth ? '' : ' d0'}${sub ? ' two' : ''}" style="grid-row:${row};grid-column:${col(start)} / ${col(n.end) + 1};margin-left:${Math.min(shift, (col(n.end) + 1 - col(start)) * SP_DAY - 24)}px" title="${esc(`${n.title}\n${start} – ${n.end}${n.rawStart || n.rawEnd ? `\n${tr('sp.barSet', { start: n.rawStart || tr('sp.unsetDate'), end: n.rawEnd || tr('sp.unsetDate') })}` : ` ${tr('sp.noDates')}`}`)}">${line}</div>`);
     });
     r += rows.length;
   }
