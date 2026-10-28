@@ -1040,8 +1040,8 @@ function cardHtml(e) {
   }
 
   const clickable = e.status === 'reviewed';
-  // Requested ⇄ Reviewing の D&D で レビューする / キャンセル、Requested・Reviewed → Done で投稿せずに終える
-  const dragFrom = ['requested', 'reviewed'].includes(e.status) ? e.status : ['queued', 'reviewing'].includes(e.status) ? 'reviewing' : null;
+  // Requested ⇄ Reviewing の D&D で レビューする / キャンセル、Requested・Reviewed → Done で投稿せずに終える、Done → Reviewing で再レビュー
+  const dragFrom = ['requested', 'reviewed', 'commented'].includes(e.status) ? e.status : ['queued', 'reviewing'].includes(e.status) ? 'reviewing' : null;
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open="${esc(e.key)}"` : ''} ${dragFrom ? `draggable="true" data-drag="${esc(e.key)}" data-from="${dragFrom}"` : ''}`, e.status !== 'reviewed');
 }
 
@@ -2289,7 +2289,7 @@ $('#board').addEventListener('click', async (ev) => {
 });
 
 let dragging = null;
-const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], mine: ['mergeable', 'done'], planned: ['running'], mergeable: ['mine', 'done'], done: ['mine', 'mergeable'] };
+const DROP_TO = { requested: ['reviewing', 'commented'], reviewing: ['requested'], reviewed: ['commented'], commented: ['reviewing'], mine: ['mergeable', 'done'], planned: ['running'], mergeable: ['mine', 'done'], done: ['mine', 'mergeable'] };
 const dropLane = (ev) => {
   const lane = ev.target.closest('[data-lane]');
   if (laneEdit) return laneDrag && lane?.dataset.lane !== laneDrag ? lane : null;

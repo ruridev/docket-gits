@@ -1224,7 +1224,8 @@ function finishPost(key, res) {
   if (!posted?.posted) {
     return updateEntry(key, { status: 'reviewed', error: posted?.error || res.error || E('postUnknown'), postRaw: res.result });
   }
-  updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: posted.url || null, postRaw: res.result });
+  // スキップ後に再レビューして投稿した PR も、作成者の対応で requested に戻るようにする
+  updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: posted.url || null, postRaw: res.result, skipped: false });
 }
 
 function enqueueReview(key, provider = config.provider) {
