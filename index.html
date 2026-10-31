@@ -355,6 +355,8 @@
   .pl-bar.iss { border-style: solid; border-left: 3px solid var(--ok); }
   .pl-bar.changed { border-color: var(--warn); border-left-color: var(--warn); }
   .pl-row.d0 .pl-bar { color: var(--text); }
+  .pl-bar .t { color: var(--text); }
+  .pl-bar .d { margin-left: 6px; font-weight: normal; }
   .pl-pr { flex: none; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 7px; font-size: 10px; line-height: 14px; text-decoration: none; }
   .pl-pr.merged { color: #8250df; } .pl-pr.open { color: var(--ok); } .pl-pr.draft { color: var(--muted); }
   .pl-live { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
@@ -2283,9 +2285,9 @@ function plBodyHtml() {
     let bar = '';
     if (span) {
       const len = plIdx(span.end) - plIdx(span.start) + 1;
-      // 棒が短くても日付と PR は棒の外にはみ出させて全部見せる
+      // 左の一覧を見なくても分かるよう棒にもタイトルを出す。棒が短くてもタイトル・日付・PR は棒の外にはみ出させて全部見せる
       const text = `${plMd(span.start)}${len > 1 ? `–${plMd(span.end)}` : ''} · ${tr('pl.days', { n: len })}`;
-      bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i>${text}${(g?.prs || []).map((pr) => `<span class="pl-pr ${esc(pr.kind)}">#${pr.number}</span>`).join('')}<i class="h r" data-pl-h="r"></i></div>`;
+      bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i><span class="t">${esc(n.title || tr('pl.untitled'))}</span><span class="d">${text}</span>${(g?.prs || []).map((pr) => `<span class="pl-pr ${esc(pr.kind)}">#${pr.number}</span>`).join('')}<i class="h r" data-pl-h="r"></i></div>`;
     }
     return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}${dim ? ' dim' : ''}${g?.state === 'CLOSED' ? ' closed' : ''}${menu ? ' menu' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
   }).join('');
