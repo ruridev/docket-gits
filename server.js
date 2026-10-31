@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
-const { parsePlan, serializePlan, flatten, syncSnapshot, validFile } = require('./plans');
+const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, validFile } = require('./plans');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = process.env.DOCKET_DATA || path.join(__dirname, 'data');
@@ -756,12 +756,25 @@ async function fetchFromGitHub() {
 
 // ---------- スプリント ----------
 
-async function ghql(query, vars = {}) {
+function ghqlArgs(query, vars) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
   for (const [k, v] of Object.entries(vars)) args.push(typeof v === 'string' ? '-f' : '-F', `${k}=${v}`);
-  const json = JSON.parse(await gh(args));
+  return args;
+}
+
+async function ghql(query, vars = {}) {
+  const json = JSON.parse(await gh(ghqlArgs(query, vars)));
   if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('\n'));
   return json.data;
+}
+
+// 消された issue など一部が読めなくても、読めた分を返す
+async function ghqlPartial(query, vars = {}) {
+  const out = await gh(ghqlArgs(query, vars)).catch((e) => {
+    if (e.stdout) return e.stdout;
+    throw e;
+  });
+  return JSON.parse(out).data || {};
 }
 
 const projectRoot = (p) => `${p.owner}(login: $login) { projectV2(number: $number)`;
@@ -955,8 +968,16 @@ const inGit = (dir) => fs.existsSync(dir) && git(dir, ['rev-parse', '--is-inside
 const committedText = (file) => git(path.dirname(file), ['show', `HEAD:./${path.basename(file)}`]);
 
 const PLAN_SYNC_FILE = path.join(DATA_DIR, 'plan-sync.json');
-// 最後に GitHub に反映した内容 (ファイル → issue 番号 → syncSnapshot)。反映後に変えた issue を見分ける
+// 最後に GitHub に反映した内容 (ファイル → issue のキー → syncSnapshot)。反映後に変えた issue を見分ける
+// 「^キー」には GitHub での親のキーを持つ (他の issue の下から持ってきた issue は、反映するまで計画の親と違う)
 const planSync = readJson(PLAN_SYNC_FILE, {});
+// plan-sync.json のキー。計画のリポジトリの issue は番号だけ (以前の形式のまま)
+const syncKey = (plan, n) => (n.repo && n.repo !== plan.repo ? `${n.repo}#${n.issue}` : String(n.issue));
+// 計画をまたいで issue を見分けるキー
+const fullKey = (plan, n) => `${n.repo || plan.repo}#${n.issue}`;
+// まだ作っていない親は '+'、最上位は ''
+const parentKey = (plan, p) => (!p ? '' : p.issue ? syncKey(plan, p) : '+');
+const relinked = (synced, plan, node, parent) => !!parent && `^${syncKey(plan, node)}` in synced && synced[`^${syncKey(plan, node)}`] !== parentKey(plan, parent);
 
 function planFile(url, file) {
   if (!validFile(file)) throw E('planFileInvalid');
@@ -974,7 +995,14 @@ function listPlans(url) {
       const text = fs.readFileSync(full, 'utf8');
       const plan = parsePlan(text);
       const all = flatten(plan.nodes);
-      return { file: f, title: plan.title || f, status: plan.status, count: all.length, issues: all.map(({ node }) => node.issue).filter(Boolean), dirty: tracked && committedText(full) !== text };
+      const nodes = all.map(({ node }) => node);
+      return {
+        file: f, title: plan.title || f, status: plan.status, count: all.length, dirty: tracked && committedText(full) !== text,
+        issues: nodes.filter((n) => n.issue).map((n) => fullKey(plan, n)),
+        // 画面の「スプリント · 期間」で計画を絞るのに使う
+        sprints: [...new Set(nodes.map((n) => n.sprint).filter(Boolean))],
+        spans: nodes.filter((n) => n.start || n.end).map((n) => [n.start || n.end, n.end || n.start]),
+      };
     }),
   };
 }
@@ -988,7 +1016,11 @@ function planDoc(url, file) {
   const tracked = inGit(dir);
   const base = tracked ? committedText(full) : null;
   const synced = planSync[full] || {};
-  const changed = flatten(plan.nodes).filter(({ node }) => node.issue && synced[node.issue] && synced[node.issue] !== syncSnapshot(node)).map(({ node }) => node.issue);
+  const changed = flatten(plan.nodes).filter(({ node, parent }) => {
+    if (!node.issue) return false;
+    const key = syncKey(plan, node);
+    return (synced[key] && synced[key] !== syncSnapshot(node)) || relinked(synced, plan, node, parent);
+  }).map(({ node }) => syncKey(plan, node));
   const top = tracked && git(dir, ['rev-parse', '--show-toplevel'])?.trim();
   return { file, rel: top ? path.relative(top, full).split(path.sep).join('/') : full, plan, md, base, git: tracked, dirty: tracked && base !== md, changed };
 }
@@ -1004,6 +1036,158 @@ function createPlan(url, { file, title, repo }) {
   const name = title || file.replace(/\.md$/, '');
   // 計画 1 つが最上位 issue 1 つ。計画と同じ名前で最初から作っておく
   writePlan(url, file, { title: name, repo: repo || '', status: 'draft', nodes: [{ title: name, children: [] }] });
+}
+
+// 取り込む issue は本文・ラベル・マイルストーン・GitHub での親も取る
+const IMPORT_FIELDS = ISSUE_FIELDS.replace('id number title', 'id number title body labels(first: 20) { nodes { name } } milestone { title } parent { number repository { nameWithOwner } }');
+
+// GitHub の issue を sub issue ごと計画のノードにする (levels 階層まで)
+async function importTree(url, repo, number, levels) {
+  if (!validRepo(repo) || !(number > 0)) throw E('planIssueNotFound');
+  const meta = await projectMeta(url, false);
+  const names = { sprint: meta.sprint || '-', start: meta.start || '-', end: meta.end || '-' };
+  const [owner, name] = repo.split('/');
+  const data = await ghqlPartial(`query($owner: String!, $name: String!, $number: Int!, $sprint: String!, $start: String!, $end: String!) {
+    repository(owner: $owner, name: $name) { issue(number: $number) { ...iss } }
+  }
+  ${IMPORT_FIELDS}`, { owner, name, number, ...names });
+  const raw = data.repository?.issue;
+  if (!raw) throw E('planIssueNotFound');
+  // md に書いて読み直しても同じ値になるよう、タイトルの空白と本文の改行をそろえる
+  const toNode = (n) => {
+    const item = n.projectItems.nodes.find((i) => i.project?.id === meta.id);
+    return {
+      gid: n.id, subCount: n.subIssues.totalCount,
+      title: n.title.replace(/\s+/g, ' ').trim(), body: String(n.body || '').replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, ''),
+      issue: n.number, repo: n.repository.nameWithOwner, start: item?.start?.date || null, end: item?.end?.date || null,
+      assignees: n.assignees.nodes.map((a) => a.login), labels: n.labels.nodes.map((l) => l.name), milestone: n.milestone?.title || null, sprint: item?.sprint?.title || null, children: [],
+    };
+  };
+  const root = toNode(raw);
+  let frontier = [root];
+  for (let level = 1; level < levels && frontier.length; level++) {
+    const parents = frontier.filter((n) => n.subCount > 0);
+    const chunks = [];
+    for (let i = 0; i < parents.length; i += 30) chunks.push(parents.slice(i, i + 30));
+    const results = await Promise.all(chunks.map((chunk) => ghql(`query($sprint: String!, $start: String!, $end: String!) {
+        nodes(ids: ${JSON.stringify(chunk.map((n) => n.gid))}) { ... on Issue { id subIssues(first: 100) { nodes { ...iss } } } }
+      }
+      ${IMPORT_FIELDS}`, names)));
+    const byId = new Map(parents.map((n) => [n.gid, n]));
+    frontier = [];
+    for (const data of results) {
+      for (const p of data.nodes) {
+        if (!p) continue;
+        byId.get(p.id).children = p.subIssues.nodes.map(toNode);
+        frontier.push(...byId.get(p.id).children);
+      }
+    }
+  }
+  return { root, parent: raw.parent ? { repo: raw.parent.repository.nameWithOwner, issue: raw.parent.number } : null };
+}
+
+// 1 つの issue は 1 つの計画にだけ入れる (2 つの計画が同じ issue を書き換え合わないように)
+function checkTaken(url, root) {
+  const owners = {};
+  for (const p of listPlans(url).plans) for (const k of p.issues) owners[k] = p;
+  const walk = (n) => {
+    const hit = owners[`${n.repo}#${n.issue}`];
+    if (hit) throw E('planIssueTaken', { number: n.issue, title: hit.title });
+    n.children.forEach(walk);
+  };
+  walk(root);
+}
+
+// 取り込んだ issue は GitHub と同じ内容として記録する (触っていない issue を「変更」にしない)
+function adoptTree(url, file, plan, { root, parent }) {
+  const synced = (planSync[planFile(url, file)] ||= {});
+  const walk = (n, pkey) => {
+    delete n.gid;
+    delete n.subCount;
+    if (n.repo === plan.repo) n.repo = null;
+    const key = syncKey(plan, n);
+    synced[key] = syncSnapshot(n);
+    synced[`^${key}`] = pkey;
+    n.children.forEach((c) => walk(c, key));
+  };
+  walk(root, parent ? syncKey(plan, parent) : '');
+  writeJson(PLAN_SYNC_FILE, planSync);
+  return root;
+}
+
+async function createPlanFromIssue(url, { file, repo, number }) {
+  if (fs.existsSync(planFile(url, file))) throw E('planExists', { file });
+  const tree = await importTree(url, repo, number, MAX_DEPTH);
+  checkTaken(url, tree.root);
+  const plan = { title: tree.root.title, repo, status: 'applied', nodes: [] };
+  plan.nodes.push(adoptTree(url, file, plan, tree));
+  writePlan(url, file, plan);
+}
+
+// 計画の level 階層目 (1 始まり) に入れる issue を取ってくる。md に書くのは画面から保存したとき
+async function importIssue(url, file, { repo, number, level }) {
+  const { plan } = planDoc(url, file);
+  const tree = await importTree(url, repo, number, Math.max(1, MAX_DEPTH - (Number(level) || 1) + 1));
+  checkTaken(url, tree.root);
+  return adoptTree(url, file, plan, tree);
+}
+
+// 取り込む issue の候補。プロジェクトにリンクしたリポジトリと設定のリポジトリから探す (番号なら番号で引く)
+async function searchIssues(url, q) {
+  const fields = await projectFields(url).catch(() => null);
+  const repos = [...new Set([...(fields?.repos || []), ...Object.keys(config.repos)])].filter(validRepo);
+  if (!repos.length) return { items: [] };
+  const F = 'number title state repository { nameWithOwner } parent { number repository { nameWithOwner } } subIssues { totalCount }';
+  const pick = (n) => n?.number && { repo: n.repository.nameWithOwner, number: n.number, title: n.title, state: n.state, subCount: n.subIssues.totalCount, parent: n.parent ? { repo: n.parent.repository.nameWithOwner, number: n.parent.number } : null };
+  const term = String(q || '').trim();
+  const num = /^#?(\d+)$/.exec(term);
+  if (num) {
+    const data = await ghqlPartial(`query { ${repos.map((r, i) => {
+      const [owner, name] = r.split('/');
+      return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issue(number: ${Number(num[1])}) { ${F} } }`;
+    }).join('\n')} }`);
+    return { items: repos.map((_, i) => pick(data[`r${i}`]?.issue)).filter(Boolean) };
+  }
+  const data = await ghql(`query($q: String!) { search(query: $q, type: ISSUE, first: 30) { nodes { ... on Issue { ${F} } } } }`, { q: `${repos.map((r) => `repo:${r}`).join(' ')} is:issue sort:updated-desc ${term}`.trim() });
+  return { items: data.search.nodes.map(pick).filter(Boolean) };
+}
+
+// 計画の issue の今の状態 (Status・開いているか・PR)。絞り込みと表示に使う
+async function planLive(url, file, refresh) {
+  const { plan } = planDoc(url, file);
+  const nodes = flatten(plan.nodes).map(({ node }) => node).filter((n) => n.issue);
+  if (!nodes.length) return { issues: {}, fetchedAt: null };
+  const byRepo = {};
+  for (const n of nodes) (byRepo[n.repo || plan.repo] ||= new Set()).add(n.issue);
+  const keys = nodes.map((n) => fullKey(plan, n)).sort();
+  return cached(`plan-live:${url}:${keys.join(',')}`, refresh, async () => {
+    const meta = await projectMeta(url, false);
+    const names = { sprint: meta.sprint || '-', start: meta.start || '-', end: meta.end || '-' };
+    const repos = Object.keys(byRepo).filter(validRepo);
+    const data = await ghqlPartial(`query($sprint: String!, $start: String!, $end: String!) { ${repos.map((r, i) => {
+      const [owner, name] = r.split('/');
+      return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ${[...byRepo[r]].map((num) => `i${num}: issue(number: ${num}) { ...iss }`).join(' ')} }`;
+    }).join('\n')} }
+    ${ISSUE_FIELDS}`, names);
+    const issues = {};
+    repos.forEach((r, i) => {
+      for (const num of byRepo[r]) {
+        const n = data[`r${i}`]?.[`i${num}`];
+        if (!n) continue;
+        const it = normIssue(n, meta.id);
+        issues[`${r}#${num}`] = { state: it.state, status: it.status?.name || null, color: it.status?.color || null, prs: it.prs.map((pr) => ({ number: pr.number, url: pr.url, kind: pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open' })) };
+      }
+    });
+    return { issues, fetchedAt: Date.now() };
+  });
+}
+
+// 「スプリント · 期間」の選択肢 (数は設定の過去 / 未来のスプリント・期間の数)
+async function planRanges(url, refresh) {
+  const meta = await projectMeta(url, refresh).catch(() => null);
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const { unit, ...range } = periodRange();
+  return { unit, statuses: meta?.statuses || [], sprints: (meta?.iterations || []).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })), periods: periodWindows(today, unit, range) };
 }
 
 // 開始日・終了日・スプリントを書く Project のフィールド (ロードマップと同じ選び方)
@@ -1061,10 +1245,11 @@ const planApplying = new Set();
 // 作る issue (番号が無いもの) と、前回の反映後に変えた issue
 function applyTargets(doc) {
   const changed = new Set(doc.changed);
-  return flatten(doc.plan.nodes).filter(({ node }) => !node.issue || changed.has(node.issue));
+  return flatten(doc.plan.nodes).filter(({ node }) => !node.issue || changed.has(syncKey(doc.plan, node)));
 }
 
 // 親 → 子の順に issue を作り (作ったらすぐ md に番号を書く。途中で失敗しても二重に作らない)、子は親の sub issue にする
+// 他の issue の下から持ってきた issue は、計画の親の sub issue に付け替える
 // addToProject なら Project に追加して開始日・終了日・スプリントも入れる
 async function applyPlan(url, file, { addToProject = true, commit = false } = {}) {
   const doc = planDoc(url, file);
@@ -1072,7 +1257,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
   const { plan } = doc;
   const repo = plan.repo;
   if (!validRepo(repo)) throw E('planRepoMissing');
-  const opts = await repoOptions(repo);
+  const optsOf = {};
   const fields = addToProject ? await projectFields(url) : null;
   const synced = (planSync[full] ||= {});
   const warnings = [];
@@ -1083,6 +1268,9 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     writeJson(PLAN_SYNC_FILE, planSync);
   };
   for (const { node, parent } of applyTargets(doc)) {
+    const nodeRepo = node.repo || repo;
+    const opts = await (optsOf[nodeRepo] ||= repoOptions(nodeRepo));
+    const relink = !!node.issue && relinked(synced, plan, node, parent);
     const milestone = node.milestone ? opts.milestones.find((m) => m.title === node.milestone) : null;
     if (node.milestone && !milestone) warnings.push(E('planMilestoneMissing', { title: node.title, milestone: node.milestone }));
     const body = { title: node.title, body: node.body || '', assignees: node.assignees, labels: node.labels, milestone: milestone ? milestone.number : null };
@@ -1094,11 +1282,11 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
       plan.status = 'applied';
       created++;
       save();
-      if (parent?.issue) await ghRest('POST', `repos/${repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id });
     } else {
-      issue = await ghRest('PATCH', `repos/${repo}/issues/${node.issue}`, body);
+      issue = await ghRest('PATCH', `repos/${nodeRepo}/issues/${node.issue}`, body);
       updated++;
     }
+    if (parent?.issue && (isNew || relink)) await ghRest('POST', `repos/${parent.repo || repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id, replace_parent: true });
     if (fields) {
       const { addProjectV2ItemById: { item } } = await ghql('mutation($project: ID!, $content: ID!) { addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } } }', { project: fields.id, content: issue.node_id });
       const ids = { project: fields.id, item: item.id };
@@ -1116,7 +1304,8 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
         else warnings.push(E('planSprintMissing', { title: node.title, sprint: node.sprint }));
       } else if (fields.sprint && !isNew) await clear(fields.sprint);
     }
-    synced[node.issue] = syncSnapshot(node);
+    synced[syncKey(plan, node)] = syncSnapshot(node);
+    if (parent) synced[`^${syncKey(plan, node)}`] = parentKey(plan, parent);
     save();
   }
   let committed = false;
@@ -1664,8 +1853,15 @@ async function handlePlan(req, res, url) {
       return send(res, 200, planDoc(project, file));
     }
     if (req.method === 'POST' && url.pathname === '/api/plan/new') {
-      createPlan(project, { file, title: body.title, repo: body.repo });
+      if (body.issue) await createPlanFromIssue(project, { file, repo: body.issue.repo, number: Number(body.issue.number) });
+      else createPlan(project, { file, title: body.title, repo: body.repo });
       return send(res, 200, planDoc(project, file));
+    }
+    if (req.method === 'GET' && url.pathname === '/api/plan/ranges') return send(res, 200, await planRanges(project, url.searchParams.get('refresh') === '1'));
+    if (req.method === 'GET' && url.pathname === '/api/plan/live') return send(res, 200, await planLive(project, file, url.searchParams.get('refresh') === '1'));
+    if (req.method === 'GET' && url.pathname === '/api/plan/search') return send(res, 200, await searchIssues(project, url.searchParams.get('q')));
+    if (req.method === 'POST' && url.pathname === '/api/plan/import') {
+      return send(res, 200, { node: await importIssue(project, file, { repo: body.repo, number: Number(body.number), level: body.level }) });
     }
     if (req.method === 'POST' && url.pathname === '/api/plan/apply') {
       // 同じ計画を続けて押しても issue を二重に作らない

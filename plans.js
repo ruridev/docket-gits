@@ -16,16 +16,18 @@
 // ## 子 issue
 //
 // 見出しの深さがツリーの階層。属性はすべて省略できる
+// 計画のリポジトリ以外の issue は repo=owner/name を付ける ({issue=#41 repo=acme/docs})
 
 const MAX_DEPTH = 6;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const REPO = /^[\w.-]+\/[\w.-]+$/;
 
 const unquote = (v) => (v.startsWith('"') ? v.slice(1, -1).replace(/\\(["\\])/g, '$1') : v);
 const quote = (v) => (/^[^\s"{}=]+$/.test(v) ? v : `"${v.replace(/(["\\])/g, '\\$1')}"`);
 const list = (v) => unquote(v).split(',').map((s) => s.trim()).filter(Boolean);
 
 function parseAttrs(text) {
-  const node = { issue: null, start: null, end: null, assignees: [], labels: [], milestone: null, sprint: null };
+  const node = { issue: null, repo: null, start: null, end: null, assignees: [], labels: [], milestone: null, sprint: null };
   for (const [, tok] of text.matchAll(/((?:[^\s"]|"(?:[^"\\]|\\.)*")+)/g)) {
     if (tok.startsWith('@')) { node.assignees.push(tok.slice(1)); continue; }
     const eq = tok.indexOf('=');
@@ -33,6 +35,7 @@ function parseAttrs(text) {
     const k = tok.slice(0, eq);
     const v = tok.slice(eq + 1);
     if (k === 'issue') node.issue = Number(v.replace(/^#/, '')) || null;
+    else if (k === 'repo' && REPO.test(v)) node.repo = v;
     else if ((k === 'start' || k === 'end') && DATE.test(v)) node[k] = v;
     else if (k === 'labels') node.labels = list(v);
     else if (k === 'milestone' || k === 'sprint') node[k] = unquote(v) || null;
@@ -43,6 +46,7 @@ function parseAttrs(text) {
 function attrsText(n) {
   const parts = [];
   if (n.issue) parts.push(`issue=#${n.issue}`);
+  if (n.repo) parts.push(`repo=${n.repo}`);
   if (n.start) parts.push(`start=${n.start}`);
   if (n.end) parts.push(`end=${n.end}`);
   for (const a of n.assignees || []) parts.push(`@${a}`);

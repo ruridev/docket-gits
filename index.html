@@ -336,6 +336,8 @@
   .pl-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pl-item.on { background: var(--chip); font-weight: 600; }
   .pl-dirty { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  .pl-side .ms-label { display: block; margin-bottom: 2px; }
+  .pl-none { font-size: 12px; color: var(--muted); margin: 4px; }
   .pl-dir { font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; overflow-wrap: anywhere; }
   .pl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px 8px; min-height: 0; }
   .pl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -346,6 +348,11 @@
   .chip.ok { border-color: var(--ok); color: var(--ok); background: none; }
   .pl-repo { font-size: 12px; line-height: 20px; padding: 0 24px 0 8px; border-radius: 10px; background-color: var(--chip); background-position: right 8px center; field-sizing: content; }
   .pl-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .pl-filter { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; font-size: 13px; }
+  .pl-filter:empty { display: none; }
+  .pl-filter label { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
+  .pl-filter select { padding-top: 2px; padding-bottom: 2px; }
+  .pl-filter .right { margin-left: auto; }
   .pl-bulk { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
   .pl-bulk > b { align-self: center; font-size: 13px; }
   .pl-work { flex: 1; min-height: 0; display: flex; gap: 12px; }
@@ -354,6 +361,8 @@
   .pl-grid { position: relative; min-height: 100%; font-size: 13px; }
   .pl-bg { position: absolute; top: 0; bottom: 0; pointer-events: none; }
   .pl-bg .we { position: absolute; top: 0; bottom: 0; width: var(--d); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .pl-bg .out { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--muted) 12%, transparent); }
+  .pl-days .out { opacity: .45; }
   .pl-bg .today { position: absolute; top: 0; bottom: 0; width: 1px; background: repeating-linear-gradient(var(--danger) 0 4px, transparent 4px 8px); }
   .pl-hdr, .pl-row { display: flex; position: relative; }
   .pl-hdr { position: sticky; top: 0; z-index: 4; background: var(--panel); border-bottom: 1px solid var(--border); }
@@ -366,6 +375,9 @@
   .pl-days .we { color: var(--accent); }
   .pl-days .today { color: var(--danger); font-weight: 600; }
   .pl-row { height: 30px; border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .pl-row.dim { opacity: .45; }
+  .pl-row.closed .pl-t { color: var(--muted); }
+  .pl-row.menu { z-index: 6; }
   .pl-row.sel .pl-tree, .pl-row.sel .pl-track { background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
   .pl-row.sel .pl-track { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   .pl-tree .tg { width: 14px; flex: none; cursor: pointer; color: var(--muted); text-align: center; }
@@ -379,6 +391,10 @@
   .pl-row.d0 .pl-t { font-weight: 600; }
   .pl-tree .num { flex: none; color: var(--muted); font-size: 12px; }
   .pl-tree .chip.warn, .pl-head .chip.warn { border-color: var(--warn); color: var(--warn); background: none; }
+  .pl-addw { margin-left: auto; flex: none; position: relative; }
+  .pl-addw .pop { position: absolute; z-index: 20; top: calc(100% + 2px); right: 0; padding: 4px; display: flex; flex-direction: column; min-width: 160px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
+  .pl-addw .pop button { border: none; background: none; text-align: left; padding: 4px 8px; white-space: nowrap; }
+  .pl-row.menu .pl-add { opacity: 1; }
   .pl-add { margin-left: auto; flex: none; border: none; background: none; color: var(--muted); opacity: .35; padding: 0 4px; font-size: 15px; line-height: 1; }
   .pl-row:hover .pl-add, .pl-add:focus { opacity: 1; }
   .pl-add:hover:not(:disabled) { color: var(--accent); background: none; }
@@ -387,6 +403,11 @@
   .pl-bar.iss { border-style: solid; border-left: 3px solid var(--ok); }
   .pl-bar.changed { border-color: var(--warn); border-left-color: var(--warn); }
   .pl-row.d0 .pl-bar { color: var(--text); }
+  .pl-pr { flex: none; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 7px; font-size: 10px; line-height: 14px; text-decoration: none; }
+  .pl-pr.merged { color: #8250df; } .pl-pr.open { color: var(--ok); } .pl-pr.draft { color: var(--muted); }
+  .pl-live { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+  .pl-live .pl-pr { margin-left: 0; font-size: 12px; line-height: 18px; }
+  .pl-live .st { padding: 0 8px; border-radius: 10px; border: 1px solid currentColor; font-size: 12px; line-height: 18px; color: var(--c, var(--muted)); background: color-mix(in srgb, currentColor 12%, transparent); }
   .pl-bar .h { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
   .pl-bar .h.l { left: 0; } .pl-bar .h.r { right: 0; }
   body.pl-dragging, body.pl-dragging * { cursor: grabbing !important; }
@@ -417,6 +438,14 @@
   #plan-dlg li .chip { flex: none; }
   #plan-dlg .opt { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
   #plan-dlg .form-row input, #plan-dlg .form-row select { width: 100%; }
+  #plan-dlg .pl-kind { margin-bottom: 12px; }
+  #plan-dlg [data-pk-q] { width: 100%; margin-bottom: 6px; }
+  .pl-pick { max-height: 40vh; min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 12px; }
+  .pl-pi { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 4px 8px; border-radius: 6px; }
+  .pl-pi.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+  .pl-pi .num { flex: none; color: var(--muted); font-size: 12px; }
+  .pl-pi .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-pi .note { flex: none; font-size: 11px; color: var(--warn); }
   .toast.ok { background: var(--ok); }
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
@@ -574,6 +603,7 @@ const I18N = {
     'nav.agent': 'Agent 関連設定', 'nav.refresh': '更新間隔', 'nav.lang': '言語', 'nav.terms': '用語', 'terms.help': 'レーンの名前を変えられます (表示だけで、レーンの役割は変わりません)。空欄なら既定の名前', 'pane.reset': 'すべて既定に戻す', 'cfg.export': 'ファイルに書き出す', 'cfg.import': 'ファイルから読み込む', 'cfg.imported': '読み込みました。「保存」を押すと反映されます', 'cfg.badFile': '設定ファイルを読み込めませんでした',
     'sec.board': 'PR ボード', 'sec.repos': 'リポジトリ', 'sec.screen': '画面', 'sec.fetch': 'GitHub の取得',
     'tab.plan': '計画', 'pl.plans': '計画', 'pl.new': '新しい計画', 'pl.applied': '適用済み', 'pl.dirty': '変更あり · 未コミット', 'pl.timeline': 'タイムライン', 'pl.apply': 'GitHub に適用 ({n})', 'pl.update': '変更を反映 ({n})', 'pl.issue': 'issue', 'pl.addChild': 'sub issue を追加', 'pl.untitled': '(タイトルなし)', 'pl.changed': '変更', 'pl.days': '{n} 日', 'pl.title': 'タイトル', 'pl.start': '開始日', 'pl.end': '終了日', 'pl.body': '本文', 'pl.delete': '削除', 'pl.cantDelete': 'GitHub に作った issue は計画から消せません', 'pl.cantDeleteRoot': '最上位の issue は消せません', 'pl.removeField': '項目を外す', 'pl.f.labels': 'ラベル', 'pl.f.milestone': 'マイルストーン', 'pl.selected': '{n} 件選択', 'pl.keep': '変更しない', 'pl.bulkApply': '一括適用', 'pl.clearSel': '選択解除', 'pl.newIssue': '新しい issue', 'pl.editIssue': '#{n} を更新', 'pl.optProject': 'Projects に追加し、開始日・終了日・スプリントを入れる', 'pl.optCommit': 'md ファイルをコミットする', 'pl.noGit': '計画のフォルダが git リポジトリではありません', 'pl.run': '適用', 'pl.needTitle': 'タイトルが空の issue があります', 'pl.done': 'issue を {created} 件作成、{updated} 件更新しました', 'pl.committed': 'コミットしました', 'pl.file': 'ファイル名', 'pl.create': '作成', 's.plansDir': '計画の md を置くフォルダ (空なら ~/docket-plans。その下に GitHub Projects ごとのフォルダを作ります)', 'err.planFileInvalid': 'ファイル名は英小文字・数字・ハイフンと .md だけにしてください', 'err.planNotFound': '計画のファイルが見つかりません', 'err.planExists': '{file} はすでにあります', 'err.planInvalid': '計画の内容が不正です', 'err.planRepoMissing': 'リポジトリ (owner/name) を入れてください', 'err.planApplying': 'この計画は適用中です', 'err.planMilestoneMissing': '「{title}」のマイルストーン {milestone} が見つからないため入れませんでした', 'err.planSprintMissing': '「{title}」のスプリント {sprint} が見つからないため入れませんでした',
+    'pl.range': "スプリント · 期間", 'pl.noneInRange': "この範囲に掛かる計画はありません", 'pl.noRows': "条件に当たる issue はありません", 'pl.openOnly': "開いているものだけ", 'pl.addNew': "新しい sub issue", 'pl.import': "既存の issue を取り込む", 'pl.importBtn': "取り込む", 'pl.fromBlank': "空の計画", 'pl.fromIssue': "既存の issue から始める", 'pl.searchPh': "番号かタイトル", 'pl.noIssues': "見つかりません", 'pl.moveFrom': "{n} から移動", 'pl.subCount': "sub issue {n} 件", 'pl.needIssue': "issue を選んでください", 'err.planIssueNotFound': "issue が見つかりません", 'err.planIssueTaken': "#{number} はすでに計画「{title}」に入っています",
     'sp.noProjects': '設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。', 'sp.count': '{n} 件',
     future: '未来', current: '現在', past: '過去',
     'sp.noIteration': 'このプロジェクトには Iteration フィールドがありません。',
@@ -671,6 +701,7 @@ const I18N = {
     'nav.agent': 'Agent 관련 설정', 'nav.refresh': '갱신 간격', 'nav.lang': '언어', 'nav.terms': '용어', 'terms.help': '레인 이름을 바꿀 수 있습니다(표시만 바뀌고 레인의 역할은 그대로입니다). 비워 두면 기본 이름', 'pane.reset': '모두 기본값으로 되돌리기', 'cfg.export': '파일로 내보내기', 'cfg.import': '파일에서 불러오기', 'cfg.imported': '불러왔습니다. 「저장」을 눌러야 반영됩니다', 'cfg.badFile': '설정 파일을 읽을 수 없습니다',
     'sec.board': 'PR 보드', 'sec.repos': '저장소', 'sec.screen': '화면', 'sec.fetch': 'GitHub 가져오기',
     'tab.plan': '계획', 'pl.plans': '계획', 'pl.new': '새 계획', 'pl.applied': '적용됨', 'pl.dirty': '수정됨 · 커밋 전', 'pl.timeline': '타임라인', 'pl.apply': 'GitHub에 적용 ({n})', 'pl.update': '변경 반영 ({n})', 'pl.issue': '이슈', 'pl.addChild': '하위 이슈 추가', 'pl.untitled': '(제목 없음)', 'pl.changed': '변경', 'pl.days': '{n}일', 'pl.title': '제목', 'pl.start': '시작일', 'pl.end': '종료일', 'pl.body': '본문', 'pl.delete': '삭제', 'pl.cantDelete': 'GitHub에 만든 이슈는 계획에서 지울 수 없습니다', 'pl.cantDeleteRoot': '최상위 이슈는 지울 수 없습니다', 'pl.removeField': '항목 빼기', 'pl.f.labels': '라벨', 'pl.f.milestone': '마일스톤', 'pl.selected': '{n}개 선택', 'pl.keep': '바꾸지 않음', 'pl.bulkApply': '일괄 적용', 'pl.clearSel': '선택 해제', 'pl.newIssue': '새 issue', 'pl.editIssue': '#{n} 수정', 'pl.optProject': 'Projects에 추가하고 시작일·종료일·스프린트 입력', 'pl.optCommit': 'md 파일 커밋', 'pl.noGit': '계획 폴더가 git 저장소가 아닙니다', 'pl.run': '적용', 'pl.needTitle': '제목이 빈 이슈가 있습니다', 'pl.done': '이슈 {created}개를 만들고 {updated}개를 수정했습니다', 'pl.committed': '커밋했습니다', 'pl.file': '파일 이름', 'pl.create': '만들기', 's.plansDir': '계획 md를 둘 폴더 (비우면 ~/docket-plans. 그 아래에 GitHub Projects별 폴더를 만듭니다)', 'err.planFileInvalid': '파일 이름은 영문 소문자·숫자·하이픈과 .md만 쓸 수 있습니다', 'err.planNotFound': '계획 파일을 찾을 수 없습니다', 'err.planExists': '{file}이(가) 이미 있습니다', 'err.planInvalid': '계획 내용이 올바르지 않습니다', 'err.planRepoMissing': '저장소(owner/name)를 입력해 주세요', 'err.planApplying': '이 계획은 적용 중입니다', 'err.planMilestoneMissing': '「{title}」의 마일스톤 {milestone}을(를) 찾을 수 없어 넣지 않았습니다', 'err.planSprintMissing': '「{title}」의 스프린트 {sprint}을(를) 찾을 수 없어 넣지 않았습니다',
+    'pl.range': "스프린트 · 기간", 'pl.noneInRange': "이 범위에 걸리는 계획이 없습니다", 'pl.noRows': "조건에 맞는 이슈가 없습니다", 'pl.openOnly': "열린 것만", 'pl.addNew': "새 하위 이슈", 'pl.import': "기존 issue 불러오기", 'pl.importBtn': "불러오기", 'pl.fromBlank': "빈 계획", 'pl.fromIssue': "기존 issue로 시작", 'pl.searchPh': "번호나 제목", 'pl.noIssues': "찾을 수 없습니다", 'pl.moveFrom': "{n}에서 이동", 'pl.subCount': "하위 {n}개", 'pl.needIssue': "issue를 골라 주세요", 'err.planIssueNotFound': "issue를 찾을 수 없습니다", 'err.planIssueTaken': "#{number}은(는) 이미 「{title}」 계획에 있습니다",
     'sp.noProjects': '설정의 "로드맵 화면의 GitHub Projects"에 프로젝트 URL을 추가하세요.', 'sp.count': '{n}건',
     future: '미래', current: '현재', past: '과거',
     'sp.noIteration': '이 프로젝트에는 Iteration 필드가 없습니다.',
@@ -768,6 +799,7 @@ const I18N = {
     'nav.agent': 'Agent settings', 'nav.refresh': 'Refresh', 'nav.lang': 'Language', 'nav.terms': 'Terms', 'terms.help': "Rename lanes (display only — what each lane holds doesn't change). Leave empty for the default name", 'pane.reset': 'Reset all to defaults', 'cfg.export': 'Export to file', 'cfg.import': 'Import from file', 'cfg.imported': 'Imported. Press "Save" to apply', 'cfg.badFile': "Couldn't read the settings file",
     'sec.board': 'PR board', 'sec.repos': 'Repositories', 'sec.screen': 'Screen', 'sec.fetch': 'GitHub fetch',
     'tab.plan': 'Plans', 'pl.plans': 'Plans', 'pl.new': 'New plan', 'pl.applied': 'Applied', 'pl.dirty': 'Modified · not committed', 'pl.timeline': 'Timeline', 'pl.apply': 'Apply to GitHub ({n})', 'pl.update': 'Push changes ({n})', 'pl.issue': 'Issue', 'pl.addChild': 'Add sub-issue', 'pl.untitled': '(untitled)', 'pl.changed': 'Changed', 'pl.days': '{n}d', 'pl.title': 'Title', 'pl.start': 'Start', 'pl.end': 'End', 'pl.body': 'Description', 'pl.delete': 'Delete', 'pl.cantDelete': "Issues already created on GitHub can't be removed from the plan", 'pl.cantDeleteRoot': "The top-level issue can't be removed", 'pl.removeField': 'Remove field', 'pl.f.labels': 'Labels', 'pl.f.milestone': 'Milestone', 'pl.selected': '{n} selected', 'pl.keep': 'Keep', 'pl.bulkApply': 'Apply to selected', 'pl.clearSel': 'Deselect', 'pl.newIssue': 'New issue', 'pl.editIssue': 'Update #{n}', 'pl.optProject': 'Add to Projects and set start, end and sprint', 'pl.optCommit': 'Commit the md file', 'pl.noGit': "The plans folder isn't a git repository", 'pl.run': 'Apply', 'pl.needTitle': 'Some issues have no title', 'pl.done': 'Created {created} and updated {updated} issue(s)', 'pl.committed': 'committed', 'pl.file': 'File name', 'pl.create': 'Create', 's.plansDir': 'Folder for plan md files (empty = ~/docket-plans; one folder per GitHub Project is created inside)', 'err.planFileInvalid': 'Use only lowercase letters, digits, hyphens and .md in the file name', 'err.planNotFound': 'Plan file not found', 'err.planExists': '{file} already exists', 'err.planInvalid': 'Invalid plan', 'err.planRepoMissing': 'Enter the repository (owner/name)', 'err.planApplying': 'This plan is already being applied', 'err.planMilestoneMissing': 'Skipped milestone {milestone} for \'{title}\' (not found)', 'err.planSprintMissing': 'Skipped sprint {sprint} for \'{title}\' (not found)',
+    'pl.range': "Sprint · Period", 'pl.noneInRange': "No plans in this range", 'pl.noRows': "No issues match", 'pl.openOnly': "Open only", 'pl.addNew': "New sub-issue", 'pl.import': "Import an existing issue", 'pl.importBtn': "Import", 'pl.fromBlank': "Blank plan", 'pl.fromIssue': "Start from an existing issue", 'pl.searchPh': "Number or title", 'pl.noIssues': "Nothing found", 'pl.moveFrom': "moves from {n}", 'pl.subCount': "{n} sub-issue(s)", 'pl.needIssue': "Choose an issue", 'err.planIssueNotFound': "Issue not found", 'err.planIssueTaken': "#{number} is already in the plan \"{title}\"",
     'sp.noProjects': 'Add a project URL to "GitHub Projects for the roadmap" in Settings.', 'sp.count': '{n} issue(s)',
     future: 'Upcoming', current: 'Current', past: 'Past',
     'sp.noIteration': 'This project has no Iteration field.',
@@ -2298,7 +2330,7 @@ const PL_DAY = 24; // 1 日の幅
 const PL_TREE = 320; // 左の issue 名の列の幅
 const PL_DEPTH = 6; // md の見出しの深さまで
 const PL_FIELDS = ['labels', 'milestone', 'sprint']; // 詳細の「+」で足せる項目
-const pl = { list: null, dir: '', doc: null, opts: null, sel: new Set(), anchor: null, collapsed: new Set(), extra: {}, fieldMenu: false, bulk: null, range: null, drag: null, error: null, saveTimer: null, saving: Promise.resolve(), seq: 0 };
+const pl = { list: null, dir: '', doc: null, opts: null, ranges: null, live: null, f: { repo: '', as: '', st: '', open: false }, addMenu: null, sel: new Set(), anchor: null, collapsed: new Set(), extra: {}, fieldMenu: false, bulk: null, range: null, drag: null, error: null, saveTimer: null, saving: Promise.resolve(), seq: 0 };
 const plGet = (k) => { try { return localStorage.getItem(`docket-plan:${k}`); } catch { return null; } };
 const plSet = (k, v) => { try { localStorage.setItem(`docket-plan:${k}`, v); } catch {} };
 const plProject = () => {
@@ -2315,18 +2347,70 @@ const plAll = () => {
   return out;
 };
 const plFind = (id) => plAll().find((x) => x.n.id === id);
-// 表示中の行 (畳んだ親の子孫を除く)
+// 表示中の行 (畳んだ親の子孫と、絞り込みに当たらない issue を除く)。dim は当たる子孫がいるので残した祖先
 const plRows = () => {
+  const keep = plKeep();
   const out = [];
-  const walk = (nodes, p, d) => nodes.forEach((n) => { out.push({ n, p, d }); if (!pl.collapsed.has(n.id)) walk(n.children, n, d + 1); });
+  const walk = (nodes, p, d) => nodes.forEach((n) => {
+    if (keep && !keep.has(n.id)) return;
+    out.push({ n, p, d, dim: keep?.get(n.id) === 'dim' });
+    if (!pl.collapsed.has(n.id)) walk(n.children, n, d + 1);
+  });
   walk(plNodes(), null, 0);
   return out;
 };
+
+// 「スプリント · 期間」で選んだもの ({ kind: 's' | 'p', title, startDate, endDate })。選んでいなければ null
+const plWindowKey = () => `range:${plProject()}`;
+function plWindow() {
+  const v = plGet(plWindowKey()) || '';
+  if (!pl.ranges || !v) return null;
+  const id = v.slice(2);
+  const hit = v[0] === 's' ? pl.ranges.sprints.find((x) => x.id === id) : pl.ranges.periods.find((x) => x.id === id);
+  return hit ? { kind: v[0], ...hit } : null;
+}
+const plOverlap = (start, end, w) => start <= w.endDate && end >= w.startDate;
+const plInWindow = (n, w) => !w || (w.kind === 's' ? n.sprint === w.title : !!plSpan(n) && plOverlap(plSpan(n).start, plSpan(n).end, w));
+const plPlanInWindow = (p, w) => !w || (w.kind === 's' ? p.sprints.includes(w.title) : p.spans.some(([a, b]) => plOverlap(a, b, w)));
+const plPeriodLabel = (x) => (pl.ranges.unit === 'month' ? new Date(`${x.startDate}T00:00:00Z`).toLocaleDateString(lang, { year: 'numeric', month: 'long', timeZone: 'UTC' }) : `${plMd(x.startDate)} – ${plMd(x.endDate)}`);
+
+// 絞り込み中なら、当たる issue ('hit') と当たる子孫を持つ祖先 ('dim') の Map。絞り込みが無ければ null
+// Status・開いているかは GitHub にある issue だけで見る (Draft の issue には無いので、issue が 1 つも無い計画では使わない)
+function plKeep() {
+  const w = plWindow();
+  const f = pl.f;
+  const iss = plHasIssues();
+  const st = iss && f.st;
+  const open = iss && f.open;
+  if (!w && !f.repo && !f.as && !st && !open) return null;
+  const repo = pl.doc.plan.repo;
+  const hit = (n) => {
+    const g = plLive(n);
+    return plInWindow(n, w) && (!f.repo || (n.repo || repo) === f.repo)
+      && (!f.as || (f.as === '-' ? !n.assignees.length : n.assignees.includes(f.as)))
+      && (!st || g?.status === st) && (!open || !g || g.state === 'OPEN');
+  };
+  const keep = new Map();
+  const walk = (n) => {
+    const any = n.children.map(walk).some(Boolean);
+    const h = hit(n);
+    if (h || any) keep.set(n.id, h ? 'hit' : 'dim');
+    return h || any;
+  };
+  plNodes().forEach(walk);
+  return keep;
+}
 const plNewId = () => `c${Date.now().toString(36)}${++pl.seq}`;
 const plDescendants = (n) => n.children.flatMap((c) => [c, ...plDescendants(c)]);
 const plAvatar = (login) => pl.opts?.assignees.find((a) => a.login === login)?.avatarUrl || `https://github.com/${encodeURIComponent(login)}.png?size=40`;
-const plIssueUrl = (num) => `https://github.com/${pl.doc.plan.repo}/issues/${num}`;
-const plChanged = (n) => !!n.issue && pl.doc.changed.includes(n.issue);
+const plIssueUrl = (n) => `https://github.com/${n.repo || pl.doc.plan.repo}/issues/${n.issue}`;
+// 計画をまたいで issue を見分けるキーと、サーバーの changed のキー (計画のリポジトリの issue は番号だけ)
+const plKey = (n) => `${n.repo || pl.doc.plan.repo}#${n.issue}`;
+const plSyncKey = (n) => (n.repo && n.repo !== pl.doc.plan.repo ? `${n.repo}#${n.issue}` : String(n.issue));
+const plChanged = (n) => !!n.issue && pl.doc.changed.includes(plSyncKey(n));
+// GitHub にある issue の今の Status・開いているか・PR
+const plLive = (n) => (n.issue && pl.live?.issues[plKey(n)]) || null;
+const plHasIssues = () => plAll().some(({ n }) => n.issue);
 // GitHub に作る issue と、反映後に変えた issue
 const plTargets = () => plAll().filter(({ n }) => !n.issue || plChanged(n));
 
@@ -2338,6 +2422,7 @@ async function loadPlans() {
     const res = await api(`/api/plans?${plQuery()}`);
     pl.list = res.plans;
     pl.dir = res.dir;
+    if (pl.ranges?.project !== url) loadPlanRanges(url);
     const file = plFile();
     const open = pl.list.find((p) => p.file === file) || pl.list[0];
     if (open) await openPlan(open.file, false);
@@ -2356,8 +2441,31 @@ async function openPlan(file, render = true) {
   pl.anchor = null;
   pl.bulk = null;
   pl.extra = {};
+  pl.live = null;
+  pl.addMenu = null;
   loadPlanOptions();
+  loadPlanLive();
   if (render) renderPlan();
+}
+
+// 「スプリント · 期間」の選択肢 (Project のスプリントと、設定の単位の期間)
+async function loadPlanRanges(url) {
+  try {
+    const ranges = await api(`/api/plan/ranges?${new URLSearchParams({ project: url })}`);
+    if (plProject() === url) { pl.ranges = { ...ranges, project: url }; plRefresh(['side', 'body']); }
+  } catch {}
+}
+
+// 計画の issue の今の状態。Project のキャッシュと同じく、取り直すのは ↻ を押したときだけ
+async function loadPlanLive(refresh = false) {
+  const doc = pl.doc;
+  if (!doc) return;
+  try {
+    const live = await api(`/api/plan/live?${plQuery({ file: doc.file, ...(refresh && { refresh: '1' }) })}`);
+    if (pl.doc === doc) { pl.live = live; plRefresh(['body', 'detail']); }
+  } catch (e) {
+    if (refresh) toast(e.message);
+  }
 }
 
 async function loadPlanOptions() {
@@ -2405,7 +2513,8 @@ const plEdited = (parts = ['head', 'body', 'detail', 'side']) => {
 function plRange() {
   if (pl.drag && pl.range) return pl.range;
   const today = spToday();
-  const dates = plAll().flatMap(({ n }) => [n.start, n.end]).filter(Boolean);
+  const w = plWindow();
+  const dates = [...plAll().flatMap(({ n }) => [n.start, n.end]), w?.startDate, w?.endDate].filter(Boolean);
   const min = dates.reduce((a, b) => (b < a ? b : a), today);
   const max = dates.reduce((a, b) => (b > a ? b : a), today);
   const from = spDay(min, -7);
@@ -2429,16 +2538,19 @@ function renderPlan() {
   el.innerHTML = `<aside class="pl-side${closed ? ' closed' : ''}" data-pl="side"></aside>
     <section class="pl-main">${pl.error ? `<div class="banner">${esc(pl.error)}</div>` : !pl.doc ? '' : `
       <div class="pl-head" data-pl="head"></div>
+      <div class="pl-filter" data-pl="filter"></div>
       <div data-pl="bulk"></div>
       <div class="pl-work"><div class="pl-body" data-pl="body"></div><aside class="pl-detail" data-pl="detail"></aside></div>
       <div class="pl-foot" data-pl="foot"></div>`}</section>`;
-  plRefresh(['side', 'head', 'bulk', 'body', 'detail']);
+  plRefresh(['side', 'head', 'filter', 'bulk', 'body', 'detail']);
 }
 
 // 入力中の欄を含む部分は描き直さない (フォーカスと入力中の値が消えるため)
-const PL_PARTS = { side: () => plSideHtml(), head: () => plHeadHtml(), bulk: () => plBulkHtml(), body: () => plBodyHtml(), detail: () => plDetailHtml(), foot: () => esc(pl.doc?.rel || '') };
+const PL_PARTS = { side: () => plSideHtml(), head: () => plHeadHtml(), filter: () => plFilterHtml(), bulk: () => plBulkHtml(), body: () => plBodyHtml(), detail: () => plDetailHtml(), foot: () => esc(pl.doc?.rel || '') };
 function plRefresh(parts) {
-  for (const part of parts.includes('head') ? [...parts, 'foot'] : parts) {
+  // フッターは見出しと、絞り込みの候補 (担当者など) は一覧と一緒に描き直す
+  const all = [...parts, ...(parts.includes('head') ? ['foot'] : []), ...(parts.includes('body') && !parts.includes('filter') ? ['filter'] : [])];
+  for (const part of all) {
     const box = $(`#plan [data-pl="${part}"]`);
     if (!box || (part !== 'side' && !pl.doc)) continue;
     const a = document.activeElement;
@@ -2461,10 +2573,17 @@ function plSideHtml() {
   const select = `<select data-pl-project title="${esc(url)}">${projects.map((u) => `<option value="${esc(u)}"${u === url ? ' selected' : ''}>${esc(sp.meta[u]?.title || (u === url && pl.opts?.fields?.title) || u.replace(/^.*github\.com\//, ''))}</option>`).join('')}</select>`;
   const item = (p) => `<button class="pl-item${p.file === pl.doc?.file ? ' on' : ''}" data-pl-open="${esc(p.file)}" title="${esc(p.file)}"><span class="t">${esc(p.title)}</span>${p.dirty ? `<span class="pl-dirty" title="${esc(tr('pl.dirty'))}"></span>` : ''}</button>`;
   const group = (label, list) => (list.length ? `<div class="grp">${label}</div>${list.map(item).join('')}` : '');
-  const list = pl.list || [];
+  // 選んだスプリント・期間に issue が掛かる計画だけ出す (開いている計画は出したまま)
+  const w = plWindow();
+  const list = (pl.list || []).filter((p) => p.file === pl.doc?.file || plPlanInWindow(p, w));
+  const cur = plGet(plWindowKey()) || '';
+  const opt = (v, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+  const ranges = pl.ranges;
+  const range = `<div><span class="ms-label">${tr('pl.range')}</span><select data-pl-range><option value="">${tr('all')}</option>${ranges?.sprints.length ? `<optgroup label="${esc(tr('sp.sprint'))}">${ranges.sprints.map((x) => opt(`s:${x.id}`, `${x.title} · ${plMd(x.startDate)} – ${plMd(x.endDate)}`)).join('')}</optgroup>` : ''}${ranges ? `<optgroup label="${esc(tr('sp.period'))}">${ranges.periods.map((x) => opt(`p:${x.id}`, plPeriodLabel(x))).join('')}</optgroup>` : ''}</select></div>`;
   return `<div class="pl-side-top"><span class="ms-label">GitHub Projects</span><button class="pl-fold" data-pl-side="0">‹</button></div>${select}
+    ${range}
     <div class="pl-side-head"><b>${tr('pl.plans')}</b><button class="pl-new" data-pl-new>+ ${tr('pl.new')}</button></div>
-    <div class="pl-list">${group('Draft', list.filter((p) => p.status !== 'applied'))}${group(tr('pl.applied'), list.filter((p) => p.status === 'applied'))}</div>
+    <div class="pl-list">${group('Draft', list.filter((p) => p.status !== 'applied'))}${group(tr('pl.applied'), list.filter((p) => p.status === 'applied'))}${!list.length && w ? `<p class="pl-none">${tr('pl.noneInRange')}</p>` : ''}</div>
     <div class="pl-dir">${esc(pl.dir)}</div>`;
 }
 
@@ -2486,6 +2605,23 @@ function plHeadHtml() {
     <button class="primary" data-pl-apply ${n ? '' : 'disabled'}>${label}</button></span>`;
 }
 
+function plFilterHtml() {
+  if (plGet('view') === 'md') return '';
+  const { plan } = pl.doc;
+  const nodes = plAll().map(({ n }) => n);
+  const repos = [...new Set([plan.repo, ...nodes.map((n) => n.repo)].filter(Boolean))];
+  const people = [...new Set(nodes.flatMap((n) => n.assignees))].sort();
+  const iss = plHasIssues();
+  const f = pl.f;
+  const sel = (key, opts, off) => `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const live = pl.live?.fetchedAt && `<span class="right"><button class="refetch" data-pl-live title="${esc(new Date(pl.live.fetchedAt).toLocaleString(lang))} — ${esc(tr('sp.refetchTitle'))}"><span class="hint">↻ </span>${tr('fetchedAgo', { ago: ago(pl.live.fetchedAt) })}</button></span>`;
+  return `<label>${tr('repo')}${sel('repo', repos.map((r) => [r, r.split('/')[1]]))}</label>
+    <label>${tr('sp.assignee')}${sel('as', [...people.map((a) => [a, a]), ['-', tr('unset')]])}</label>
+    <label>Status${sel('st', (pl.ranges?.statuses || []).map((x) => [x, x]), !iss)}</label>
+    <label><input type="checkbox" data-pl-filter="open"${f.open && iss ? ' checked' : ''}${iss ? '' : ' disabled'}>${tr('pl.openOnly')}</label>
+    ${live || ''}`;
+}
+
 function plBodyHtml() {
   if (plGet('view') === 'md') {
     // 最後のコミットから変わった行に印を付ける (git で管理していなければ付けない)
@@ -2502,33 +2638,39 @@ function plBodyHtml() {
   const today = spToday();
   const dayList = Array.from({ length: days }, (_, i) => spDay(from, i));
   const isWe = (d) => [0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay());
-  const head = dayList.map((d, i) => `<div class="${isWe(d) ? 'we' : ''}${d === today ? ' today' : ''}">${i === 0 || d.endsWith('-01') ? new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' }) : ''}<br>${Number(d.slice(8))}</div>`).join('');
+  const w = plWindow();
+  const out = (d) => w && (d < w.startDate || d > w.endDate);
+  const head = dayList.map((d, i) => `<div class="${isWe(d) ? 'we' : ''}${d === today ? ' today' : ''}${out(d) ? ' out' : ''}">${i === 0 || d.endsWith('-01') ? new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' }) : ''}<br>${Number(d.slice(8))}</div>`).join('');
   const bg = dayList.map((d, i) => (isWe(d) ? `<i class="we" style="left:${i * PL_DAY}px"></i>` : '')).join('')
-    + (today >= from && plIdx(today) < days ? `<i class="today" style="left:${plIdx(today) * PL_DAY + PL_DAY / 2}px"></i>` : '');
-  const rows = plRows().map(({ n, d }) => {
+    + (today >= from && plIdx(today) < days ? `<i class="today" style="left:${plIdx(today) * PL_DAY + PL_DAY / 2}px"></i>` : '')
+    // 選んだスプリント・期間の外は薄く塗る
+    + (w ? `<i class="out" style="left:0;width:${Math.max(0, plIdx(w.startDate)) * PL_DAY}px"></i><i class="out" style="left:${Math.min(days, plIdx(w.endDate) + 1) * PL_DAY}px;width:${Math.max(0, days - plIdx(w.endDate) - 1) * PL_DAY}px"></i>` : '');
+  const rows = plRows().map(({ n, d, dim }) => {
+    const g = plLive(n);
+    const menu = pl.addMenu === n.id;
     const toggle = n.children.length ? `<span class="tg" data-pl-toggle="${esc(n.id)}">${pl.collapsed.has(n.id) ? '▸' : '▾'}</span>` : '<span class="tg"></span>';
     const avatars = n.assignees.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
     const changed = plChanged(n);
     const tree = `<div class="pl-tree" style="padding-left:${6 + d * 16}px">${toggle}<span class="pl-dot${n.issue ? ' iss' : ''}"></span>${avatars}
       <button class="pl-t${n.title ? '' : ' empty'}" data-pl-row="${esc(n.id)}">${esc(n.title || tr('pl.untitled'))}</button>
       ${changed ? `<span class="chip warn">${tr('pl.changed')}</span>` : ''}
-      ${n.issue ? `<a class="num" href="${esc(safeUrl(plIssueUrl(n.issue)))}" target="docket-viewer">#${n.issue}</a>` : ''}
-      ${d + 1 < PL_DEPTH ? `<button class="pl-add" data-pl-add="${esc(n.id)}" title="${esc(tr('pl.addChild'))}">+</button>` : ''}</div>`;
+      ${n.issue ? `<a class="num" href="${esc(safeUrl(plIssueUrl(n)))}" target="docket-viewer">${n.repo ? esc(n.repo.split('/')[1]) : ''}#${n.issue}</a>` : ''}
+      ${d + 1 < PL_DEPTH ? `<span class="pl-addw"><button class="pl-add" data-pl-menu="${esc(n.id)}" title="${esc(tr('pl.addChild'))}" aria-expanded="${menu}">+</button>${menu ? `<span class="pop"><button data-pl-add="${esc(n.id)}">${tr('pl.addNew')}</button><button data-pl-import="${esc(n.id)}">${tr('pl.import')}</button></span>` : ''}</span>` : ''}</div>`;
     const span = plSpan(n);
     let bar = '';
     if (span) {
       const len = plIdx(span.end) - plIdx(span.start) + 1;
       const text = len * PL_DAY >= 120 ? `${plMd(span.start)}–${plMd(span.end)} · ${tr('pl.days', { n: len })}` : len * PL_DAY >= 36 ? tr('pl.days', { n: len }) : '';
-      bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i>${text}<i class="h r" data-pl-h="r"></i></div>`;
+      bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i>${text}${(g?.prs || []).map((pr) => `<span class="pl-pr ${esc(pr.kind)}">#${pr.number}</span>`).join('')}<i class="h r" data-pl-h="r"></i></div>`;
     }
-    return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
+    return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}${dim ? ' dim' : ''}${g?.state === 'CLOSED' ? ' closed' : ''}${menu ? ' menu' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
   }).join('');
   const allFolded = plNodes().every((n) => !n.children.length || pl.collapsed.has(n.id));
   const foldAll = plNodes().some((n) => n.children.length) ? `<button class="fold-all" data-pl-fold="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
   return `<div class="pl-road"><div class="pl-grid" style="--d:${PL_DAY}px;--tree:${PL_TREE}px;width:${PL_TREE + days * PL_DAY}px">
     <div class="pl-bg" style="left:${PL_TREE}px">${bg}</div>
     <div class="pl-hdr"><div class="pl-tree"><span>${tr('pl.issue')}</span>${foldAll}</div><div class="pl-days">${head}</div></div>
-    ${rows}
+    ${rows || (plNodes().length ? `<p class="pl-none" style="padding:8px">${tr('pl.noRows')}</p>` : '')}
     ${plNodes().length ? '' : `<div class="pl-row add-root"><div class="pl-tree"><button class="pl-add" data-pl-add="">+ ${tr('pl.issue')}</button></div></div>`}
   </div></div>`;
 }
@@ -2557,7 +2699,9 @@ function plDetailHtml() {
   };
   const rest = PL_FIELDS.filter((f) => !shown(f));
   const fieldLabel = { labels: tr('pl.f.labels'), milestone: tr('pl.f.milestone'), sprint: tr('sp.sprint') };
-  return `${field(tr('pl.title'), `<input data-pl-f="title" value="${esc(n.title)}">`)}
+  const g = plLive(n);
+  const live = n.issue ? `<div class="pl-live"><a href="${esc(safeUrl(plIssueUrl(n)))}" target="docket-viewer">${esc(n.repo || '')}#${n.issue}</a>${g?.status ? `<span class="st st-${esc(String(g.color || '').toLowerCase())}">${esc(g.status)}</span>` : ''}${g?.state === 'CLOSED' ? '<span class="chip">Closed</span>' : ''}${(g?.prs || []).map((pr) => `<a class="pl-pr ${esc(pr.kind)}" href="${esc(safeUrl(pr.url))}" target="docket-viewer">#${pr.number}</a>`).join('')}</div>` : '';
+  return `${live}${field(tr('pl.title'), `<input data-pl-f="title" value="${esc(n.title)}">`)}
     <div class="pl-dates">${field(tr('pl.start'), `<input type="date" data-pl-f="start" value="${esc(n.start || '')}">`)}${field(tr('pl.end'), `<input type="date" data-pl-f="end" value="${esc(n.end || '')}">`)}</div>
     ${multiSelect('pl-assignees', tr('sp.assignee'), n.assignees.length ? plAvatars(n.assignees) : tr('none'), plPeople(n.assignees).map((a) => ({ value: a, text: a, img: plAvatar(a) })), (a) => n.assignees.includes(a))}
     ${PL_FIELDS.filter(shown).map((f) => `<div class="pl-xf">${fieldHtml[f]()}${remove(f)}</div>`).join('')}
@@ -2649,8 +2793,16 @@ $('#plan').addEventListener('click', (ev) => {
     pl.collapsed.has(id) ? pl.collapsed.delete(id) : pl.collapsed.add(id);
     return plRefresh(['body']);
   }
+  const menu = t.closest('[data-pl-menu]');
+  if (menu) {
+    pl.addMenu = pl.addMenu === menu.dataset.plMenu ? null : menu.dataset.plMenu;
+    return plRefresh(['body']);
+  }
   const add = t.closest('[data-pl-add]');
-  if (add) return plAdd(add.dataset.plAdd);
+  if (add) { pl.addMenu = null; return plAdd(add.dataset.plAdd); }
+  const imp = t.closest('[data-pl-import]');
+  if (imp) return openImportIssue(imp.dataset.plImport);
+  if (t.closest('[data-pl-live]')) return loadPlanLive(true);
   const row = t.closest('[data-pl-row]');
   if (row) return plSelect(row.dataset.plRow, ev);
   if (t.closest('[data-pl-addf]')) { pl.fieldMenu = !pl.fieldMenu; return plRefresh(['detail']); }
@@ -2694,6 +2846,7 @@ $('#plan').addEventListener('click', (ev) => {
     return plEdited(['head', 'body', 'detail']);
   }
   if (pl.fieldMenu && !t.closest('.pl-addf')) { pl.fieldMenu = false; plRefresh(['detail']); }
+  if (pl.addMenu && !t.closest('.pl-addw')) { pl.addMenu = null; plRefresh(['body']); }
 });
 
 $('#plan').addEventListener('input', (ev) => {
@@ -2711,7 +2864,12 @@ $('#plan').addEventListener('input', (ev) => {
 
 $('#plan').addEventListener('change', (ev) => {
   const t = ev.target;
-  if (t.matches('[data-pl-project]')) { plSet('project', t.value); pl.doc = null; pl.list = null; pl.opts = null; return loadPlans(); }
+  if (t.matches('[data-pl-project]')) { plSet('project', t.value); pl.doc = null; pl.list = null; pl.opts = null; pl.ranges = null; pl.f = { repo: '', as: '', st: '', open: false }; return loadPlans(); }
+  if (t.matches('[data-pl-range]')) { plSet(plWindowKey(), t.value); return plRefresh(['side', 'body']); }
+  if (t.matches('[data-pl-filter]')) {
+    pl.f[t.dataset.plFilter] = t.type === 'checkbox' ? t.checked : t.value;
+    return plRefresh(['filter', 'body']);
+  }
   if (t.matches('[data-pl-repo]')) {
     pl.doc.plan.repo = t.value.trim();
     pl.opts = null;
@@ -2794,6 +2952,97 @@ window.addEventListener('pointerup', (ev) => {
   plSelect(d.id, { ...d.mods, shiftKey: d.mods.shiftKey || (ev.shiftKey && d.mode !== 'move') });
 });
 
+// 取り込む issue を選ぶ一覧。番号かタイトルで探し、どれかの計画に入っている issue は選べなくする
+// repo: 計画のリポジトリ (違うリポジトリの issue に名前を添える)。moving: GitHub での親から付け替わることを添える
+function plPicker(box, { repo, moving, onPick }) {
+  const owners = new Map();
+  for (const p of pl.list || []) for (const k of p.issues) owners.set(k, p.title);
+  const list = box.querySelector('.pl-pick');
+  const short = (r) => (r === repo ? '' : r.split('/')[1]);
+  let seq = 0;
+  const search = async (q) => {
+    const my = ++seq;
+    list.innerHTML = '<span class="spin"></span>';
+    try {
+      const { items } = await api(`/api/plan/search?${plQuery({ q })}`);
+      if (my !== seq) return;
+      list.innerHTML = items.map((it, i) => {
+        const owner = owners.get(`${it.repo}#${it.number}`);
+        const notes = owner ? [owner] : [
+          ...(it.repo !== repo ? [short(it.repo)] : []),
+          ...(moving && it.parent ? [tr('pl.moveFrom', { n: `${short(it.parent.repo)}#${it.parent.number}` })] : []),
+          ...(it.subCount ? [tr('pl.subCount', { n: it.subCount })] : []),
+        ];
+        return `<button type="button" class="pl-pi" data-pk="${i}"${owner ? ' disabled' : ''}><span class="num">#${it.number}</span><span class="t">${esc(it.title)}</span>${notes.length ? `<span class="note">${esc(notes.join(' · '))}</span>` : ''}${it.state === 'CLOSED' ? '<span class="chip">Closed</span>' : ''}</button>`;
+      }).join('') || `<p class="pl-none">${tr('pl.noIssues')}</p>`;
+      list.onclick = (ev) => {
+        const b = ev.target.closest('[data-pk]');
+        if (!b || b.disabled) return;
+        list.querySelectorAll('.pl-pi.on').forEach((x) => x.classList.remove('on'));
+        b.classList.add('on');
+        onPick(items[b.dataset.pk]);
+      };
+    } catch (e) {
+      if (my === seq) list.innerHTML = `<p class="pl-none">${esc(e.message)}</p>`;
+    }
+  };
+  let timer;
+  box.querySelector('[data-pk-q]').oninput = (ev) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => search(ev.target.value), 300);
+  };
+  search('');
+}
+
+const plPickerHtml = () => `<input type="search" data-pk-q placeholder="${esc(tr('pl.searchPh'))}" aria-label="${esc(tr('pl.searchPh'))}"><div class="pl-pick"></div>`;
+
+// 既存の issue を sub issue ごと targetId の下に入れる。GitHub での親から付け替えるのは次の「変更を反映」のとき
+function openImportIssue(targetId) {
+  const hit = plFind(targetId);
+  if (!hit) return;
+  pl.addMenu = null;
+  plRefresh(['body']);
+  const dlg = $('#plan-dlg');
+  dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.import')}</h3><button>${tr('close')}</button></form>
+    <div class="dlg-body"><p class="muted" style="margin:0 0 8px">${esc(hit.n.title || tr('pl.untitled'))} ›</p>${plPickerHtml()}</div>
+    <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pk-ok disabled>${tr('pl.importBtn')}</button></div>`;
+  const ok = dlg.querySelector('[data-pk-ok]');
+  let picked = null;
+  plPicker(dlg, { repo: pl.doc.plan.repo, moving: true, onPick: (it) => { picked = it; ok.disabled = false; } });
+  ok.onclick = async () => {
+    ok.disabled = true;
+    ok.innerHTML = `<span class="spin"></span> ${tr('pl.importBtn')}`;
+    try {
+      await plFlush();
+      const doc = pl.doc;
+      const { node } = await api('/api/plan/import', { method: 'POST', body: { project: plProject(), file: doc.file, repo: picked.repo, number: picked.number, level: hit.d + 2 } });
+      const target = plFind(targetId)?.n;
+      dlg.close();
+      if (!target || pl.doc !== doc) return;
+      const adopt = (x) => ({ ...x, id: plNewId(), repo: x.repo || null, children: x.children.map(adopt) });
+      const added = adopt(node);
+      target.children.push(added);
+      pl.collapsed.delete(target.id);
+      pl.sel = new Set([added.id]);
+      pl.anchor = added.id;
+      pl.bulk = null;
+      // 続けて取り込むときの「どの計画に入っているか」も更新する
+      const item = pl.list?.find((x) => x.file === doc.file);
+      const walk = (x) => { item?.issues.push(plKey(x)); x.children.forEach(walk); };
+      walk(added);
+      plEdited(['head', 'bulk', 'body', 'detail']);
+      await plFlush();
+      loadPlanLive();
+    } catch (e) {
+      toast(e.message);
+      ok.disabled = false;
+      ok.textContent = tr('pl.importBtn');
+    }
+  };
+  dlg.showModal();
+  dlg.querySelector('[data-pk-q]').focus();
+}
+
 async function openNewPlan() {
   const dlg = $('#plan-dlg');
   // プロジェクトにリンクしたリポジトリを先に、設定に登録したリポジトリを後に並べる
@@ -2801,32 +3050,60 @@ async function openNewPlan() {
   const repos = plRepoCandidates(fields);
   dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.new')}</h3><button data-i18n="close">${tr('close')}</button></form>
     <div class="dlg-body">
-      <div class="form-row"><label>${tr('pl.title')}</label><input data-pl-new-title required></div>
+      <span class="seg pl-kind"><button type="button" class="primary" data-pl-kind="blank">${tr('pl.fromBlank')}</button><button type="button" data-pl-kind="issue">${tr('pl.fromIssue')}</button></span>
+      <div data-pl-k="blank">
+        <div class="form-row"><label>${tr('pl.title')}</label><input data-pl-new-title required></div>
+        <div class="form-row"><label>${tr('repo')}</label><select data-pl-new-repo>${[...new Set(repos)].map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
+      </div>
+      <div data-pl-k="issue" hidden>${plPickerHtml()}</div>
       <div class="form-row"><label>${tr('pl.file')}</label><input data-pl-new-file placeholder="feature-name.md" pattern="[a-z0-9][a-z0-9\\-]*\\.md" required></div>
-      <div class="form-row"><label>${tr('repo')}</label><select data-pl-new-repo>${[...new Set(repos)].map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
     </div>
     <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pl-create>${tr('pl.create')}</button></div>`;
   const title = dlg.querySelector('[data-pl-new-title]');
   const file = dlg.querySelector('[data-pl-new-file]');
-  // ファイル名はタイトルから作る (英数字が無いタイトルは自分で入れる)
+  let kind = 'blank';
+  let picked = null;
+  let picker = false;
+  // ファイル名はタイトル (既存の issue から始めるなら issue 番号) から作る。英数字が無いタイトルは自分で入れる
+  const fill = (v) => { if (!file.dataset.touched) file.value = v; };
   title.oninput = () => {
-    if (file.dataset.touched) return;
     const slug = title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    file.value = slug ? `${slug}.md` : '';
+    fill(slug ? `${slug}.md` : '');
   };
   file.oninput = () => (file.dataset.touched = '1');
+  dlg.querySelector('.pl-kind').onclick = (ev) => {
+    const b = ev.target.closest('[data-pl-kind]');
+    if (!b) return;
+    kind = b.dataset.plKind;
+    dlg.querySelectorAll('[data-pl-kind]').forEach((x) => x.classList.toggle('primary', x === b));
+    dlg.querySelectorAll('[data-pl-k]').forEach((x) => (x.hidden = x.dataset.plK !== kind));
+    title.required = kind === 'blank';
+    if (kind === 'issue' && !picker) {
+      picker = true;
+      plPicker(dlg.querySelector('[data-pl-k="issue"]'), { onPick: (it) => { picked = it; fill(`issue-${it.number}.md`); } });
+    }
+    dlg.querySelector(kind === 'issue' ? '[data-pk-q]' : '[data-pl-new-title]').focus();
+  };
   dlg.querySelector('[data-pl-create]').onclick = async () => {
-    if (!title.reportValidity() || !file.reportValidity()) return;
+    if (kind === 'blank' && !title.reportValidity()) return;
+    if (kind === 'issue' && !picked) return toast(tr('pl.needIssue'));
+    if (!file.reportValidity()) return;
+    const btn = dlg.querySelector('[data-pl-create]');
+    btn.disabled = true;
     try {
-      const doc = await api('/api/plan/new', { method: 'POST', body: { project: plProject(), file: file.value, title: title.value.trim(), repo: dlg.querySelector('[data-pl-new-repo]').value.trim() } });
+      const body = kind === 'issue'
+        ? { project: plProject(), file: file.value, issue: { repo: picked.repo, number: picked.number } }
+        : { project: plProject(), file: file.value, title: title.value.trim(), repo: dlg.querySelector('[data-pl-new-repo]').value.trim() };
+      const doc = await api('/api/plan/new', { method: 'POST', body });
       dlg.close();
       plSet(`file:${plProject()}`, doc.file);
       await loadPlans();
-      // 最初から作ってある最上位 issue を選んでおく (すぐ sub issue を足せるように)
+      // 最上位 issue を選んでおく (すぐ sub issue を足せるように)
       const root = plNodes()[0];
       if (root) plSelect(root.id, {});
     } catch (e) {
       toast(e.message);
+      btn.disabled = false;
     }
   };
   dlg.showModal();

@@ -16,7 +16,7 @@ status: applied
 本文 1 行目
 \# 見出しではない行
 
-## API {start=2026-11-05 end=2026-11-07}
+## API {issue=#41 repo=acme/docs start=2026-11-05 end=2026-11-07}
 
 ### スキーマ
 
@@ -38,8 +38,10 @@ test('parsePlan: frontmatter・見出しの階層・属性・本文を読む', (
   assert.equal(root.milestone, 'v0.5');
   assert.equal(root.body, '本文 1 行目\n# 見出しではない行');
   assert.deepEqual(root.children.map((c) => c.title), ['API', '画面']);
+  assert.equal(root.repo, null);
+  assert.equal(root.children[0].repo, 'acme/docs');
   assert.equal(root.children[0].children[0].title, 'スキーマ');
-  assert.equal(root.children[0].issue, null);
+  assert.equal(root.children[0].issue, 41);
 });
 
 test('serializePlan: 読んだものを書き戻すと同じ内容になる', () => {
