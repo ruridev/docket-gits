@@ -1008,8 +1008,8 @@ function createPlan(url, { file, title, repo }) {
 async function projectFields(url, refresh = false) {
   const p = parseProjectUrl(url);
   if (!p) throw E('projectUrlInvalid', { url });
-  return cached(`plan-fields:${url}`, refresh, async () => {
-    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title fields(first: 50) { nodes {
+  return cached(`plan-fields:v2:${url}`, refresh, async () => {
+    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title repositories(first: 50) { nodes { nameWithOwner } } fields(first: 50) { nodes {
       ... on ProjectV2FieldCommon { id name dataType }
       ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
     } } } } }`, { login: p.login, number: p.number });
@@ -1019,6 +1019,8 @@ async function projectFields(url, refresh = false) {
     const ref = (name) => name && { id: nodes.find((n) => n.name === name).id, name };
     return {
       id: project.id, title: project.title, start: ref(f.start), end: ref(f.end), sprint: ref(f.sprint),
+      // 新しい計画のリポジトリの候補 (プロジェクトにリンクしたリポジトリ)
+      repos: project.repositories.nodes.map((r) => r.nameWithOwner),
       // 計画で選ぶのは終わっていないスプリントだけ
       iterations: f.iterations.filter((i) => !i.completed).sort((a, b) => a.startDate.localeCompare(b.startDate)).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })),
     };

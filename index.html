@@ -344,7 +344,7 @@
   .pl-head .chip { font-size: 12px; line-height: 20px; }
   .chip.draft { border-style: dashed; border-color: var(--accent); color: var(--accent); background: none; }
   .chip.ok { border-color: var(--ok); color: var(--ok); background: none; }
-  .pl-repo { font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 10px; background: var(--chip); width: 160px; }
+  .pl-repo { font-size: 12px; line-height: 20px; padding: 0 24px 0 8px; border-radius: 10px; background-color: var(--chip); background-position: right 8px center; field-sizing: content; }
   .pl-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   .pl-bulk { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
   .pl-bulk > b { align-self: center; font-size: 13px; }
@@ -416,7 +416,7 @@
   #plan-dlg li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
   #plan-dlg li .chip { flex: none; }
   #plan-dlg .opt { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-  #plan-dlg .form-row input { width: 100%; }
+  #plan-dlg .form-row input, #plan-dlg .form-row select { width: 100%; }
   .toast.ok { background: var(--ok); }
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
@@ -2475,7 +2475,7 @@ function plHeadHtml() {
   const hasIssue = plAll().some(({ n: x }) => x.issue);
   // 一度も issue を作っていなければリポジトリを変えられる
   const repo = hasIssue ? `<span class="chip">${esc(plan.repo)}</span>`
-    : `<input class="pl-repo" data-pl-repo list="pl-repos" value="${esc(plan.repo)}" placeholder="owner/name"><datalist id="pl-repos">${Object.keys(board.config.repos || {}).map((r) => `<option value="${esc(r)}">`).join('')}</datalist>`;
+    : `<select class="pl-repo" data-pl-repo>${plRepoOptions(plRepoCandidates(pl.opts?.fields), plan.repo)}</select>`;
   const view = plGet('view') === 'md' ? 'md' : 'timeline';
   const label = !applied ? tr('pl.apply', { n }) : n ? tr('pl.update', { n }) : tr('pl.applied');
   return `<input class="pl-title" data-pl-title value="${esc(plan.title)}" aria-label="${esc(tr('pl.title'))}">
@@ -2538,6 +2538,9 @@ const plPeople = (extra = []) => [...new Set([...(pl.opts?.assignees || []).map(
 const plLabels = (extra = []) => [...new Set([...(pl.opts?.labels || []).map((l) => l.name), ...extra])];
 const plAvatars = (list) => list.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
 const plOptions = (values, current, empty) => `<option value="">${empty}</option>${[...new Set([...values, ...(current ? [current] : [])])].map((v) => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}`;
+const plRepoCandidates = (fields) => [...new Set([...(fields?.repos || []), ...Object.keys(board.config.repos || {})])];
+// 未設定なら空の選択肢を先頭に出す (先頭の候補が選ばれて見えるのに保存されていない状態にしない)
+const plRepoOptions = (repos, current) => [...new Set([current || '', ...repos])].map((r) => `<option value="${esc(r)}"${r === current ? ' selected' : ''}>${esc(r)}</option>`).join('');
 const plSprints = () => (pl.opts?.fields?.iterations || []).map((i) => i.title);
 
 function plDetailHtml() {
@@ -2791,14 +2794,16 @@ window.addEventListener('pointerup', (ev) => {
   plSelect(d.id, { ...d.mods, shiftKey: d.mods.shiftKey || (ev.shiftKey && d.mode !== 'move') });
 });
 
-function openNewPlan() {
+async function openNewPlan() {
   const dlg = $('#plan-dlg');
-  const repos = Object.keys(board.config.repos || {});
+  // プロジェクトにリンクしたリポジトリを先に、設定に登録したリポジトリを後に並べる
+  const fields = pl.opts?.fields || (await api(`/api/plan/options?${plQuery()}`).catch(() => ({}))).fields;
+  const repos = plRepoCandidates(fields);
   dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.new')}</h3><button data-i18n="close">${tr('close')}</button></form>
     <div class="dlg-body">
       <div class="form-row"><label>${tr('pl.title')}</label><input data-pl-new-title required></div>
       <div class="form-row"><label>${tr('pl.file')}</label><input data-pl-new-file placeholder="feature-name.md" pattern="[a-z0-9][a-z0-9\\-]*\\.md" required></div>
-      <div class="form-row"><label>${tr('repo')}</label><input data-pl-new-repo list="pl-new-repos" placeholder="owner/name" value="${esc(pl.doc?.plan.repo || repos[0] || '')}"><datalist id="pl-new-repos">${repos.map((r) => `<option value="${esc(r)}">`).join('')}</datalist></div>
+      <div class="form-row"><label>${tr('repo')}</label><select data-pl-new-repo>${[...new Set(repos)].map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
     </div>
     <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pl-create>${tr('pl.create')}</button></div>`;
   const title = dlg.querySelector('[data-pl-new-title]');
