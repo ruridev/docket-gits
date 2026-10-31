@@ -1002,26 +1002,6 @@ async function importIssue(url, file, { repo, number, level }) {
   return adoptTree(url, file, plan, tree);
 }
 
-// 取り込む issue の候補。プロジェクトにリンクしたリポジトリと設定のリポジトリから探す (番号なら番号で引く)
-async function searchIssues(url, q) {
-  const fields = await projectFields(url).catch(() => null);
-  const repos = [...new Set([...(fields?.repos || []), ...Object.keys(config.repos)])].filter(validRepo);
-  if (!repos.length) return { items: [] };
-  const F = 'number title state repository { nameWithOwner } parent { number repository { nameWithOwner } } subIssues { totalCount }';
-  const pick = (n) => n?.number && { repo: n.repository.nameWithOwner, number: n.number, title: n.title, state: n.state, subCount: n.subIssues.totalCount, parent: n.parent ? { repo: n.parent.repository.nameWithOwner, number: n.parent.number } : null };
-  const term = String(q || '').trim();
-  const num = /^#?(\d+)$/.exec(term);
-  if (num) {
-    const data = await ghqlPartial(`query { ${repos.map((r, i) => {
-      const [owner, name] = r.split('/');
-      return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issue(number: ${Number(num[1])}) { ${F} } }`;
-    }).join('\n')} }`);
-    return { items: repos.map((_, i) => pick(data[`r${i}`]?.issue)).filter(Boolean) };
-  }
-  const data = await ghql(`query($q: String!) { search(query: $q, type: ISSUE, first: 30) { nodes { ... on Issue { ${F} } } } }`, { q: `${repos.map((r) => `repo:${r}`).join(' ')} is:issue sort:updated-desc ${term}`.trim() });
-  return { items: data.search.nodes.map(pick).filter(Boolean) };
-}
-
 // 計画の issue の今の状態 (Status・開いているか・PR)。絞り込みと表示に使う
 async function planLive(url, file, refresh) {
   const { plan } = planDoc(url, file);
@@ -1731,7 +1711,6 @@ async function handlePlan(req, res, url) {
     }
     if (req.method === 'GET' && url.pathname === '/api/plan/ranges') return send(res, 200, await planRanges(project, url.searchParams.get('refresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/plan/live') return send(res, 200, await planLive(project, file, url.searchParams.get('refresh') === '1'));
-    if (req.method === 'GET' && url.pathname === '/api/plan/search') return send(res, 200, await searchIssues(project, url.searchParams.get('q')));
     if (req.method === 'POST' && url.pathname === '/api/plan/import') {
       return send(res, 200, { node: await importIssue(project, file, { repo: body.repo, number: Number(body.number), level: body.level }) });
     }

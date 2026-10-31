@@ -392,13 +392,6 @@
   #plan-dlg .opt { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
   #plan-dlg .form-row input, #plan-dlg .form-row select { width: 100%; }
   #plan-dlg .pl-kind { margin-bottom: 12px; }
-  #plan-dlg [data-pk-q] { width: 100%; margin-bottom: 6px; }
-  .pl-pick { max-height: 40vh; min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 12px; }
-  .pl-pi { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: none; padding: 4px 8px; border-radius: 6px; }
-  .pl-pi.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
-  .pl-pi .num { flex: none; color: var(--muted); font-size: 12px; }
-  .pl-pi .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pl-pi .note { flex: none; font-size: 11px; color: var(--warn); }
   .toast.ok { background: var(--ok); }
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
@@ -554,7 +547,7 @@ const I18N = {
     'nav.agent': 'Agent 関連設定', 'nav.refresh': '更新間隔', 'nav.lang': '言語', 'nav.terms': '用語', 'terms.help': 'レーンの名前を変えられます (表示だけで、レーンの役割は変わりません)。空欄なら既定の名前', 'pane.reset': 'すべて既定に戻す', 'cfg.export': 'ファイルに書き出す', 'cfg.import': 'ファイルから読み込む', 'cfg.imported': '読み込みました。「保存」を押すと反映されます', 'cfg.badFile': '設定ファイルを読み込めませんでした',
     'sec.board': 'PR ボード', 'sec.repos': 'リポジトリ', 'sec.screen': '画面', 'sec.fetch': 'GitHub の取得',
     'pl.plans': '計画', 'pl.new': '新しい計画', 'pl.applied': '適用済み', 'pl.dirty': '変更あり · 未コミット', 'pl.timeline': 'タイムライン', 'pl.apply': 'GitHub に適用 ({n})', 'pl.update': '変更を反映 ({n})', 'pl.issue': 'issue', 'pl.addChild': 'sub issue を追加', 'pl.untitled': '(タイトルなし)', 'pl.changed': '変更', 'pl.days': '{n} 日', 'pl.title': 'タイトル', 'pl.start': '開始日', 'pl.end': '終了日', 'pl.body': '本文', 'pl.delete': '削除', 'pl.cantDelete': 'GitHub に作った issue は計画から消せません', 'pl.cantDeleteRoot': '最上位の issue は消せません', 'pl.removeField': '項目を外す', 'pl.f.labels': 'ラベル', 'pl.f.milestone': 'マイルストーン', 'pl.selected': '{n} 件選択', 'pl.keep': '変更しない', 'pl.bulkApply': '一括適用', 'pl.clearSel': '選択解除', 'pl.newIssue': '新しい issue', 'pl.editIssue': '#{n} を更新', 'pl.optProject': 'Projects に追加し、開始日・終了日・スプリントを入れる', 'pl.optCommit': 'md ファイルをコミットする', 'pl.noGit': '計画のフォルダが git リポジトリではありません', 'pl.run': '適用', 'pl.needTitle': 'タイトルが空の issue があります', 'pl.done': 'issue を {created} 件作成、{updated} 件更新しました', 'pl.committed': 'コミットしました', 'pl.file': 'ファイル名', 'pl.create': '作成', 's.plansDir': '計画の md を置くフォルダ (空なら ~/docket-plans。その下に GitHub Projects ごとのフォルダを作ります)', 'err.planFileInvalid': 'ファイル名は英小文字・数字・ハイフンと .md だけにしてください', 'err.planNotFound': '計画のファイルが見つかりません', 'err.planExists': '{file} はすでにあります', 'err.planInvalid': '計画の内容が不正です', 'err.planRepoMissing': 'リポジトリ (owner/name) を入れてください', 'err.planApplying': 'この計画は適用中です', 'err.planMilestoneMissing': '「{title}」のマイルストーン {milestone} が見つからないため入れませんでした', 'err.planSprintMissing': '「{title}」のスプリント {sprint} が見つからないため入れませんでした',
-    'pl.range': "スプリント · 期間", 'pl.noneInRange': "この範囲に掛かる計画はありません", 'pl.noRows': "条件に当たる issue はありません", 'pl.openOnly': "開いているものだけ", 'pl.addNew': "新しい sub issue", 'pl.import': "既存の issue を取り込む", 'pl.importBtn': "取り込む", 'pl.fromBlank': "空の計画", 'pl.fromIssue': "既存の issue から始める", 'pl.searchPh': "番号かタイトル", 'pl.noIssues': "見つかりません", 'pl.moveFrom': "{n} から移動", 'pl.subCount': "sub issue {n} 件", 'pl.needIssue': "issue を選んでください", 'pl.openBody': '本文を確認する', 'err.planIssueNotFound': "issue が見つかりません", 'err.planIssueTaken': "#{number} はすでに計画「{title}」に入っています",
+    'pl.range': "スプリント · 期間", 'pl.noneInRange': "この範囲に掛かる計画はありません", 'pl.noRows': "条件に当たる issue はありません", 'pl.openOnly': "開いているものだけ", 'pl.addNew': "新しい sub issue", 'pl.import': "既存の issue を取り込む", 'pl.importBtn': "取り込む", 'pl.fromBlank': "空の計画", 'pl.fromIssue': "既存の issue から始める", 'pl.needIssue': "issue の URL (https://github.com/owner/name/issues/123) を入れてください", 'pl.issueUrl': "issue の URL", 'pl.openBody': '本文を確認する', 'err.planIssueNotFound': "issue が見つかりません", 'err.planIssueTaken': "#{number} はすでに計画「{title}」に入っています",
     'sp.noProjects': '設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。', loading: '読み込み中…', 'sp.openAll': '▸ すべて開く', 'sp.foldAll': '▾ すべて畳む',
     'sp.period': '期間', 'sp.sprint': 'スプリント',
     'sp.refetchTitle': 'キャッシュ (24 時間) を使わず GitHub から取り直す', 'sp.assignee': '担当者', 'period.week': '{date} からの週', 'period.2week': '{date} からの 2 週間',
@@ -644,7 +637,7 @@ const I18N = {
     'nav.agent': 'Agent 관련 설정', 'nav.refresh': '갱신 간격', 'nav.lang': '언어', 'nav.terms': '용어', 'terms.help': '레인 이름을 바꿀 수 있습니다(표시만 바뀌고 레인의 역할은 그대로입니다). 비워 두면 기본 이름', 'pane.reset': '모두 기본값으로 되돌리기', 'cfg.export': '파일로 내보내기', 'cfg.import': '파일에서 불러오기', 'cfg.imported': '불러왔습니다. 「저장」을 눌러야 반영됩니다', 'cfg.badFile': '설정 파일을 읽을 수 없습니다',
     'sec.board': 'PR 보드', 'sec.repos': '저장소', 'sec.screen': '화면', 'sec.fetch': 'GitHub 가져오기',
     'pl.plans': '계획', 'pl.new': '새 계획', 'pl.applied': '적용됨', 'pl.dirty': '수정됨 · 커밋 전', 'pl.timeline': '타임라인', 'pl.apply': 'GitHub에 적용 ({n})', 'pl.update': '변경 반영 ({n})', 'pl.issue': '이슈', 'pl.addChild': '하위 이슈 추가', 'pl.untitled': '(제목 없음)', 'pl.changed': '변경', 'pl.days': '{n}일', 'pl.title': '제목', 'pl.start': '시작일', 'pl.end': '종료일', 'pl.body': '본문', 'pl.delete': '삭제', 'pl.cantDelete': 'GitHub에 만든 이슈는 계획에서 지울 수 없습니다', 'pl.cantDeleteRoot': '최상위 이슈는 지울 수 없습니다', 'pl.removeField': '항목 빼기', 'pl.f.labels': '라벨', 'pl.f.milestone': '마일스톤', 'pl.selected': '{n}개 선택', 'pl.keep': '바꾸지 않음', 'pl.bulkApply': '일괄 적용', 'pl.clearSel': '선택 해제', 'pl.newIssue': '새 issue', 'pl.editIssue': '#{n} 수정', 'pl.optProject': 'Projects에 추가하고 시작일·종료일·스프린트 입력', 'pl.optCommit': 'md 파일 커밋', 'pl.noGit': '계획 폴더가 git 저장소가 아닙니다', 'pl.run': '적용', 'pl.needTitle': '제목이 빈 이슈가 있습니다', 'pl.done': '이슈 {created}개를 만들고 {updated}개를 수정했습니다', 'pl.committed': '커밋했습니다', 'pl.file': '파일 이름', 'pl.create': '만들기', 's.plansDir': '계획 md를 둘 폴더 (비우면 ~/docket-plans. 그 아래에 GitHub Projects별 폴더를 만듭니다)', 'err.planFileInvalid': '파일 이름은 영문 소문자·숫자·하이픈과 .md만 쓸 수 있습니다', 'err.planNotFound': '계획 파일을 찾을 수 없습니다', 'err.planExists': '{file}이(가) 이미 있습니다', 'err.planInvalid': '계획 내용이 올바르지 않습니다', 'err.planRepoMissing': '저장소(owner/name)를 입력해 주세요', 'err.planApplying': '이 계획은 적용 중입니다', 'err.planMilestoneMissing': '「{title}」의 마일스톤 {milestone}을(를) 찾을 수 없어 넣지 않았습니다', 'err.planSprintMissing': '「{title}」의 스프린트 {sprint}을(를) 찾을 수 없어 넣지 않았습니다',
-    'pl.range': "스프린트 · 기간", 'pl.noneInRange': "이 범위에 걸리는 계획이 없습니다", 'pl.noRows': "조건에 맞는 이슈가 없습니다", 'pl.openOnly': "열린 것만", 'pl.addNew': "새 하위 이슈", 'pl.import': "기존 issue 불러오기", 'pl.importBtn': "불러오기", 'pl.fromBlank': "빈 계획", 'pl.fromIssue': "기존 issue로 시작", 'pl.searchPh': "번호나 제목", 'pl.noIssues': "찾을 수 없습니다", 'pl.moveFrom': "{n}에서 이동", 'pl.subCount': "하위 {n}개", 'pl.needIssue': "issue를 골라 주세요", 'pl.openBody': '본문 확인하기', 'err.planIssueNotFound': "issue를 찾을 수 없습니다", 'err.planIssueTaken': "#{number}은(는) 이미 「{title}」 계획에 있습니다",
+    'pl.range': "스프린트 · 기간", 'pl.noneInRange': "이 범위에 걸리는 계획이 없습니다", 'pl.noRows': "조건에 맞는 이슈가 없습니다", 'pl.openOnly': "열린 것만", 'pl.addNew': "새 하위 이슈", 'pl.import': "기존 issue 불러오기", 'pl.importBtn': "불러오기", 'pl.fromBlank': "빈 계획", 'pl.fromIssue': "기존 issue로 시작", 'pl.needIssue': "issue URL(https://github.com/owner/name/issues/123)을 넣어 주세요", 'pl.issueUrl': "issue URL", 'pl.openBody': '본문 확인하기', 'err.planIssueNotFound': "issue를 찾을 수 없습니다", 'err.planIssueTaken': "#{number}은(는) 이미 「{title}」 계획에 있습니다",
     'sp.noProjects': '설정의 "로드맵 화면의 GitHub Projects"에 프로젝트 URL을 추가하세요.', loading: '불러오는 중…', 'sp.openAll': '▸ 모두 펼치기', 'sp.foldAll': '▾ 모두 접기',
     'sp.period': '기간', 'sp.sprint': '스프린트',
     'sp.refetchTitle': '캐시(24시간)를 쓰지 않고 GitHub에서 다시 가져오기', 'sp.assignee': '담당자', 'period.week': '{date}부터 1주', 'period.2week': '{date}부터 2주',
@@ -734,7 +727,7 @@ const I18N = {
     'nav.agent': 'Agent settings', 'nav.refresh': 'Refresh', 'nav.lang': 'Language', 'nav.terms': 'Terms', 'terms.help': "Rename lanes (display only — what each lane holds doesn't change). Leave empty for the default name", 'pane.reset': 'Reset all to defaults', 'cfg.export': 'Export to file', 'cfg.import': 'Import from file', 'cfg.imported': 'Imported. Press "Save" to apply', 'cfg.badFile': "Couldn't read the settings file",
     'sec.board': 'PR board', 'sec.repos': 'Repositories', 'sec.screen': 'Screen', 'sec.fetch': 'GitHub fetch',
     'pl.plans': 'Plans', 'pl.new': 'New plan', 'pl.applied': 'Applied', 'pl.dirty': 'Modified · not committed', 'pl.timeline': 'Timeline', 'pl.apply': 'Apply to GitHub ({n})', 'pl.update': 'Push changes ({n})', 'pl.issue': 'Issue', 'pl.addChild': 'Add sub-issue', 'pl.untitled': '(untitled)', 'pl.changed': 'Changed', 'pl.days': '{n}d', 'pl.title': 'Title', 'pl.start': 'Start', 'pl.end': 'End', 'pl.body': 'Description', 'pl.delete': 'Delete', 'pl.cantDelete': "Issues already created on GitHub can't be removed from the plan", 'pl.cantDeleteRoot': "The top-level issue can't be removed", 'pl.removeField': 'Remove field', 'pl.f.labels': 'Labels', 'pl.f.milestone': 'Milestone', 'pl.selected': '{n} selected', 'pl.keep': 'Keep', 'pl.bulkApply': 'Apply to selected', 'pl.clearSel': 'Deselect', 'pl.newIssue': 'New issue', 'pl.editIssue': 'Update #{n}', 'pl.optProject': 'Add to Projects and set start, end and sprint', 'pl.optCommit': 'Commit the md file', 'pl.noGit': "The plans folder isn't a git repository", 'pl.run': 'Apply', 'pl.needTitle': 'Some issues have no title', 'pl.done': 'Created {created} and updated {updated} issue(s)', 'pl.committed': 'committed', 'pl.file': 'File name', 'pl.create': 'Create', 's.plansDir': 'Folder for plan md files (empty = ~/docket-plans; one folder per GitHub Project is created inside)', 'err.planFileInvalid': 'Use only lowercase letters, digits, hyphens and .md in the file name', 'err.planNotFound': 'Plan file not found', 'err.planExists': '{file} already exists', 'err.planInvalid': 'Invalid plan', 'err.planRepoMissing': 'Enter the repository (owner/name)', 'err.planApplying': 'This plan is already being applied', 'err.planMilestoneMissing': 'Skipped milestone {milestone} for \'{title}\' (not found)', 'err.planSprintMissing': 'Skipped sprint {sprint} for \'{title}\' (not found)',
-    'pl.range': "Sprint · Period", 'pl.noneInRange': "No plans in this range", 'pl.noRows': "No issues match", 'pl.openOnly': "Open only", 'pl.addNew': "New sub-issue", 'pl.import': "Import an existing issue", 'pl.importBtn': "Import", 'pl.fromBlank': "Blank plan", 'pl.fromIssue': "Start from an existing issue", 'pl.searchPh': "Number or title", 'pl.noIssues': "Nothing found", 'pl.moveFrom': "moves from {n}", 'pl.subCount': "{n} sub-issue(s)", 'pl.needIssue': "Choose an issue", 'pl.openBody': 'View description', 'err.planIssueNotFound': "Issue not found", 'err.planIssueTaken': "#{number} is already in the plan \"{title}\"",
+    'pl.range': "Sprint · Period", 'pl.noneInRange': "No plans in this range", 'pl.noRows': "No issues match", 'pl.openOnly': "Open only", 'pl.addNew': "New sub-issue", 'pl.import': "Import an existing issue", 'pl.importBtn': "Import", 'pl.fromBlank': "Blank plan", 'pl.fromIssue': "Start from an existing issue", 'pl.needIssue': "Enter an issue URL (https://github.com/owner/name/issues/123)", 'pl.issueUrl': "Issue URL", 'pl.openBody': 'View description', 'err.planIssueNotFound': "Issue not found", 'err.planIssueTaken': "#{number} is already in the plan \"{title}\"",
     'sp.noProjects': 'Add a project URL to "GitHub Projects for the roadmap" in Settings.', loading: 'Loading…', 'sp.openAll': '▸ Expand all', 'sp.foldAll': '▾ Collapse all',
     'sp.period': 'Period', 'sp.sprint': 'Sprint',
     'sp.refetchTitle': 'Fetch again from GitHub, bypassing the 24h cache', 'sp.assignee': 'Assignee', 'period.week': 'Week of {date}', 'period.2week': '2 weeks from {date}',
@@ -2551,49 +2544,19 @@ window.addEventListener('pointerup', (ev) => {
   plSelect(d.id, { ...d.mods, shiftKey: d.mods.shiftKey || (ev.shiftKey && d.mode !== 'move') });
 });
 
-// 取り込む issue を選ぶ一覧。番号かタイトルで探し、どれかの計画に入っている issue は選べなくする
-// repo: 計画のリポジトリ (違うリポジトリの issue に名前を添える)。moving: GitHub での親から付け替わることを添える
-function plPicker(box, { repo, moving, onPick }) {
-  const owners = new Map();
-  for (const p of pl.list || []) for (const k of p.issues) owners.set(k, p.title);
-  const list = box.querySelector('.pl-pick');
-  const short = (r) => (r === repo ? '' : r.split('/')[1]);
-  let seq = 0;
-  const search = async (q) => {
-    const my = ++seq;
-    list.innerHTML = '<span class="spin"></span>';
-    try {
-      const { items } = await api(`/api/plan/search?${plQuery({ q })}`);
-      if (my !== seq) return;
-      list.innerHTML = items.map((it, i) => {
-        const owner = owners.get(`${it.repo}#${it.number}`);
-        const notes = owner ? [owner] : [
-          ...(it.repo !== repo ? [short(it.repo)] : []),
-          ...(moving && it.parent ? [tr('pl.moveFrom', { n: `${short(it.parent.repo)}#${it.parent.number}` })] : []),
-          ...(it.subCount ? [tr('pl.subCount', { n: it.subCount })] : []),
-        ];
-        return `<button type="button" class="pl-pi" data-pk="${i}"${owner ? ' disabled' : ''}><span class="num">#${it.number}</span><span class="t">${esc(it.title)}</span>${notes.length ? `<span class="note">${esc(notes.join(' · '))}</span>` : ''}${it.state === 'CLOSED' ? '<span class="chip">Closed</span>' : ''}</button>`;
-      }).join('') || `<p class="pl-none">${tr('pl.noIssues')}</p>`;
-      list.onclick = (ev) => {
-        const b = ev.target.closest('[data-pk]');
-        if (!b || b.disabled) return;
-        list.querySelectorAll('.pl-pi.on').forEach((x) => x.classList.remove('on'));
-        b.classList.add('on');
-        onPick(items[b.dataset.pk]);
-      };
-    } catch (e) {
-      if (my === seq) list.innerHTML = `<p class="pl-none">${esc(e.message)}</p>`;
-    }
-  };
-  let timer;
-  box.querySelector('[data-pk-q]').oninput = (ev) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => search(ev.target.value), 300);
-  };
-  search('');
+// issue は URL (https://github.com/owner/name/issues/123) で受け取る。中身は取り込む・作るときにだけ GitHub から取る
+const plIssueRef = (v) => {
+  const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)\/?(?:[?#].*)?$/.exec(String(v || '').trim());
+  return m && { repo: m[1], number: Number(m[2]) };
+};
+const plIssueUrlField = () => `<div class="form-row"><label>${tr('pl.issueUrl')}</label><input type="url" data-pk-url placeholder="https://github.com/owner/name/issues/123"></div>`;
+// URL として読めなければ入力欄で知らせる
+function plCheckIssueUrl(input) {
+  const ref = plIssueRef(input.value);
+  input.setCustomValidity(ref ? '' : tr('pl.needIssue'));
+  input.reportValidity();
+  return ref;
 }
-
-const plPickerHtml = () => `<input type="search" data-pk-q placeholder="${esc(tr('pl.searchPh'))}" aria-label="${esc(tr('pl.searchPh'))}"><div class="pl-pick"></div>`;
 
 // 既存の issue を sub issue ごと targetId の下に入れる。GitHub での親から付け替えるのは次の「変更を反映」のとき
 function openImportIssue(targetId) {
@@ -2603,12 +2566,14 @@ function openImportIssue(targetId) {
   plRefresh(['body']);
   const dlg = $('#plan-dlg');
   dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.import')}</h3><button>${tr('close')}</button></form>
-    <div class="dlg-body"><p class="muted" style="margin:0 0 8px">${esc(hit.n.title || tr('pl.untitled'))} ›</p>${plPickerHtml()}</div>
-    <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pk-ok disabled>${tr('pl.importBtn')}</button></div>`;
+    <div class="dlg-body"><p class="muted" style="margin:0 0 8px">${esc(hit.n.title || tr('pl.untitled'))} ›</p>${plIssueUrlField()}</div>
+    <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pk-ok>${tr('pl.importBtn')}</button></div>`;
   const ok = dlg.querySelector('[data-pk-ok]');
-  let picked = null;
-  plPicker(dlg, { repo: pl.doc.plan.repo, moving: true, onPick: (it) => { picked = it; ok.disabled = false; } });
+  const url = dlg.querySelector('[data-pk-url]');
+  url.oninput = () => url.setCustomValidity('');
   ok.onclick = async () => {
+    const picked = plCheckIssueUrl(url);
+    if (!picked) return;
     ok.disabled = true;
     ok.innerHTML = `<span class="spin"></span> ${tr('pl.importBtn')}`;
     try {
@@ -2639,7 +2604,7 @@ function openImportIssue(targetId) {
     }
   };
   dlg.showModal();
-  dlg.querySelector('[data-pk-q]').focus();
+  url.focus();
 }
 
 async function openNewPlan() {
@@ -2654,20 +2619,24 @@ async function openNewPlan() {
         <div class="form-row"><label>${tr('pl.title')}</label><input data-pl-new-title required></div>
         <div class="form-row"><label>${tr('repo')}</label><select data-pl-new-repo>${[...new Set(repos)].map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select></div>
       </div>
-      <div data-pl-k="issue" hidden>${plPickerHtml()}</div>
+      <div data-pl-k="issue" hidden>${plIssueUrlField()}</div>
       <div class="form-row"><label>${tr('pl.file')}</label><input data-pl-new-file placeholder="feature-name.md" pattern="[a-z0-9][a-z0-9\\-]*\\.md" required></div>
     </div>
     <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pl-create>${tr('pl.create')}</button></div>`;
   const title = dlg.querySelector('[data-pl-new-title]');
   const file = dlg.querySelector('[data-pl-new-file]');
+  const url = dlg.querySelector('[data-pk-url]');
   let kind = 'blank';
-  let picked = null;
-  let picker = false;
   // ファイル名はタイトル (既存の issue から始めるなら issue 番号) から作る。英数字が無いタイトルは自分で入れる
   const fill = (v) => { if (!file.dataset.touched) file.value = v; };
   title.oninput = () => {
     const slug = title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     fill(slug ? `${slug}.md` : '');
+  };
+  url.oninput = () => {
+    url.setCustomValidity('');
+    const ref = plIssueRef(url.value);
+    if (ref) fill(`issue-${ref.number}.md`);
   };
   file.oninput = () => (file.dataset.touched = '1');
   dlg.querySelector('.pl-kind').onclick = (ev) => {
@@ -2677,15 +2646,12 @@ async function openNewPlan() {
     dlg.querySelectorAll('[data-pl-kind]').forEach((x) => x.classList.toggle('primary', x === b));
     dlg.querySelectorAll('[data-pl-k]').forEach((x) => (x.hidden = x.dataset.plK !== kind));
     title.required = kind === 'blank';
-    if (kind === 'issue' && !picker) {
-      picker = true;
-      plPicker(dlg.querySelector('[data-pl-k="issue"]'), { onPick: (it) => { picked = it; fill(`issue-${it.number}.md`); } });
-    }
-    dlg.querySelector(kind === 'issue' ? '[data-pk-q]' : '[data-pl-new-title]').focus();
+    (kind === 'issue' ? url : title).focus();
   };
   dlg.querySelector('[data-pl-create]').onclick = async () => {
     if (kind === 'blank' && !title.reportValidity()) return;
-    if (kind === 'issue' && !picked) return toast(tr('pl.needIssue'));
+    const picked = kind === 'issue' && plCheckIssueUrl(url);
+    if (kind === 'issue' && !picked) return;
     if (!file.reportValidity()) return;
     const btn = dlg.querySelector('[data-pl-create]');
     btn.disabled = true;
