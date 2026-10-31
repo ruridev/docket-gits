@@ -1001,7 +1001,9 @@ function writePlan(url, file, plan) {
 
 function createPlan(url, { file, title, repo }) {
   if (fs.existsSync(planFile(url, file))) throw E('planExists', { file });
-  writePlan(url, file, { title: title || file.replace(/\.md$/, ''), repo: repo || '', status: 'draft', nodes: [] });
+  const name = title || file.replace(/\.md$/, '');
+  // 計画 1 つが最上位 issue 1 つ。計画と同じ名前で最初から作っておく
+  writePlan(url, file, { title: name, repo: repo || '', status: 'draft', nodes: [{ title: name, children: [] }] });
 }
 
 // 開始日・終了日・スプリントを書く Project のフィールド (ロードマップと同じ選び方)
