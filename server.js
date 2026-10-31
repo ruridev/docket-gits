@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
+const { parsePlan, serializePlan, flatten, syncSnapshot, validFile } = require('./plans');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = process.env.DOCKET_DATA || path.join(__dirname, 'data');
@@ -60,6 +61,8 @@ const DEFAULT_CONFIG = {
   sprintFuture: 1,
   // ロードマップの期間別の 1 区切り: week / 2week / month
   roadmapPeriod: 'month',
+  // 計画画面の md を置くフォルダ。空なら ~/docket-plans (その下に GitHub Projects ごとのフォルダを作る)
+  plansDir: '',
   // Claude が PR に書く文章・ボードに出す指摘の言語: ja / ko / en
   outputLang: 'ja',
   // 同意しない指摘を理由付きで投稿するとき、レビュアー本人の意見の頭に付けるアイコン
@@ -921,6 +924,206 @@ async function periodIssues(url, from, refresh) {
   ));
 }
 
+// ---------- 計画 (Draft) ----------
+
+// 計画は md ファイルで持ち、git で管理できるようにする。GitHub には「GitHub に適用」したときだけ書く
+const plansRoot = () => config.plansDir || path.join(os.homedir(), 'docket-plans');
+// GitHub Projects ごとにフォルダを分ける (名前が変わっても変わらないよう owner と番号で決める)
+function projectDir(url) {
+  const p = parseProjectUrl(url);
+  if (!p) throw E('projectUrlInvalid', { url });
+  return path.join(plansRoot(), `${p.login}-${p.number}`);
+}
+// Docket が作ったフォルダは git init しておく (自分で用意したフォルダには何もしない)
+function ensureDir(dir) {
+  const root = plansRoot();
+  if (!fs.existsSync(root)) {
+    fs.mkdirSync(root, { recursive: true });
+    try { execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' }); } catch {}
+  }
+  fs.mkdirSync(dir, { recursive: true });
+}
+function git(cwd, args) {
+  try {
+    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+}
+const inGit = (dir) => fs.existsSync(dir) && git(dir, ['rev-parse', '--is-inside-work-tree'])?.trim() === 'true';
+// 最後のコミットの内容 (コミットされていなければ null)
+const committedText = (file) => git(path.dirname(file), ['show', `HEAD:./${path.basename(file)}`]);
+
+const PLAN_SYNC_FILE = path.join(DATA_DIR, 'plan-sync.json');
+// 最後に GitHub に反映した内容 (ファイル → issue 番号 → syncSnapshot)。反映後に変えた issue を見分ける
+const planSync = readJson(PLAN_SYNC_FILE, {});
+
+function planFile(url, file) {
+  if (!validFile(file)) throw E('planFileInvalid');
+  return path.join(projectDir(url), file);
+}
+
+function listPlans(url) {
+  const dir = projectDir(url);
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(validFile).sort() : [];
+  const tracked = inGit(dir);
+  return {
+    dir,
+    plans: files.map((f) => {
+      const full = path.join(dir, f);
+      const text = fs.readFileSync(full, 'utf8');
+      const plan = parsePlan(text);
+      const all = flatten(plan.nodes);
+      return { file: f, title: plan.title || f, status: plan.status, count: all.length, issues: all.map(({ node }) => node.issue).filter(Boolean), dirty: tracked && committedText(full) !== text };
+    }),
+  };
+}
+
+function planDoc(url, file) {
+  const full = planFile(url, file);
+  if (!fs.existsSync(full)) throw E('planNotFound');
+  const md = fs.readFileSync(full, 'utf8');
+  const plan = parsePlan(md);
+  const dir = path.dirname(full);
+  const tracked = inGit(dir);
+  const base = tracked ? committedText(full) : null;
+  const synced = planSync[full] || {};
+  const changed = flatten(plan.nodes).filter(({ node }) => node.issue && synced[node.issue] && synced[node.issue] !== syncSnapshot(node)).map(({ node }) => node.issue);
+  const top = tracked && git(dir, ['rev-parse', '--show-toplevel'])?.trim();
+  return { file, rel: top ? path.relative(top, full).split(path.sep).join('/') : full, plan, md, base, git: tracked, dirty: tracked && base !== md, changed };
+}
+
+function writePlan(url, file, plan) {
+  const full = planFile(url, file);
+  ensureDir(path.dirname(full));
+  fs.writeFileSync(full, serializePlan({ ...plan, project: url }));
+}
+
+function createPlan(url, { file, title, repo }) {
+  if (fs.existsSync(planFile(url, file))) throw E('planExists', { file });
+  writePlan(url, file, { title: title || file.replace(/\.md$/, ''), repo: repo || '', status: 'draft', nodes: [] });
+}
+
+// 開始日・終了日・スプリントを書く Project のフィールド (ロードマップと同じ選び方)
+async function projectFields(url, refresh = false) {
+  const p = parseProjectUrl(url);
+  if (!p) throw E('projectUrlInvalid', { url });
+  return cached(`plan-fields:${url}`, refresh, async () => {
+    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title fields(first: 50) { nodes {
+      ... on ProjectV2FieldCommon { id name dataType }
+      ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
+    } } } } }`, { login: p.login, number: p.number });
+    const project = data[p.owner].projectV2;
+    const nodes = project.fields.nodes.filter((f) => f.id);
+    const f = detectFields(nodes);
+    const ref = (name) => name && { id: nodes.find((n) => n.name === name).id, name };
+    return {
+      id: project.id, title: project.title, start: ref(f.start), end: ref(f.end), sprint: ref(f.sprint),
+      // 計画で選ぶのは終わっていないスプリントだけ
+      iterations: f.iterations.filter((i) => !i.completed).sort((a, b) => a.startDate.localeCompare(b.startDate)).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })),
+    };
+  });
+}
+
+const validRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(repo || '');
+
+// 担当者・ラベル・マイルストーンの候補
+async function repoOptions(repo, refresh = false) {
+  if (!validRepo(repo)) return { assignees: [], labels: [], milestones: [] };
+  return cached(`plan-repo:${repo}`, refresh, async () => {
+    const get = (p) => gh(['api', '--paginate', '--slurp', p]).then((out) => JSON.parse(out).flat()).catch(() => []);
+    const [assignees, labels, milestones] = await Promise.all([get(`repos/${repo}/assignees?per_page=100`), get(`repos/${repo}/labels?per_page=100`), get(`repos/${repo}/milestones?state=open&per_page=100`)]);
+    return {
+      assignees: assignees.map((a) => ({ login: a.login, avatarUrl: a.avatar_url })),
+      labels: labels.map((l) => ({ name: l.name, color: l.color })),
+      milestones: milestones.map((m) => ({ title: m.title, number: m.number })),
+    };
+  });
+}
+
+// gh api に JSON の本文を標準入力で渡す (空配列で担当者を外すなど -f では書けない値もそのまま送れる)
+function ghRest(method, endpoint, body) {
+  return new Promise((resolve, reject) => {
+    const child = execFile('gh', ['api', '-X', method, endpoint, '--input', '-'], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || err.message));
+      else resolve(stdout ? JSON.parse(stdout) : null);
+    });
+    child.stdin.end(JSON.stringify(body || {}));
+  });
+}
+
+const planApplying = new Set();
+
+// 作る issue (番号が無いもの) と、前回の反映後に変えた issue
+function applyTargets(doc) {
+  const changed = new Set(doc.changed);
+  return flatten(doc.plan.nodes).filter(({ node }) => !node.issue || changed.has(node.issue));
+}
+
+// 親 → 子の順に issue を作り (作ったらすぐ md に番号を書く。途中で失敗しても二重に作らない)、子は親の sub issue にする
+// addToProject なら Project に追加して開始日・終了日・スプリントも入れる
+async function applyPlan(url, file, { addToProject = true, commit = false } = {}) {
+  const doc = planDoc(url, file);
+  const full = planFile(url, file);
+  const { plan } = doc;
+  const repo = plan.repo;
+  if (!validRepo(repo)) throw E('planRepoMissing');
+  const opts = await repoOptions(repo);
+  const fields = addToProject ? await projectFields(url) : null;
+  const synced = (planSync[full] ||= {});
+  const warnings = [];
+  let created = 0;
+  let updated = 0;
+  const save = () => {
+    writePlan(url, file, plan);
+    writeJson(PLAN_SYNC_FILE, planSync);
+  };
+  for (const { node, parent } of applyTargets(doc)) {
+    const milestone = node.milestone ? opts.milestones.find((m) => m.title === node.milestone) : null;
+    if (node.milestone && !milestone) warnings.push(E('planMilestoneMissing', { title: node.title, milestone: node.milestone }));
+    const body = { title: node.title, body: node.body || '', assignees: node.assignees, labels: node.labels, milestone: milestone ? milestone.number : null };
+    const isNew = !node.issue;
+    let issue;
+    if (isNew) {
+      issue = await ghRest('POST', `repos/${repo}/issues`, body);
+      node.issue = issue.number;
+      plan.status = 'applied';
+      created++;
+      save();
+      if (parent?.issue) await ghRest('POST', `repos/${repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id });
+    } else {
+      issue = await ghRest('PATCH', `repos/${repo}/issues/${node.issue}`, body);
+      updated++;
+    }
+    if (fields) {
+      const { addProjectV2ItemById: { item } } = await ghql('mutation($project: ID!, $content: ID!) { addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } } }', { project: fields.id, content: issue.node_id });
+      const ids = { project: fields.id, item: item.id };
+      const set = (field, v, type, key) => ghql(`mutation($project: ID!, $item: ID!, $field: ID!, $v: ${type}!) { updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field, value: { ${key}: $v } }) { clientMutationId } }`, { ...ids, field: field.id, v });
+      const clear = (field) => ghql('mutation($project: ID!, $item: ID!, $field: ID!) { clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field }) { clientMutationId } }', { ...ids, field: field.id });
+      // 反映済みの issue で消した値は Project からも消す
+      for (const k of ['start', 'end']) {
+        if (!fields[k]) continue;
+        if (node[k]) await set(fields[k], node[k], 'Date', 'date');
+        else if (!isNew) await clear(fields[k]);
+      }
+      if (node.sprint) {
+        const it = fields.sprint && fields.iterations.find((i) => i.title === node.sprint);
+        if (it) await set(fields.sprint, it.id, 'String', 'iterationId');
+        else warnings.push(E('planSprintMissing', { title: node.title, sprint: node.sprint }));
+      } else if (fields.sprint && !isNew) await clear(fields.sprint);
+    }
+    synced[node.issue] = syncSnapshot(node);
+    save();
+  }
+  let committed = false;
+  if (commit && doc.git) {
+    const cwd = path.dirname(full);
+    const name = path.basename(full);
+    committed = git(cwd, ['add', '--', name]) !== null && git(cwd, ['commit', '-q', '-m', `Apply plan "${plan.title || name}" to GitHub`, '--', name]) !== null;
+  }
+  return { created, updated, committed, warnings, doc: planDoc(url, file) };
+}
+
 // 設定として知っている項目だけを、既定値と同じ型のときに受け付ける (型違いで後の処理が落ちないように)
 function sanitizeConfig(body) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
@@ -1437,6 +1640,46 @@ function boardPayload() {
   };
 }
 
+async function handlePlan(req, res, url) {
+  const body = req.method === 'GET' ? {} : await readBody(req);
+  const project = req.method === 'GET' ? url.searchParams.get('project') : body.project;
+  const file = req.method === 'GET' ? url.searchParams.get('file') : body.file;
+  if (!config.projects.includes(project)) return send(res, 404, { error: E('projectNotConfigured') });
+  try {
+    if (req.method === 'GET' && url.pathname === '/api/plans') return send(res, 200, listPlans(project));
+    if (req.method === 'GET' && url.pathname === '/api/plan') return send(res, 200, planDoc(project, file));
+    if (req.method === 'GET' && url.pathname === '/api/plan/options') {
+      const refresh = url.searchParams.get('refresh') === '1';
+      // Project を読めなくても担当者などは選べるようにする
+      const [fields, repo] = await Promise.all([projectFields(project, refresh).catch(() => null), repoOptions(url.searchParams.get('repo'), refresh)]);
+      return send(res, 200, { fields, ...repo });
+    }
+    if (req.method === 'PUT' && url.pathname === '/api/plan') {
+      if (!body.plan || !Array.isArray(body.plan.nodes)) return send(res, 400, { error: E('planInvalid') });
+      writePlan(project, file, body.plan);
+      return send(res, 200, planDoc(project, file));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/plan/new') {
+      createPlan(project, { file, title: body.title, repo: body.repo });
+      return send(res, 200, planDoc(project, file));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/plan/apply') {
+      // 同じ計画を続けて押しても issue を二重に作らない
+      const key = planFile(project, file);
+      if (planApplying.has(key)) return send(res, 409, { error: E('planApplying') });
+      planApplying.add(key);
+      try {
+        return send(res, 200, await applyPlan(project, file, { addToProject: body.addToProject !== false, commit: !!body.commit }));
+      } finally {
+        planApplying.delete(key);
+      }
+    }
+  } catch (e) {
+    return send(res, e instanceof Error ? 502 : 400, { error: e instanceof Error ? e.message : e });
+  }
+  return send(res, 404, { error: 'not found' });
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   // DNS rebinding 対策
@@ -1502,6 +1745,8 @@ async function handle(req, res) {
       return send(res, 502, { error: e instanceof Error ? e.message : e });
     }
   }
+
+  if (url.pathname.startsWith('/api/plan')) return handlePlan(req, res, url);
 
   const body = await readBody(req);
   if (req.method === 'POST' && url.pathname === '/api/consent') {

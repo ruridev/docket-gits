@@ -317,6 +317,107 @@
   .st-blue { --c: #0969da; } .st-green { --c: #1a7f37; } .st-yellow { --c: #9a6700; } .st-orange { --c: #bc4c00; }
   .st-red { --c: #cf222e; } .st-pink { --c: #bf3989; } .st-purple { --c: #8250df; }
   .rm .bar .prs .merged svg { color: #8250df; } .rm .bar .prs .open svg { color: var(--ok); } .rm .bar .prs .draft svg { color: var(--muted); }
+  /* 計画 (Draft)。ブラウザの高さいっぱいに使い、中の一覧・タイムライン・詳細だけをスクロールさせる */
+  #plan { display: flex; gap: 12px; padding: 12px 16px; height: calc(100dvh - var(--pl-top, 58px) - var(--pl-foot, 31px)); min-height: 360px; }
+  #plan[hidden] { display: none; }
+  .pl-side { flex: none; width: 220px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 0; }
+  .pl-side.closed { width: 36px; padding: 6px 4px; align-items: center; }
+  .pl-side .pl-rail { writing-mode: vertical-rl; color: var(--muted); font-size: 12px; }
+  .pl-side-top, .pl-side-head { display: flex; align-items: center; gap: 4px; }
+  .pl-side-top .ms-label { flex: 1; }
+  .pl-side-head b { flex: 1; font-size: 13px; }
+  .pl-fold { border: none; background: none; color: var(--muted); padding: 0 6px; }
+  .pl-new { border: none; background: none; color: var(--muted); padding: 2px 4px; font-size: 12px; }
+  .pl-new:hover:not(:disabled), .pl-fold:hover:not(:disabled) { color: var(--accent); background: none; }
+  .pl-side select { width: 100%; }
+  .pl-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+  .pl-list .grp { font-size: 11px; font-weight: 600; color: var(--muted); margin: 6px 4px 2px; }
+  .pl-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: none; background: none; padding: 5px 8px; border-radius: 6px; }
+  .pl-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-item.on { background: var(--chip); font-weight: 600; }
+  .pl-dirty { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  .pl-dir { font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; overflow-wrap: anywhere; }
+  .pl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px 8px; min-height: 0; }
+  .pl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pl-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; background: none; padding: 0 4px; margin-left: -5px; min-width: 120px; field-sizing: content; }
+  .pl-title:hover, .pl-title:focus { border-color: var(--border); }
+  .pl-head .chip { font-size: 12px; line-height: 20px; }
+  .chip.draft { border-style: dashed; border-color: var(--accent); color: var(--accent); background: none; }
+  .chip.ok { border-color: var(--ok); color: var(--ok); background: none; }
+  .pl-repo { font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 10px; background: var(--chip); width: 160px; }
+  .pl-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .pl-bulk { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+  .pl-bulk > b { align-self: center; font-size: 13px; }
+  .pl-work { flex: 1; min-height: 0; display: flex; gap: 12px; }
+  .pl-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .pl-road { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: 8px; user-select: none; }
+  .pl-grid { position: relative; min-height: 100%; font-size: 13px; }
+  .pl-bg { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+  .pl-bg .we { position: absolute; top: 0; bottom: 0; width: var(--d); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .pl-bg .today { position: absolute; top: 0; bottom: 0; width: 1px; background: repeating-linear-gradient(var(--danger) 0 4px, transparent 4px 8px); }
+  .pl-hdr, .pl-row { display: flex; position: relative; }
+  .pl-hdr { position: sticky; top: 0; z-index: 4; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .pl-tree { position: sticky; left: 0; z-index: 3; flex: none; width: var(--tree); display: flex; align-items: center; gap: 4px; padding-right: 6px; background: var(--panel); border-right: 1px solid var(--border); min-width: 0; }
+  .pl-hdr .pl-tree { z-index: 5; padding-left: 10px; font-size: 12px; color: var(--muted); }
+  .pl-hdr .fold-all { margin-left: auto; border: none; background: none; color: var(--muted); padding: 2px 4px; font-size: 12px; }
+  .pl-hdr .fold-all:hover { color: var(--accent); }
+  .pl-days { display: flex; }
+  .pl-days div { flex: none; width: var(--d); text-align: center; font-size: 11px; line-height: 15px; color: var(--muted); padding: 2px 0; }
+  .pl-days .we { color: var(--accent); }
+  .pl-days .today { color: var(--danger); font-weight: 600; }
+  .pl-row { height: 30px; border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .pl-row.sel .pl-tree, .pl-row.sel .pl-track { background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+  .pl-row.sel .pl-track { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .pl-tree .tg { width: 14px; flex: none; cursor: pointer; color: var(--muted); text-align: center; }
+  .pl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px dashed var(--accent); }
+  .pl-dot.iss { border: none; background: var(--ok); }
+  .pl-tree .avatar { width: 16px; height: 16px; flex: none; }
+  .pl-t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: none; padding: 0 2px; text-align: left; }
+  .pl-t:hover:not(:disabled) { background: none; color: var(--accent); }
+  .pl-t.empty { color: var(--muted); }
+  .pl-row:not(.d0) .pl-t { font-weight: normal; }
+  .pl-row.d0 .pl-t { font-weight: 600; }
+  .pl-tree .num { flex: none; color: var(--muted); font-size: 12px; }
+  .pl-tree .chip.warn, .pl-head .chip.warn { border-color: var(--warn); color: var(--warn); background: none; }
+  .pl-add { margin-left: auto; flex: none; border: none; background: none; color: var(--muted); opacity: .35; padding: 0 4px; font-size: 15px; line-height: 1; }
+  .pl-row:hover .pl-add, .pl-add:focus { opacity: 1; }
+  .pl-add:hover:not(:disabled) { color: var(--accent); background: none; }
+  .pl-track { position: relative; flex: none; cursor: crosshair; }
+  .pl-bar { position: absolute; top: 4px; height: 22px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; border-radius: 3px; background: var(--panel); border: 1px dashed var(--border); border-left: 3px solid var(--accent); cursor: grab; }
+  .pl-bar.iss { border-style: solid; border-left: 3px solid var(--ok); }
+  .pl-bar.changed { border-color: var(--warn); border-left-color: var(--warn); }
+  .pl-row.d0 .pl-bar { color: var(--text); }
+  .pl-bar .h { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+  .pl-bar .h.l { left: 0; } .pl-bar .h.r { right: 0; }
+  body.pl-dragging, body.pl-dragging * { cursor: grabbing !important; }
+  .pl-row.add-root .pl-tree { padding-left: 10px; }
+  .pl-row.add-root .pl-add { margin-left: 0; opacity: .5; font-size: 13px; }
+  .pl-md { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pl-md span { display: block; padding: 0 12px; white-space: pre-wrap; }
+  .pl-md span.add { background: color-mix(in srgb, var(--ok) 15%, transparent); }
+  .pl-md span.add::before { content: '+'; margin-left: -10px; width: 10px; display: inline-block; color: var(--ok); }
+  .pl-detail { flex: none; width: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .pl-detail:empty { display: none; }
+  .pl-detail input:not([type=checkbox]), .pl-detail select, .pl-detail textarea { width: 100%; }
+  .pl-detail .ms, .pl-detail .ms > summary { max-width: none; }
+  .pl-dates { display: flex; gap: 8px; }
+  .pl-dates > * { flex: 1; min-width: 0; }
+  .pl-xf { display: flex; align-items: flex-end; gap: 4px; }
+  .pl-xf > :first-child { flex: 1; min-width: 0; }
+  .pl-xf > button { border: none; background: none; color: var(--muted); padding: 4px 6px; }
+  .pl-addf { position: relative; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .pl-addf::before, .pl-addf::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+  .pl-addf > button { border-radius: 50%; width: 24px; height: 24px; padding: 0; line-height: 1; color: var(--muted); }
+  .pl-addf .pop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px; display: flex; flex-direction: column; min-width: 140px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
+  .pl-addf .pop button { border: none; background: none; text-align: left; padding: 4px 8px; }
+  .pl-foot { font-size: 11px; line-height: 14px; color: var(--muted); }
+  #plan-dlg { width: min(560px, calc(100vw - 32px)); }
+  #plan-dlg ol { margin: 0 0 12px; padding: 0; list-style: none; max-height: 40vh; overflow: auto; }
+  #plan-dlg li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  #plan-dlg li .chip { flex: none; }
+  #plan-dlg .opt { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  #plan-dlg .form-row input { width: 100%; }
+  .toast.ok { background: var(--ok); }
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
     .board-bar, header, .sp-row { flex-wrap: wrap; }
@@ -331,7 +432,7 @@
 <body>
 <header>
   <h1><a href="#"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><path d="M30 9q1-6 7-5M33 9q3-3 6-1"/><circle cx="32" cy="34" r="24" fill="#f2c94c"/><circle cx="23" cy="29" r="3.2" fill="#1f2328" stroke="none"/><circle cx="41" cy="29" r="3.2" fill="#1f2328" stroke="none"/><circle cx="24" cy="28" r="1" fill="#fff" stroke="none"/><circle cx="42" cy="28" r="1" fill="#fff" stroke="none"/><ellipse cx="32" cy="39" rx="9" ry="5" fill="#f2994a"/><path d="M24 39h16"/><circle cx="15" cy="37" r="3" fill="#f4a6a6" stroke="none"/><circle cx="49" cy="37" r="3" fill="#f4a6a6" stroke="none"/></svg>Docket</a></h1>
-  <nav class="tabs"><a href="#review" data-view="review"><span data-i18n="tab.review"></span><span class="badges"></span></a><a href="#receive" data-view="receive"><span data-i18n="tab.receive"></span><span class="badges"></span></a><a href="#sprint" data-view="sprint"><span data-i18n="tab.roadmap"></span><small></small></a></nav>
+  <nav class="tabs"><a href="#review" data-view="review"><span data-i18n="tab.review"></span><span class="badges"></span></a><a href="#receive" data-view="receive"><span data-i18n="tab.receive"></span><span class="badges"></span></a><a href="#sprint" data-view="sprint"><span data-i18n="tab.roadmap"></span><small></small></a><a href="#plan" data-view="plan"><span data-i18n="tab.plan"></span></a></nav>
   <span class="grow"></span>
   <details class="user-menu"><summary id="viewer"></summary><nav><a href="#settings" data-i18n="settings"></a><a href="#tips">Tip</a><a href="#about">About</a></nav></details>
 </header>
@@ -348,6 +449,7 @@
 </div>
 <main class="board" id="board"></main>
 <main id="sprint" hidden></main>
+<main id="plan" hidden></main>
 <main id="home" class="home" hidden></main>
 <main id="about" class="about" hidden></main>
 <main id="tips" class="page" hidden>
@@ -365,6 +467,7 @@
 <footer class="site-foot"><a href="https://github.com/ruridev" target="docket-viewer">©ruridev</a></footer>
 
 <dialog id="review-dlg"></dialog>
+<dialog id="plan-dlg"></dialog>
 <dialog id="log-dlg">
   <form method="dialog" class="dlg-head"><h3 data-i18n="claudeOutput"></h3><button data-i18n="close"></button></form>
   <pre class="dlg-body log"></pre>
@@ -470,6 +573,7 @@ const I18N = {
     's.sprintFuture': '未来のスプリント・期間の数 (スプリントは issue があるものだけ)', 's.repos': 'リポジトリ (1 行 1 つ、owner/name)',
     'nav.agent': 'Agent 関連設定', 'nav.refresh': '更新間隔', 'nav.lang': '言語', 'nav.terms': '用語', 'terms.help': 'レーンの名前を変えられます (表示だけで、レーンの役割は変わりません)。空欄なら既定の名前', 'pane.reset': 'すべて既定に戻す', 'cfg.export': 'ファイルに書き出す', 'cfg.import': 'ファイルから読み込む', 'cfg.imported': '読み込みました。「保存」を押すと反映されます', 'cfg.badFile': '設定ファイルを読み込めませんでした',
     'sec.board': 'PR ボード', 'sec.repos': 'リポジトリ', 'sec.screen': '画面', 'sec.fetch': 'GitHub の取得',
+    'tab.plan': '計画', 'pl.plans': '計画', 'pl.new': '新しい計画', 'pl.applied': '適用済み', 'pl.dirty': '変更あり · 未コミット', 'pl.timeline': 'タイムライン', 'pl.apply': 'GitHub に適用 ({n})', 'pl.update': '変更を反映 ({n})', 'pl.issue': 'issue', 'pl.addChild': 'sub issue を追加', 'pl.untitled': '(タイトルなし)', 'pl.changed': '変更', 'pl.days': '{n} 日', 'pl.title': 'タイトル', 'pl.start': '開始日', 'pl.end': '終了日', 'pl.body': '本文', 'pl.delete': '削除', 'pl.cantDelete': 'GitHub に作った issue は計画から消せません', 'pl.removeField': '項目を外す', 'pl.f.labels': 'ラベル', 'pl.f.milestone': 'マイルストーン', 'pl.selected': '{n} 件選択', 'pl.keep': '変更しない', 'pl.bulkApply': '一括適用', 'pl.clearSel': '選択解除', 'pl.newIssue': '新しい issue', 'pl.editIssue': '#{n} を更新', 'pl.optProject': 'Projects に追加し、開始日・終了日・スプリントを入れる', 'pl.optCommit': 'md ファイルをコミットする', 'pl.noGit': '計画のフォルダが git リポジトリではありません', 'pl.run': '適用', 'pl.needTitle': 'タイトルが空の issue があります', 'pl.done': 'issue を {created} 件作成、{updated} 件更新しました', 'pl.committed': 'コミットしました', 'pl.file': 'ファイル名', 'pl.create': '作成', 's.plansDir': '計画の md を置くフォルダ (空なら ~/docket-plans。その下に GitHub Projects ごとのフォルダを作ります)', 'err.planFileInvalid': 'ファイル名は英小文字・数字・ハイフンと .md だけにしてください', 'err.planNotFound': '計画のファイルが見つかりません', 'err.planExists': '{file} はすでにあります', 'err.planInvalid': '計画の内容が不正です', 'err.planRepoMissing': 'リポジトリ (owner/name) を入れてください', 'err.planApplying': 'この計画は適用中です', 'err.planMilestoneMissing': '「{title}」のマイルストーン {milestone} が見つからないため入れませんでした', 'err.planSprintMissing': '「{title}」のスプリント {sprint} が見つからないため入れませんでした',
     'sp.noProjects': '設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を追加してください。', 'sp.count': '{n} 件',
     future: '未来', current: '現在', past: '過去',
     'sp.noIteration': 'このプロジェクトには Iteration フィールドがありません。',
@@ -566,6 +670,7 @@ const I18N = {
     's.sprintFuture': '미래 스프린트·기간 수 (스프린트는 issue가 있는 것만)', 's.repos': '저장소 (한 줄에 하나, owner/name)',
     'nav.agent': 'Agent 관련 설정', 'nav.refresh': '갱신 간격', 'nav.lang': '언어', 'nav.terms': '용어', 'terms.help': '레인 이름을 바꿀 수 있습니다(표시만 바뀌고 레인의 역할은 그대로입니다). 비워 두면 기본 이름', 'pane.reset': '모두 기본값으로 되돌리기', 'cfg.export': '파일로 내보내기', 'cfg.import': '파일에서 불러오기', 'cfg.imported': '불러왔습니다. 「저장」을 눌러야 반영됩니다', 'cfg.badFile': '설정 파일을 읽을 수 없습니다',
     'sec.board': 'PR 보드', 'sec.repos': '저장소', 'sec.screen': '화면', 'sec.fetch': 'GitHub 가져오기',
+    'tab.plan': '계획', 'pl.plans': '계획', 'pl.new': '새 계획', 'pl.applied': '적용됨', 'pl.dirty': '수정됨 · 커밋 전', 'pl.timeline': '타임라인', 'pl.apply': 'GitHub에 적용 ({n})', 'pl.update': '변경 반영 ({n})', 'pl.issue': '이슈', 'pl.addChild': '하위 이슈 추가', 'pl.untitled': '(제목 없음)', 'pl.changed': '변경', 'pl.days': '{n}일', 'pl.title': '제목', 'pl.start': '시작일', 'pl.end': '종료일', 'pl.body': '본문', 'pl.delete': '삭제', 'pl.cantDelete': 'GitHub에 만든 이슈는 계획에서 지울 수 없습니다', 'pl.removeField': '항목 빼기', 'pl.f.labels': '라벨', 'pl.f.milestone': '마일스톤', 'pl.selected': '{n}개 선택', 'pl.keep': '바꾸지 않음', 'pl.bulkApply': '일괄 적용', 'pl.clearSel': '선택 해제', 'pl.newIssue': '새 issue', 'pl.editIssue': '#{n} 수정', 'pl.optProject': 'Projects에 추가하고 시작일·종료일·스프린트 입력', 'pl.optCommit': 'md 파일 커밋', 'pl.noGit': '계획 폴더가 git 저장소가 아닙니다', 'pl.run': '적용', 'pl.needTitle': '제목이 빈 이슈가 있습니다', 'pl.done': '이슈 {created}개를 만들고 {updated}개를 수정했습니다', 'pl.committed': '커밋했습니다', 'pl.file': '파일 이름', 'pl.create': '만들기', 's.plansDir': '계획 md를 둘 폴더 (비우면 ~/docket-plans. 그 아래에 GitHub Projects별 폴더를 만듭니다)', 'err.planFileInvalid': '파일 이름은 영문 소문자·숫자·하이픈과 .md만 쓸 수 있습니다', 'err.planNotFound': '계획 파일을 찾을 수 없습니다', 'err.planExists': '{file}이(가) 이미 있습니다', 'err.planInvalid': '계획 내용이 올바르지 않습니다', 'err.planRepoMissing': '저장소(owner/name)를 입력해 주세요', 'err.planApplying': '이 계획은 적용 중입니다', 'err.planMilestoneMissing': '「{title}」의 마일스톤 {milestone}을(를) 찾을 수 없어 넣지 않았습니다', 'err.planSprintMissing': '「{title}」의 스프린트 {sprint}을(를) 찾을 수 없어 넣지 않았습니다',
     'sp.noProjects': '설정의 "로드맵 화면의 GitHub Projects"에 프로젝트 URL을 추가하세요.', 'sp.count': '{n}건',
     future: '미래', current: '현재', past: '과거',
     'sp.noIteration': '이 프로젝트에는 Iteration 필드가 없습니다.',
@@ -662,6 +767,7 @@ const I18N = {
     's.sprintFuture': 'Future sprints / periods (only sprints with issues)', 's.repos': 'Repositories (one per line, owner/name)',
     'nav.agent': 'Agent settings', 'nav.refresh': 'Refresh', 'nav.lang': 'Language', 'nav.terms': 'Terms', 'terms.help': "Rename lanes (display only — what each lane holds doesn't change). Leave empty for the default name", 'pane.reset': 'Reset all to defaults', 'cfg.export': 'Export to file', 'cfg.import': 'Import from file', 'cfg.imported': 'Imported. Press "Save" to apply', 'cfg.badFile': "Couldn't read the settings file",
     'sec.board': 'PR board', 'sec.repos': 'Repositories', 'sec.screen': 'Screen', 'sec.fetch': 'GitHub fetch',
+    'tab.plan': 'Plans', 'pl.plans': 'Plans', 'pl.new': 'New plan', 'pl.applied': 'Applied', 'pl.dirty': 'Modified · not committed', 'pl.timeline': 'Timeline', 'pl.apply': 'Apply to GitHub ({n})', 'pl.update': 'Push changes ({n})', 'pl.issue': 'Issue', 'pl.addChild': 'Add sub-issue', 'pl.untitled': '(untitled)', 'pl.changed': 'Changed', 'pl.days': '{n}d', 'pl.title': 'Title', 'pl.start': 'Start', 'pl.end': 'End', 'pl.body': 'Description', 'pl.delete': 'Delete', 'pl.cantDelete': "Issues already created on GitHub can't be removed from the plan", 'pl.removeField': 'Remove field', 'pl.f.labels': 'Labels', 'pl.f.milestone': 'Milestone', 'pl.selected': '{n} selected', 'pl.keep': 'Keep', 'pl.bulkApply': 'Apply to selected', 'pl.clearSel': 'Deselect', 'pl.newIssue': 'New issue', 'pl.editIssue': 'Update #{n}', 'pl.optProject': 'Add to Projects and set start, end and sprint', 'pl.optCommit': 'Commit the md file', 'pl.noGit': "The plans folder isn't a git repository", 'pl.run': 'Apply', 'pl.needTitle': 'Some issues have no title', 'pl.done': 'Created {created} and updated {updated} issue(s)', 'pl.committed': 'committed', 'pl.file': 'File name', 'pl.create': 'Create', 's.plansDir': 'Folder for plan md files (empty = ~/docket-plans; one folder per GitHub Project is created inside)', 'err.planFileInvalid': 'Use only lowercase letters, digits, hyphens and .md in the file name', 'err.planNotFound': 'Plan file not found', 'err.planExists': '{file} already exists', 'err.planInvalid': 'Invalid plan', 'err.planRepoMissing': 'Enter the repository (owner/name)', 'err.planApplying': 'This plan is already being applied', 'err.planMilestoneMissing': 'Skipped milestone {milestone} for \'{title}\' (not found)', 'err.planSprintMissing': 'Skipped sprint {sprint} for \'{title}\' (not found)',
     'sp.noProjects': 'Add a project URL to "GitHub Projects for the roadmap" in Settings.', 'sp.count': '{n} issue(s)',
     future: 'Upcoming', current: 'Current', past: 'Past',
     'sp.noIteration': 'This project has no Iteration field.',
@@ -761,7 +867,7 @@ const RM_MODES = { sprint: tr('rm.sprint'), period: tr('rm.period') };
 if (['#milestone', '#repo'].includes(location.hash)) location.replace('#sprint'); // 廃止した Milestone別 / リポジトリ別 のブックマーク
 const rmMode = () => (RM_MODES[location.hash.slice(1)] ? location.hash.slice(1) : null);
 const PAGES = ['about', 'tips', 'settings'];
-const view = () => (!location.hash ? 'home' : location.hash === '#receive' ? 'receive' : PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : rmMode() ? 'sprint' : 'review');
+const view = () => (!location.hash ? 'home' : location.hash === '#receive' ? 'receive' : location.hash === '#plan' ? 'plan' : PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : rmMode() ? 'sprint' : 'review');
 const REVIEW_ICON = { APPROVED: '✅', CHANGES_REQUESTED: '🔴', COMMENTED: '💬', DISMISSED: '⚪', PENDING: '⏳' };
 
 let board = { prs: [], mine: [], config: { repos: {} } };
@@ -882,6 +988,7 @@ function render() {
       a.querySelector('small').textContent = ` · ${RM_MODES[mode]}`;
       return a.classList.toggle('on', v === view());
     }
+    if (v === 'plan') return a.classList.toggle('on', v === view());
     if (board.lastFetchedAt && (v === view() || seenSig[v] === undefined)) seenSig[v] = tabSig(v);
     a.title = board.lastFetchedAt ? tr('lastFetched', { ago: ago(board.lastFetchedAt) }) : '';
     a.classList.toggle('on', v === view());
@@ -897,13 +1004,15 @@ function render() {
   const about = view() === 'about';
   const home = view() === 'home';
   const page = PAGES.includes(view());
-  $('#board').hidden = $('#board-bar').hidden = sprint || page || home;
+  const plan = view() === 'plan';
+  $('#board').hidden = $('#board-bar').hidden = sprint || page || home || plan;
   $('#sprint').hidden = !sprint;
+  $('#plan').hidden = !plan;
   for (const p of PAGES) $(`#${p}`).hidden = view() !== p;
   $('#home').hidden = !home;
   if (about && !$('#about').innerHTML) renderAbout(); // 言語を変えると再読み込みになるので 1 回だけ描く
   if (home) renderHome();
-  if (sprint || page || home) return;
+  if (sprint || page || home || plan) return;
   const hidden = hiddenOf('repos', view());
   const hiddenAuthors = mine ? [] : hiddenOf('authors', view());
   const all = mine ? board.mine : board.prs;
@@ -1641,11 +1750,11 @@ async function openSettings() {
   const PANES = ['agent-run', 'agent-targets', 'agent-prompts', 'agent-claude', 'agent-codex', 'agent-roadmap', 'refresh', 'lang', 'terms'];
   // 「すべて既定に戻す」で戻す設定 (用語と画面の言語は別に扱う)
   const PANE_KEYS = {
-    agent: ['workdir', 'provider', 'model', 'effort', 'claudeArgs', 'codexModel', 'codexEffort', 'codexArgs', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'repos', 'reviewPrompt', 'fixPrompt'],
+    agent: ['workdir', 'provider', 'model', 'effort', 'claudeArgs', 'codexModel', 'codexEffort', 'codexArgs', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
     'agent-run': ['provider', 'maxConcurrent', 'logKeepDays'],
     'agent-targets': ['workdir', 'repos', 'authors', 'mergedDays', 'doneKeepDays'],
     'agent-prompts': ['reviewPrompt', 'fixPrompt'],
-    'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture'],
+    'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir'],
     'agent-claude': ['model', 'effort', 'claudeArgs'],
     'agent-codex': ['codexModel', 'codexEffort', 'codexArgs'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
@@ -1708,6 +1817,7 @@ async function openSettings() {
           <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintPast')}</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
           <div class="form-row"><label>${tr('s.period')}</label><select data-cfg="roadmapPeriod">${['week', '2week', 'month'].map((v) => [v, tr(`unit.${v}`)]).map(([v, l]) => `<option value="${v}" ${(cfg.roadmapPeriod || 'month') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintFuture')}</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
+          <div class="form-row"><label>${tr('s.plansDir')}</label><input data-cfg="plansDir" value="${esc(cfg.plansDir ?? '')}" placeholder="~/docket-plans"></div>
           ${resetBtn('agent-roadmap')}
         </div>
         ${['claude', 'codex'].map((provider) => `<div class="settings-pane" data-pane-body="agent-${provider}"><h3>${tr('toolSettings', { tool: providerLabel(provider) })}</h3><div data-agent-tools="${provider}">${agentToolSettings(provider)}</div>${resetBtn(`agent-${provider}`)}</div>`).join('')}
@@ -2182,6 +2292,578 @@ $('#sprint').addEventListener('change', (ev) => {
   if (ev.target.matches('[data-sp-project]')) { spSet('project', ev.target.value); return loadSprint(); }
 });
 
+// ---------- 計画 (Draft) ----------
+// issue のツリーを md ファイルの計画として作り、まとめて GitHub に適用する。画面で変えた内容はすぐ md に書く
+const PL_DAY = 24; // 1 日の幅
+const PL_TREE = 320; // 左の issue 名の列の幅
+const PL_DEPTH = 6; // md の見出しの深さまで
+const PL_FIELDS = ['labels', 'milestone', 'sprint']; // 詳細の「+」で足せる項目
+const pl = { list: null, dir: '', doc: null, opts: null, sel: new Set(), anchor: null, collapsed: new Set(), extra: {}, fieldMenu: false, bulk: null, range: null, drag: null, error: null, saveTimer: null, saving: Promise.resolve(), seq: 0 };
+const plGet = (k) => { try { return localStorage.getItem(`docket-plan:${k}`); } catch { return null; } };
+const plSet = (k, v) => { try { localStorage.setItem(`docket-plan:${k}`, v); } catch {} };
+const plProject = () => {
+  const list = board.config.projects || [];
+  return list.includes(plGet('project')) ? plGet('project') : list[0];
+};
+const plFile = () => plGet(`file:${plProject()}`);
+const plQuery = (extra = {}) => new URLSearchParams({ project: plProject(), ...extra });
+const plNodes = () => pl.doc?.plan.nodes || [];
+const plAll = () => {
+  const out = [];
+  const walk = (nodes, p, d) => nodes.forEach((n) => { out.push({ n, p, d }); walk(n.children, n, d + 1); });
+  walk(plNodes(), null, 0);
+  return out;
+};
+const plFind = (id) => plAll().find((x) => x.n.id === id);
+// 表示中の行 (畳んだ親の子孫を除く)
+const plRows = () => {
+  const out = [];
+  const walk = (nodes, p, d) => nodes.forEach((n) => { out.push({ n, p, d }); if (!pl.collapsed.has(n.id)) walk(n.children, n, d + 1); });
+  walk(plNodes(), null, 0);
+  return out;
+};
+const plNewId = () => `c${Date.now().toString(36)}${++pl.seq}`;
+const plDescendants = (n) => n.children.flatMap((c) => [c, ...plDescendants(c)]);
+const plAvatar = (login) => pl.opts?.assignees.find((a) => a.login === login)?.avatarUrl || `https://github.com/${encodeURIComponent(login)}.png?size=40`;
+const plIssueUrl = (num) => `https://github.com/${pl.doc.plan.repo}/issues/${num}`;
+const plChanged = (n) => !!n.issue && pl.doc.changed.includes(n.issue);
+// GitHub に作る issue と、反映後に変えた issue
+const plTargets = () => plAll().filter(({ n }) => !n.issue || plChanged(n));
+
+async function loadPlans() {
+  const url = plProject();
+  pl.error = null;
+  if (!url) return renderPlan();
+  try {
+    const res = await api(`/api/plans?${plQuery()}`);
+    pl.list = res.plans;
+    pl.dir = res.dir;
+    const file = plFile();
+    const open = pl.list.find((p) => p.file === file) || pl.list[0];
+    if (open) await openPlan(open.file, false);
+    else pl.doc = null;
+  } catch (e) {
+    pl.error = e.message;
+  }
+  renderPlan();
+}
+
+async function openPlan(file, render = true) {
+  await plFlush();
+  plSet(`file:${plProject()}`, file);
+  pl.doc = await api(`/api/plan?${plQuery({ file })}`);
+  pl.sel.clear();
+  pl.anchor = null;
+  pl.bulk = null;
+  pl.extra = {};
+  loadPlanOptions();
+  if (render) renderPlan();
+}
+
+async function loadPlanOptions() {
+  const repo = pl.doc?.plan.repo || '';
+  try {
+    const opts = await api(`/api/plan/options?${plQuery({ repo })}`);
+    // サイドバーのプロジェクト名もここで取れる
+    if (pl.doc?.plan.repo === repo) { pl.opts = opts; plRefresh(['side', 'detail', 'bulk', 'body']); }
+  } catch {}
+}
+
+// 入力が続く間はまとめて書く。書いた順に保存されるよう前の保存を待つ
+function plSave() {
+  clearTimeout(pl.saveTimer);
+  pl.saveTimer = setTimeout(plFlush, 400);
+}
+function plFlush() {
+  clearTimeout(pl.saveTimer);
+  pl.saveTimer = null;
+  const doc = pl.doc;
+  if (!doc?.pending) return pl.saving;
+  doc.pending = false;
+  const plan = JSON.parse(JSON.stringify(doc.plan));
+  pl.saving = pl.saving.then(async () => {
+    try {
+      const res = await api('/api/plan', { method: 'PUT', body: { project: plProject(), file: doc.file, plan } });
+      // ツリーは画面のものを使い続ける (サーバーが読み直した id にすると選択が外れる)
+      Object.assign(doc, { md: res.md, base: res.base, git: res.git, dirty: res.dirty, changed: res.changed, rel: res.rel });
+      const item = pl.list?.find((p) => p.file === doc.file);
+      if (item) Object.assign(item, { title: doc.plan.title || doc.file, dirty: res.dirty });
+      if (pl.doc === doc) plRefresh(['side', 'head', 'body']);
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+  return pl.saving;
+}
+const plEdited = (parts = ['head', 'body', 'detail', 'side']) => {
+  pl.doc.pending = true;
+  plSave();
+  plRefresh(parts);
+};
+
+// 表示する日付の範囲。前後に余白を取り、ドラッグ中は動かさない (動くと棒がカーソルからずれる)
+function plRange() {
+  if (pl.drag && pl.range) return pl.range;
+  const today = spToday();
+  const dates = plAll().flatMap(({ n }) => [n.start, n.end]).filter(Boolean);
+  const min = dates.reduce((a, b) => (b < a ? b : a), today);
+  const max = dates.reduce((a, b) => (b > a ? b : a), today);
+  const from = spDay(min, -7);
+  const days = Math.max(42, (Date.parse(max) - Date.parse(from)) / 86400000 + 22);
+  return (pl.range = { from, days });
+}
+const plIdx = (d) => (Date.parse(d) - Date.parse(pl.range.from)) / 86400000;
+const plSpan = (n) => (n.start || n.end) && { start: n.start || n.end, end: n.end || n.start };
+const plMd = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+
+function renderPlan() {
+  const el = $('#plan');
+  // ヘッダーとフッターの高さを除いた残りを全部使う
+  el.style.setProperty('--pl-top', `${document.querySelector('header').offsetHeight + $('#banner').offsetHeight}px`);
+  el.style.setProperty('--pl-foot', `${document.querySelector('.site-foot').offsetHeight}px`);
+  if (!(board.config.projects || []).length) {
+    el.innerHTML = `<p class="muted">${tr('sp.noProjects')}</p>`;
+    return;
+  }
+  const closed = plGet('side') === '0';
+  el.innerHTML = `<aside class="pl-side${closed ? ' closed' : ''}" data-pl="side"></aside>
+    <section class="pl-main">${pl.error ? `<div class="banner">${esc(pl.error)}</div>` : !pl.doc ? '' : `
+      <div class="pl-head" data-pl="head"></div>
+      <div data-pl="bulk"></div>
+      <div class="pl-work"><div class="pl-body" data-pl="body"></div><aside class="pl-detail" data-pl="detail"></aside></div>
+      <div class="pl-foot" data-pl="foot"></div>`}</section>`;
+  plRefresh(['side', 'head', 'bulk', 'body', 'detail']);
+}
+
+// 入力中の欄を含む部分は描き直さない (フォーカスと入力中の値が消えるため)
+const PL_PARTS = { side: () => plSideHtml(), head: () => plHeadHtml(), bulk: () => plBulkHtml(), body: () => plBodyHtml(), detail: () => plDetailHtml(), foot: () => esc(pl.doc?.rel || '') };
+function plRefresh(parts) {
+  for (const part of parts.includes('head') ? [...parts, 'foot'] : parts) {
+    const box = $(`#plan [data-pl="${part}"]`);
+    if (!box || (part !== 'side' && !pl.doc)) continue;
+    const a = document.activeElement;
+    if (box.contains(a) && a.matches('input:not([type=checkbox]), textarea, select')) continue;
+    const scroll = box.querySelector('.pl-road, .pl-md');
+    const pos = scroll && [scroll.scrollLeft, scroll.scrollTop];
+    const from = pl.range?.from;
+    box.innerHTML = PL_PARTS[part]();
+    const next = box.querySelector('.pl-road, .pl-md');
+    // 表示範囲の始まりが前に広がった分だけスクロールして、棒が画面上で動かないようにする
+    if (pos && from && next?.matches('.pl-road')) pos[0] += ((Date.parse(from) - Date.parse(pl.range.from)) / 86400000) * PL_DAY;
+    if (pos && next) [next.scrollLeft, next.scrollTop] = pos;
+  }
+}
+
+function plSideHtml() {
+  if (plGet('side') === '0') return `<button class="pl-fold" data-pl-side="1" title="${esc(tr('pl.plans'))}">›</button><span class="pl-rail">${tr('pl.plans')}</span>`;
+  const url = plProject();
+  const projects = board.config.projects || [];
+  const select = `<select data-pl-project title="${esc(url)}">${projects.map((u) => `<option value="${esc(u)}"${u === url ? ' selected' : ''}>${esc(sp.meta[u]?.title || (u === url && pl.opts?.fields?.title) || u.replace(/^.*github\.com\//, ''))}</option>`).join('')}</select>`;
+  const item = (p) => `<button class="pl-item${p.file === pl.doc?.file ? ' on' : ''}" data-pl-open="${esc(p.file)}" title="${esc(p.file)}"><span class="t">${esc(p.title)}</span>${p.dirty ? `<span class="pl-dirty" title="${esc(tr('pl.dirty'))}"></span>` : ''}</button>`;
+  const group = (label, list) => (list.length ? `<div class="grp">${label}</div>${list.map(item).join('')}` : '');
+  const list = pl.list || [];
+  return `<div class="pl-side-top"><span class="ms-label">GitHub Projects</span><button class="pl-fold" data-pl-side="0">‹</button></div>${select}
+    <div class="pl-side-head"><b>${tr('pl.plans')}</b><button class="pl-new" data-pl-new>+ ${tr('pl.new')}</button></div>
+    <div class="pl-list">${group('Draft', list.filter((p) => p.status !== 'applied'))}${group(tr('pl.applied'), list.filter((p) => p.status === 'applied'))}</div>
+    <div class="pl-dir">${esc(pl.dir)}</div>`;
+}
+
+function plHeadHtml() {
+  const { plan, dirty } = pl.doc;
+  const applied = plan.status === 'applied';
+  const n = plTargets().length;
+  const hasIssue = plAll().some(({ n: x }) => x.issue);
+  // 一度も issue を作っていなければリポジトリを変えられる
+  const repo = hasIssue ? `<span class="chip">${esc(plan.repo)}</span>`
+    : `<input class="pl-repo" data-pl-repo list="pl-repos" value="${esc(plan.repo)}" placeholder="owner/name"><datalist id="pl-repos">${Object.keys(board.config.repos || {}).map((r) => `<option value="${esc(r)}">`).join('')}</datalist>`;
+  const view = plGet('view') === 'md' ? 'md' : 'timeline';
+  const label = !applied ? tr('pl.apply', { n }) : n ? tr('pl.update', { n }) : tr('pl.applied');
+  return `<input class="pl-title" data-pl-title value="${esc(plan.title)}" aria-label="${esc(tr('pl.title'))}">
+    ${applied ? `<span class="chip ok">${tr('pl.applied')}</span>` : '<span class="chip draft">Draft</span>'}
+    ${dirty ? `<span class="chip warn">${tr('pl.dirty')}</span>` : ''}
+    ${repo}
+    <span class="right"><span class="seg"><button data-pl-view="timeline"${view === 'timeline' ? ' class="primary"' : ''}>${tr('pl.timeline')}</button><button data-pl-view="md"${view === 'md' ? ' class="primary"' : ''}>Markdown</button></span>
+    <button class="primary" data-pl-apply ${n ? '' : 'disabled'}>${label}</button></span>`;
+}
+
+function plBodyHtml() {
+  if (plGet('view') === 'md') {
+    // 最後のコミットから変わった行に印を付ける (git で管理していなければ付けない)
+    const base = new Map();
+    for (const l of pl.doc.base == null ? [] : pl.doc.base.split('\n')) base.set(l, (base.get(l) || 0) + 1);
+    const lines = pl.doc.md.replace(/\n$/, '').split('\n').map((l) => {
+      const left = base.get(l) || 0;
+      if (left) base.set(l, left - 1);
+      return `<span${pl.doc.git && !left ? ' class="add"' : ''}>${esc(l) || ' '}</span>`;
+    });
+    return `<pre class="pl-md">${lines.join('')}</pre>`;
+  }
+  const { from, days } = plRange();
+  const today = spToday();
+  const dayList = Array.from({ length: days }, (_, i) => spDay(from, i));
+  const isWe = (d) => [0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay());
+  const head = dayList.map((d, i) => `<div class="${isWe(d) ? 'we' : ''}${d === today ? ' today' : ''}">${i === 0 || d.endsWith('-01') ? new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' }) : ''}<br>${Number(d.slice(8))}</div>`).join('');
+  const bg = dayList.map((d, i) => (isWe(d) ? `<i class="we" style="left:${i * PL_DAY}px"></i>` : '')).join('')
+    + (today >= from && plIdx(today) < days ? `<i class="today" style="left:${plIdx(today) * PL_DAY + PL_DAY / 2}px"></i>` : '');
+  const rows = plRows().map(({ n, d }) => {
+    const toggle = n.children.length ? `<span class="tg" data-pl-toggle="${esc(n.id)}">${pl.collapsed.has(n.id) ? '▸' : '▾'}</span>` : '<span class="tg"></span>';
+    const avatars = n.assignees.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
+    const changed = plChanged(n);
+    const tree = `<div class="pl-tree" style="padding-left:${6 + d * 16}px">${toggle}<span class="pl-dot${n.issue ? ' iss' : ''}"></span>${avatars}
+      <button class="pl-t${n.title ? '' : ' empty'}" data-pl-row="${esc(n.id)}">${esc(n.title || tr('pl.untitled'))}</button>
+      ${changed ? `<span class="chip warn">${tr('pl.changed')}</span>` : ''}
+      ${n.issue ? `<a class="num" href="${esc(safeUrl(plIssueUrl(n.issue)))}" target="docket-viewer">#${n.issue}</a>` : ''}
+      ${d + 1 < PL_DEPTH ? `<button class="pl-add" data-pl-add="${esc(n.id)}" title="${esc(tr('pl.addChild'))}">+</button>` : ''}</div>`;
+    const span = plSpan(n);
+    let bar = '';
+    if (span) {
+      const len = plIdx(span.end) - plIdx(span.start) + 1;
+      const text = len * PL_DAY >= 120 ? `${plMd(span.start)}–${plMd(span.end)} · ${tr('pl.days', { n: len })}` : len * PL_DAY >= 36 ? tr('pl.days', { n: len }) : '';
+      bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i>${text}<i class="h r" data-pl-h="r"></i></div>`;
+    }
+    return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
+  }).join('');
+  const allFolded = plNodes().every((n) => !n.children.length || pl.collapsed.has(n.id));
+  const foldAll = plNodes().some((n) => n.children.length) ? `<button class="fold-all" data-pl-fold="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
+  return `<div class="pl-road"><div class="pl-grid" style="--d:${PL_DAY}px;--tree:${PL_TREE}px;width:${PL_TREE + days * PL_DAY}px">
+    <div class="pl-bg" style="left:${PL_TREE}px">${bg}</div>
+    <div class="pl-hdr"><div class="pl-tree"><span>${tr('pl.issue')}</span>${foldAll}</div><div class="pl-days">${head}</div></div>
+    ${rows}
+    <div class="pl-row add-root"><div class="pl-tree"><button class="pl-add" data-pl-add="">+ ${tr('pl.issue')}</button></div></div>
+  </div></div>`;
+}
+
+// 担当者・ラベルは multiSelect で選ぶ。候補に無い値 (md に直接書いたもの) も選べるよう残す
+const plPeople = (extra = []) => [...new Set([...(pl.opts?.assignees || []).map((a) => a.login), ...extra])];
+const plLabels = (extra = []) => [...new Set([...(pl.opts?.labels || []).map((l) => l.name), ...extra])];
+const plAvatars = (list) => list.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
+const plOptions = (values, current, empty) => `<option value="">${empty}</option>${[...new Set([...values, ...(current ? [current] : [])])].map((v) => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}`;
+const plSprints = () => (pl.opts?.fields?.iterations || []).map((i) => i.title);
+
+function plDetailHtml() {
+  if (pl.sel.size !== 1) return '';
+  const hit = plFind([...pl.sel][0]);
+  if (!hit) return '';
+  const { n } = hit;
+  const shown = (f) => pl.extra[n.id]?.has(f) || (f === 'labels' ? n.labels.length : n[f]);
+  const remove = (f) => `<button data-pl-unf="${f}" title="${esc(tr('pl.removeField'))}">×</button>`;
+  const fieldHtml = {
+    labels: () => multiSelect('pl-labels', tr('pl.f.labels'), n.labels.length ? esc(n.labels.join(', ')) : tr('none'), plLabels(n.labels).map((l) => ({ value: l, text: l })), (l) => n.labels.includes(l)),
+    milestone: () => field(tr('pl.f.milestone'), `<select data-pl-f="milestone">${plOptions((pl.opts?.milestones || []).map((m) => m.title), n.milestone, tr('unset'))}</select>`),
+    sprint: () => field(tr('sp.sprint'), `<select data-pl-f="sprint">${plOptions(plSprints(), n.sprint, tr('unset'))}</select>`),
+  };
+  const rest = PL_FIELDS.filter((f) => !shown(f));
+  const fieldLabel = { labels: tr('pl.f.labels'), milestone: tr('pl.f.milestone'), sprint: tr('sp.sprint') };
+  return `${field(tr('pl.title'), `<input data-pl-f="title" value="${esc(n.title)}">`)}
+    <div class="pl-dates">${field(tr('pl.start'), `<input type="date" data-pl-f="start" value="${esc(n.start || '')}">`)}${field(tr('pl.end'), `<input type="date" data-pl-f="end" value="${esc(n.end || '')}">`)}</div>
+    ${multiSelect('pl-assignees', tr('sp.assignee'), n.assignees.length ? plAvatars(n.assignees) : tr('none'), plPeople(n.assignees).map((a) => ({ value: a, text: a, img: plAvatar(a) })), (a) => n.assignees.includes(a))}
+    ${PL_FIELDS.filter(shown).map((f) => `<div class="pl-xf">${fieldHtml[f]()}${remove(f)}</div>`).join('')}
+    ${rest.length ? `<div class="pl-addf"><button data-pl-addf aria-expanded="${pl.fieldMenu}">+</button>${pl.fieldMenu ? `<div class="pop">${rest.map((f) => `<button data-pl-addf-pick="${f}">${fieldLabel[f]}</button>`).join('')}</div>` : ''}</div>` : ''}
+    ${field(tr('pl.body'), `<textarea data-pl-f="body" rows="10">${esc(n.body)}</textarea>`)}
+    <div style="display:flex"><button data-pl-del style="margin-left:auto;color:var(--danger)" ${n.issue ? `disabled title="${esc(tr('pl.cantDelete'))}"` : ''}>${tr('pl.delete')}</button></div>`;
+}
+
+// 2 件以上選んだときだけ出す一括入力。空欄の項目は変えない
+function plBulkHtml() {
+  if (pl.sel.size < 2) return '';
+  const b = (pl.bulk ||= { start: '', end: '', assignees: null, labels: null, sprint: '' });
+  const keep = tr('pl.keep');
+  return `<div class="pl-bulk"><b>${tr('pl.selected', { n: pl.sel.size })}</b>
+    ${field(tr('pl.start'), `<input type="date" data-pl-b="start" value="${esc(b.start)}">`)}
+    ${field(tr('pl.end'), `<input type="date" data-pl-b="end" value="${esc(b.end)}">`)}
+    ${multiSelect('pl-b-assignees', tr('sp.assignee'), !b.assignees ? keep : b.assignees.size ? plAvatars([...b.assignees]) : tr('none'), plPeople().map((a) => ({ value: a, text: a, img: plAvatar(a) })), (a) => !!b.assignees?.has(a))}
+    ${multiSelect('pl-b-labels', tr('pl.f.labels'), !b.labels ? keep : b.labels.size ? esc([...b.labels].join(', ')) : tr('none'), plLabels().map((l) => ({ value: l, text: l })), (l) => !!b.labels?.has(l))}
+    ${field(tr('sp.sprint'), `<select data-pl-b="sprint">${plOptions(plSprints(), b.sprint, keep)}</select>`)}
+    <button class="primary" data-pl-bulk-apply>${tr('pl.bulkApply')}</button><button data-pl-bulk-clear>${tr('pl.clearSel')}</button></div>`;
+}
+
+function plApplyBulk() {
+  const b = pl.bulk;
+  for (const id of pl.sel) {
+    const n = plFind(id)?.n;
+    if (!n) continue;
+    if (b.start) n.start = b.start;
+    if (b.end) n.end = b.end;
+    // 片方だけ入れて開始日が終了日より後になったら、もう片方を合わせる
+    if (n.start && n.end && n.start > n.end) b.start ? (n.end = n.start) : (n.start = n.end);
+    if (b.assignees) n.assignees = [...b.assignees];
+    if (b.labels) n.labels = [...b.labels];
+    if (b.sprint) n.sprint = b.sprint;
+  }
+  pl.bulk = null;
+  plEdited(['head', 'bulk', 'body', 'detail']);
+}
+
+function plSelect(id, ev) {
+  if (ev.ctrlKey || ev.metaKey) {
+    pl.sel.has(id) ? pl.sel.delete(id) : pl.sel.add(id);
+    pl.anchor = id;
+  } else if (ev.shiftKey && pl.anchor) {
+    const ids = plRows().map(({ n }) => n.id);
+    const [a, b] = [ids.indexOf(pl.anchor), ids.indexOf(id)].sort((x, y) => x - y);
+    pl.sel = new Set(a < 0 ? [id] : ids.slice(a, b + 1));
+  } else {
+    pl.sel = new Set([id]);
+    pl.anchor = id;
+  }
+  if (pl.sel.size < 2) pl.bulk = null;
+  pl.fieldMenu = false;
+  plRefresh(['bulk', 'body', 'detail']);
+}
+
+function plAdd(parentId) {
+  const node = { id: plNewId(), title: '', body: '', issue: null, start: null, end: null, assignees: [], labels: [], milestone: null, sprint: null, children: [] };
+  const parent = parentId && plFind(parentId)?.n;
+  (parent ? parent.children : pl.doc.plan.nodes).push(node);
+  if (parent) pl.collapsed.delete(parent.id);
+  pl.sel = new Set([node.id]);
+  pl.anchor = node.id;
+  pl.bulk = null;
+  plEdited(['head', 'bulk', 'body', 'detail']);
+  $('#plan [data-pl-f="title"]')?.focus();
+}
+
+$('#plan').addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (t.closest('a[target]')) return;
+  const side = t.closest('[data-pl-side]');
+  if (side) { plSet('side', side.dataset.plSide); return renderPlan(); }
+  const open = t.closest('[data-pl-open]');
+  if (open) return openPlan(open.dataset.plOpen).catch((e) => toast(e.message));
+  if (t.closest('[data-pl-new]')) return openNewPlan();
+  const v = t.closest('[data-pl-view]');
+  if (v) { plSet('view', v.dataset.plView); return plRefresh(['head', 'body']); }
+  if (t.closest('[data-pl-apply]')) return openApplyPlan();
+  const fold = t.closest('[data-pl-fold]');
+  if (fold) {
+    if (fold.dataset.plFold === 'open') pl.collapsed.clear();
+    else plNodes().forEach((n) => n.children.length && pl.collapsed.add(n.id));
+    return plRefresh(['body']);
+  }
+  const toggle = t.closest('[data-pl-toggle]');
+  if (toggle) {
+    const id = toggle.dataset.plToggle;
+    pl.collapsed.has(id) ? pl.collapsed.delete(id) : pl.collapsed.add(id);
+    return plRefresh(['body']);
+  }
+  const add = t.closest('[data-pl-add]');
+  if (add) return plAdd(add.dataset.plAdd);
+  const row = t.closest('[data-pl-row]');
+  if (row) return plSelect(row.dataset.plRow, ev);
+  if (t.closest('[data-pl-addf]')) { pl.fieldMenu = !pl.fieldMenu; return plRefresh(['detail']); }
+  const pick = t.closest('[data-pl-addf-pick]');
+  if (pick) {
+    const id = [...pl.sel][0];
+    (pl.extra[id] ||= new Set()).add(pick.dataset.plAddfPick);
+    pl.fieldMenu = false;
+    return plRefresh(['detail']);
+  }
+  const unf = t.closest('[data-pl-unf]');
+  if (unf) {
+    const n = plFind([...pl.sel][0])?.n;
+    const f = unf.dataset.plUnf;
+    pl.extra[n.id]?.delete(f);
+    n[f] = f === 'labels' ? [] : null;
+    return plEdited(['head', 'body', 'detail']);
+  }
+  if (t.closest('[data-pl-del]')) {
+    const hit = plFind([...pl.sel][0]);
+    if (!hit || hit.n.issue) return;
+    const list = hit.p ? hit.p.children : pl.doc.plan.nodes;
+    list.splice(list.indexOf(hit.n), 1);
+    pl.sel.clear();
+    return plEdited(['head', 'bulk', 'body', 'detail']);
+  }
+  if (t.closest('[data-pl-bulk-apply]')) return plApplyBulk();
+  if (t.closest('[data-pl-bulk-clear]')) { pl.sel.clear(); pl.bulk = null; return plRefresh(['bulk', 'body', 'detail']); }
+  // 担当者・ラベルの「すべて選択 / すべて解除」
+  const bulkMs = t.closest('[data-ms^="pl-"] [data-ms-bulk]');
+  if (bulkMs) {
+    const key = bulkMs.closest('[data-ms]').dataset.ms;
+    const all = bulkMs.dataset.msBulk === 'all';
+    const values = key.endsWith('labels') ? plLabels() : plPeople();
+    if (key.startsWith('pl-b-')) {
+      pl.bulk[key.slice(5)] = new Set(all ? values : []);
+      return plRefresh(['bulk']);
+    }
+    const n = plFind([...pl.sel][0])?.n;
+    if (n) n[key.slice(3)] = all ? values : [];
+    return plEdited(['head', 'body', 'detail']);
+  }
+  if (pl.fieldMenu && !t.closest('.pl-addf')) { pl.fieldMenu = false; plRefresh(['detail']); }
+});
+
+$('#plan').addEventListener('input', (ev) => {
+  const t = ev.target;
+  if (t.matches('[data-pl-title]')) {
+    pl.doc.plan.title = t.value;
+    return plEdited(['side']);
+  }
+  const f = t.dataset.plF;
+  if (f === 'title' || f === 'body') {
+    plFind([...pl.sel][0]).n[f] = t.value;
+    return plEdited(f === 'title' ? ['head', 'body'] : ['head']);
+  }
+});
+
+$('#plan').addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (t.matches('[data-pl-project]')) { plSet('project', t.value); pl.doc = null; pl.list = null; pl.opts = null; return loadPlans(); }
+  if (t.matches('[data-pl-repo]')) {
+    pl.doc.plan.repo = t.value.trim();
+    pl.opts = null;
+    loadPlanOptions();
+    return plEdited(['head']);
+  }
+  const n = pl.sel.size === 1 && plFind([...pl.sel][0])?.n;
+  const f = t.dataset.plF;
+  if (n && (f === 'start' || f === 'end')) {
+    n[f] = t.value || null;
+    if (n.start && n.end && n.start > n.end) f === 'start' ? (n.end = n.start) : (n.start = n.end);
+    return plEdited(['head', 'body']);
+  }
+  if (n && (f === 'milestone' || f === 'sprint')) { n[f] = t.value || null; return plEdited(['head', 'body']); }
+  const b = t.dataset.plB;
+  if (b) { pl.bulk[b] = t.value; return; }
+  const ms = t.closest('[data-ms^="pl-"]');
+  if (ms && t.matches('[data-ms-value]')) {
+    const key = ms.dataset.ms;
+    const value = t.dataset.msValue;
+    if (key.startsWith('pl-b-')) {
+      const set = (pl.bulk[key.slice(5)] ||= new Set());
+      t.checked ? set.add(value) : set.delete(value);
+      return plRefresh(['bulk']);
+    }
+    const list = n[key.slice(3)];
+    n[key.slice(3)] = t.checked ? [...list, value] : list.filter((x) => x !== value);
+    return plEdited(['head', 'body', 'detail']);
+  }
+});
+
+// 棒のドラッグ: 本体で移動 (Shift で子孫も一緒に)、両端で開始日・終了日、棒の無い行では引いた範囲を期間にする
+$('#plan').addEventListener('pointerdown', (ev) => {
+  if (ev.button !== 0) return;
+  const track = ev.target.closest('[data-pl-track]');
+  if (!track) return;
+  const id = track.dataset.plTrack;
+  const n = plFind(id)?.n;
+  const span = plSpan(n);
+  const bar = ev.target.closest('[data-pl-bar]');
+  const mode = bar ? ev.target.dataset.plH || 'move' : 'create';
+  const at = Math.floor((ev.clientX - track.getBoundingClientRect().left) / PL_DAY);
+  const group = mode === 'move' && ev.shiftKey ? [n, ...plDescendants(n)] : [n];
+  pl.drag = { id, mode, x: ev.clientX, at, moved: false, mods: { ctrlKey: ev.ctrlKey, metaKey: ev.metaKey, shiftKey: ev.shiftKey && mode !== 'move' }, orig: group.map((x) => ({ n: x, start: x.start, end: x.end })), span };
+  plRange();
+  ev.preventDefault();
+  document.activeElement?.blur(); // 詳細の入力欄にフォーカスが残ると、その欄が描き直されず日付が古いままになる
+});
+window.addEventListener('pointermove', (ev) => {
+  const d = pl.drag;
+  if (!d) return;
+  const dd = Math.round((ev.clientX - d.x) / PL_DAY);
+  if (!dd && !d.moved) return;
+  if (!d.moved) document.body.classList.add('pl-dragging');
+  d.moved = true;
+  const [first] = d.orig;
+  if (d.mode === 'create') {
+    const a = spDay(pl.range.from, d.at);
+    const b = spDay(pl.range.from, d.at + dd);
+    [first.n.start, first.n.end] = a <= b ? [a, b] : [b, a];
+  } else if (d.mode === 'move') {
+    for (const o of d.orig) {
+      if (o.start) o.n.start = spDay(o.start, dd);
+      if (o.end) o.n.end = spDay(o.end, dd);
+    }
+  } else {
+    const { start, end } = d.span;
+    if (d.mode === 'l') [first.n.start, first.n.end] = [spDay(start, dd) > end ? end : spDay(start, dd), end];
+    else [first.n.start, first.n.end] = [start, spDay(end, dd) < start ? start : spDay(end, dd)];
+  }
+  plRefresh(['body', 'detail']);
+});
+window.addEventListener('pointerup', (ev) => {
+  const d = pl.drag;
+  if (!d) return;
+  pl.drag = null;
+  document.body.classList.remove('pl-dragging');
+  if (d.moved) return plEdited(['head', 'body', 'detail']);
+  // 動かさずに離したら行を選ぶ
+  plSelect(d.id, { ...d.mods, shiftKey: d.mods.shiftKey || (ev.shiftKey && d.mode !== 'move') });
+});
+
+function openNewPlan() {
+  const dlg = $('#plan-dlg');
+  const repos = Object.keys(board.config.repos || {});
+  dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.new')}</h3><button data-i18n="close">${tr('close')}</button></form>
+    <div class="dlg-body">
+      <div class="form-row"><label>${tr('pl.title')}</label><input data-pl-new-title required></div>
+      <div class="form-row"><label>${tr('pl.file')}</label><input data-pl-new-file placeholder="feature-name.md" pattern="[a-z0-9][a-z0-9\\-]*\\.md" required></div>
+      <div class="form-row"><label>${tr('repo')}</label><input data-pl-new-repo list="pl-new-repos" placeholder="owner/name" value="${esc(pl.doc?.plan.repo || repos[0] || '')}"><datalist id="pl-new-repos">${repos.map((r) => `<option value="${esc(r)}">`).join('')}</datalist></div>
+    </div>
+    <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pl-create>${tr('pl.create')}</button></div>`;
+  const title = dlg.querySelector('[data-pl-new-title]');
+  const file = dlg.querySelector('[data-pl-new-file]');
+  // ファイル名はタイトルから作る (英数字が無いタイトルは自分で入れる)
+  title.oninput = () => {
+    if (file.dataset.touched) return;
+    const slug = title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    file.value = slug ? `${slug}.md` : '';
+  };
+  file.oninput = () => (file.dataset.touched = '1');
+  dlg.querySelector('[data-pl-create]').onclick = async () => {
+    if (!title.reportValidity() || !file.reportValidity()) return;
+    try {
+      const doc = await api('/api/plan/new', { method: 'POST', body: { project: plProject(), file: file.value, title: title.value.trim(), repo: dlg.querySelector('[data-pl-new-repo]').value.trim() } });
+      dlg.close();
+      plSet(`file:${plProject()}`, doc.file);
+      await loadPlans();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  dlg.showModal();
+  title.focus();
+}
+
+async function openApplyPlan() {
+  await plFlush();
+  const targets = plTargets();
+  if (!targets.length) return;
+  const dlg = $('#plan-dlg');
+  const { plan, git } = pl.doc;
+  const applied = plan.status === 'applied';
+  dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${applied ? tr('pl.update', { n: targets.length }) : tr('pl.apply', { n: targets.length })}</h3><button>${tr('close')}</button></form>
+    <div class="dlg-body">
+      <p class="muted" style="margin:0 0 8px">${esc(plan.repo || '')}</p>
+      <ol>${targets.map(({ n, d }) => `<li style="padding-left:${d * 16}px"><span class="chip${n.issue ? ' warn' : ' draft'}">${n.issue ? tr('pl.editIssue', { n: n.issue }) : tr('pl.newIssue')}</span>${esc(n.title || tr('pl.untitled'))}</li>`).join('')}</ol>
+      <label class="opt"><input type="checkbox" data-pl-opt="addToProject" checked>${tr('pl.optProject')}</label>
+      <label class="opt"${git ? '' : ` title="${esc(tr('pl.noGit'))}"`}><input type="checkbox" data-pl-opt="commit" ${git ? 'checked' : 'disabled'}>${tr('pl.optCommit')}</label>
+    </div>
+    <div class="dlg-foot"><span style="flex:1"></span><button class="primary" data-pl-run ${targets.some(({ n }) => !n.title.trim()) || !plan.repo ? 'disabled' : ''}>${tr('pl.run')}</button></div>`;
+  const run = dlg.querySelector('[data-pl-run]');
+  if (!plan.repo) run.title = tr('err.planRepoMissing');
+  else if (run.disabled) run.title = tr('pl.needTitle');
+  run.onclick = async () => {
+    run.disabled = true;
+    run.innerHTML = `<span class="spin"></span> ${tr('pl.run')}`;
+    const opt = (k) => dlg.querySelector(`[data-pl-opt="${k}"]`).checked;
+    try {
+      const res = await api('/api/plan/apply', { method: 'POST', body: { project: plProject(), file: pl.doc.file, addToProject: opt('addToProject'), commit: opt('commit') } });
+      dlg.close();
+      const warn = res.warnings.map(errText);
+      toast([tr('pl.done', { created: res.created, updated: res.updated }) + (res.committed ? ` · ${tr('pl.committed')}` : ''), ...warn].join('\n'));
+      if (!warn.length) [...document.querySelectorAll('.toast')].at(-1)?.classList.add('ok');
+      await loadPlans();
+    } catch (e) {
+      // 途中で失敗しても作った issue の番号は md に書いてあるので読み直す
+      dlg.close();
+      toast(e.message);
+      await loadPlans();
+    }
+  };
+  dlg.showModal();
+}
+
 // ---------- イベント ----------
 
 // 自分の PR を レビュー待ち / マージ可能 / Done の間で移す (ドラッグと選択欄の共通処理)
@@ -2391,6 +3073,7 @@ window.addEventListener('hashchange', () => {
 // 画面に入ったときだけ描く (render のたびに描くと設定の入力中の値が消える)
 function enterView() {
   if (view() === 'sprint') loadSprint();
+  if (view() === 'plan') loadPlans();
   if (view() === 'settings') openSettings().catch((e) => toast(e.message));
   if (view() === 'tips') renderTipShots();
 }
