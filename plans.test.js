@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parsePlan, serializePlan, flatten, syncSnapshot, slugify, validFile } = require('./plans');
+const { parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, slugify, validFile } = require('./plans');
 
 const MD = String.raw`---
 title: 通知機能
@@ -72,4 +72,29 @@ test('slugify / validFile', () => {
   assert.equal(slugify('通知'), '');
   assert.ok(validFile('a-1.md'));
   assert.ok(!validFile('../a.md'));
+});
+
+test('mergeRemote: GitHub でだけ変わった項目は取り込み、両方で違う値に変わった項目は衝突にする', () => {
+  const base = { title: 't', assignees: ['a'], labels: [], milestone: null, sprint: 'S1', start: '2026-11-01', end: '2026-11-05' };
+  const local = { ...base, end: '2026-11-08', sprint: 'S2' };
+  const remote = { ...base, assignees: ['b'], sprint: 'S3', title: 't' };
+  const { take, conflicts } = mergeRemote(local, base, remote);
+  assert.deepEqual(take, { assignees: ['b'] });
+  assert.deepEqual(conflicts, { sprint: 'S3' });
+  // 計画で直した終了日は GitHub が変わっていないのでそのまま (取り込みも衝突もしない)
+  assert.ok(!('end' in take) && !('end' in conflicts));
+});
+
+test('mergeRemote: 同じ値に変わったものは何もしない。前の衝突は GitHub がそのままなら残し、計画を GitHub に合わせたら消す', () => {
+  const base = { title: 't', assignees: [], labels: [], milestone: null, sprint: null, start: null, end: null };
+  assert.deepEqual(mergeRemote({ ...base, title: 'u' }, base, { ...base, title: 'u' }), { take: {}, conflicts: {} });
+  // 前回の取り込みで base は GitHub の値になっている
+  const after = { ...base, title: 'gh' };
+  assert.deepEqual(mergeRemote({ ...base, title: 'mine' }, after, after, { title: 'gh' }).conflicts, { title: 'gh' });
+  assert.deepEqual(mergeRemote({ ...base, title: 'gh' }, after, after, { title: 'gh' }).conflicts, {});
+});
+
+test('snapshotFields / fieldsOf: syncSnapshot と同じ並び・同じ値になる', () => {
+  const n = { title: 't', body: 'b', assignees: ['b', 'a'], labels: ['x'], milestone: 'v1', sprint: 'S', start: '2026-11-01', end: null };
+  assert.deepEqual(snapshotFields(syncSnapshot(n)), fieldsOf(n));
 });

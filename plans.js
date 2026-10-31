@@ -129,4 +129,29 @@ const syncSnapshot = (n) => JSON.stringify([n.title, n.body || '', [...(n.assign
 const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
 const validFile = (f) => /^[a-z0-9][a-z0-9-]*\.md$/.test(f || '');
 
-module.exports = { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, slugify, validFile };
+// GitHub と見比べる項目 (本文は GitHub で書くので見比べない)
+const PULL_FIELDS = ['title', 'assignees', 'labels', 'milestone', 'sprint', 'start', 'end'];
+const fieldsOf = (n) => ({ title: n.title || '', assignees: [...(n.assignees || [])].sort(), labels: [...(n.labels || [])].sort(), milestone: n.milestone || null, sprint: n.sprint || null, start: n.start || null, end: n.end || null });
+// syncSnapshot から PULL_FIELDS の値を取り出す
+function snapshotFields(snap) {
+  const [title, , assignees, labels, milestone, sprint, start, end] = JSON.parse(snap);
+  return { title, assignees, labels, milestone, sprint, start, end };
+}
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// 前回そろえた値 base と比べ、GitHub でだけ変わった項目は take (計画に入れる)、計画でも別の値に変わった項目は conflicts にする
+// 前の衝突 prev は、GitHub の値がそのままで計画の値とまだ違えば残す
+function mergeRemote(local, base, remote, prev = {}) {
+  const take = {};
+  const conflicts = {};
+  for (const f of PULL_FIELDS) {
+    if (same(local[f], remote[f])) continue;
+    if (same(remote[f], base[f])) {
+      if (f in prev && same(prev[f], remote[f])) conflicts[f] = remote[f];
+    } else if (same(local[f], base[f])) take[f] = remote[f];
+    else conflicts[f] = remote[f];
+  }
+  return { take, conflicts };
+}
+
+module.exports = { MAX_DEPTH, PULL_FIELDS, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, slugify, validFile };
