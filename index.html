@@ -351,7 +351,7 @@
   .pl-row:hover .pl-add, .pl-add:focus { opacity: 1; }
   .pl-add:hover:not(:disabled) { color: var(--accent); background: none; }
   .pl-track { position: relative; flex: none; cursor: crosshair; }
-  .pl-bar { position: absolute; top: 4px; height: 22px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; border-radius: 3px; background: var(--panel); border: 1px dashed var(--border); border-left: 3px solid var(--accent); cursor: grab; }
+  .pl-bar { position: absolute; top: 4px; height: 22px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: visible; border-radius: 3px; background: var(--panel); border: 1px dashed var(--border); border-left: 3px solid var(--accent); cursor: grab; }
   .pl-bar.iss { border-style: solid; border-left: 3px solid var(--ok); }
   .pl-bar.changed { border-color: var(--warn); border-left-color: var(--warn); }
   .pl-row.d0 .pl-bar { color: var(--text); }
@@ -2283,7 +2283,8 @@ function plBodyHtml() {
     let bar = '';
     if (span) {
       const len = plIdx(span.end) - plIdx(span.start) + 1;
-      const text = len * PL_DAY >= 120 ? `${plMd(span.start)}–${plMd(span.end)} · ${tr('pl.days', { n: len })}` : len * PL_DAY >= 36 ? tr('pl.days', { n: len }) : '';
+      // 棒が短くても日付と PR は棒の外にはみ出させて全部見せる
+      const text = `${plMd(span.start)}${len > 1 ? `–${plMd(span.end)}` : ''} · ${tr('pl.days', { n: len })}`;
       bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i>${text}${(g?.prs || []).map((pr) => `<span class="pl-pr ${esc(pr.kind)}">#${pr.number}</span>`).join('')}<i class="h r" data-pl-h="r"></i></div>`;
     }
     return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}${dim ? ' dim' : ''}${g?.state === 'CLOSED' ? ' closed' : ''}${menu ? ' menu' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
