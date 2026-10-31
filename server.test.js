@@ -523,7 +523,7 @@ test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎ�
   assert.equal(inPollHours(at(3), '9', '19'), false);
 });
 
-const { parseProjectUrl, detectFields, barRange, sprintTree } = require('./server');
+const { parseProjectUrl, detectFields } = require('./server');
 
 test('parseProjectUrl: org / user のプロジェクト URL を解析し、それ以外は null', () => {
   assert.deepEqual(parseProjectUrl('https://github.com/orgs/docket/projects/76/views/1'), { owner: 'organization', login: 'docket', number: 76 });
@@ -547,47 +547,6 @@ test('detectFields: 最初の Iteration と、名前から開始日・終了日�
   assert.deepEqual(detectFields([{ name: 'Target', dataType: 'DATE' }, { name: 'Begin', dataType: 'DATE' }]), { sprint: null, start: 'Begin', end: 'Target', iterations: [], statuses: [] });
 });
 
-test('barRange: スプリント外・未設定の日付はスプリントの開始日・終了日として扱う', () => {
-  const s = { startDate: '2026-10-10', endDate: '2026-10-23' };
-  assert.deepEqual(barRange(null, null, s), { start: '2026-10-10', end: '2026-10-23' });
-  assert.deepEqual(barRange('2026-10-12', '2026-10-15', s), { start: '2026-10-12', end: '2026-10-15' });
-  assert.deepEqual(barRange('2026-09-01', '2026-12-01', s), { start: '2026-10-10', end: '2026-10-23' });
-  assert.deepEqual(barRange('2026-10-20', null, s), { start: '2026-10-20', end: '2026-10-23' });
-  assert.deepEqual(barRange('2026-11-01', '2026-11-05', s), { start: '2026-10-10', end: '2026-10-23' });
-  // 開始 > 終了の矛盾はスプリント全体にする
-  assert.deepEqual(barRange('2026-10-20', '2026-10-12', s), { start: '2026-10-10', end: '2026-10-23' });
-});
-
-test('sprintTree: 同じスプリントの子孫は最上位の親の下にだけ出し、別スプリント・未登録の子孫も含める', () => {
-  const sprint = { id: 'S', startDate: '2026-10-10', endDate: '2026-10-23' };
-  const iss = (id, childIds = [], extra = {}) => ({ id, title: id, childIds, sprintId: null, start: null, end: null, ...extra });
-  const issues = new Map([
-    ['A', iss('A', ['B'], { sprintId: 'S', end: '2026-12-01' })],
-    ['B', iss('B', ['C', 'D'], { sprintId: 'X' })],
-    ['C', iss('C', [], { sprintId: 'S' })],
-    ['D', iss('D', [], { start: '2026-10-15' })],
-    ['E', iss('E', [], { sprintId: 'S' })],
-  ]);
-  const roots = sprintTree(['A', 'C', 'E'], issues, sprint);
-  assert.deepEqual(roots.map((r) => r.id), ['A', 'E']);
-  const a = roots[0];
-  assert.deepEqual(a.children.map((c) => c.id), ['B']);
-  assert.deepEqual(a.children[0].children.map((c) => [c.id, c.start, c.end]), [['C', '2026-10-10', '2026-10-23'], ['D', '2026-10-15', '2026-10-23']]);
-  // 元の日付はスプリントからはみ出した表示用に残す
-  assert.equal(a.end, '2026-10-23');
-  assert.equal(a.rawEnd, '2026-12-01');
-});
-
-test('sprintTree: 親子が循環していても止まる', () => {
-  const sprint = { id: 'S', startDate: '2026-10-10', endDate: '2026-10-23' };
-  const issues = new Map([
-    ['A', { id: 'A', childIds: ['B'], sprintId: 'S' }],
-    ['B', { id: 'B', childIds: ['A'], sprintId: 'S' }],
-  ]);
-  const roots = sprintTree(['A', 'B'], issues, sprint);
-  assert.ok(roots.length >= 1);
-});
-
 const { pickIterations } = require('./server');
 
 test('pickIterations: 現在と前後 N 個に絞り、未来は issue があるものだけ、新しい順に並べる', () => {
@@ -602,7 +561,7 @@ test('pickIterations: 現在と前後 N 個に絞り、未来は issue がある
   assert.deepEqual(pickIterations(all.map((i) => ({ ...i, count: undefined })), '2026-10-16', { past: 2, future: Infinity }).map((i) => i.id), ['f3', 'f2', 'f1', 'now', 'p1', 'p2']);
 });
 
-const { periodAt, periodWindows, periodQueries } = require('./server');
+const { periodAt, periodWindows } = require('./server');
 
 test('periodAt: 週は月曜始まり、2 週は 2024-01-01 起点、月はカレンダーどおり', () => {
   assert.deepEqual(periodAt('2026-10-16', 'week'), { id: '2026-10-12', startDate: '2026-10-12', endDate: '2026-10-18' });
@@ -619,17 +578,6 @@ test('periodWindows: 未来 → 今 → 過去 の順に並べる', () => {
   assert.deepEqual(periodWindows('2026-01-15', 'month', { past: 2, future: 1 }).map((p) => p.id), ['2026-02-01', '2026-01-01', '2025-12-01', '2025-11-01']);
   assert.deepEqual(periodWindows('2026-10-16', 'week', { past: 1, future: 0 }).map((p) => p.id), ['2026-10-12', '2026-10-05']);
 });
-
-test('periodQueries: 期間と重なるもの、片方の日付だけ期間内のもの', () => {
-  const p = { startDate: '2026-10-01', endDate: '2026-10-31' };
-  assert.deepEqual(periodQueries('開始日', '終了日', p), [
-    '"開始日":<=2026-10-31 "終了日":>=2026-10-01',
-    'no:"開始日" "終了日":2026-10-01..2026-10-31',
-    'no:"終了日" "開始日":2026-10-01..2026-10-31',
-  ]);
-  assert.deepEqual(periodQueries(null, '期限', p), ['"期限":2026-10-01..2026-10-31']);
-});
-
 
 const { withOutputLang } = require('./server');
 
