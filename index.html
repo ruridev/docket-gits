@@ -73,8 +73,6 @@
   [hidden] { display: none !important; } /* .board などの display 指定に hidden 属性が負けないように */
   .board-bar { display: flex; gap: 6px; align-items: flex-end; padding: 12px 16px 0; }
   .board-bar > * { white-space: nowrap; flex-shrink: 0; }
-  /* フィルタ枠の右に並ぶものは枠内の選択欄の下端にそろえる (枠の padding + border 分上げる) */
-  .board-bar > :not(.sp-people), .sp-row > :not(.sp-people) { margin-bottom: 9px; }
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 8px 16px 16px; overflow-x: auto; }
   /* ボードは画面の残りの高さでスクロールさせ、ヘッダ・フィルタ・レーン見出しを固定する */
   body:has(#board:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
@@ -233,18 +231,6 @@
   .seg { display: inline-flex; }
   .seg button:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
   .seg button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-  .sp-people .sep { align-self: stretch; border-left: 1px solid var(--border); margin: 0 4px; }
-  .sp-people { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
-  .sp-people .avatar { width: 28px; height: 28px; cursor: pointer; border: 2px solid transparent; opacity: .3; }
-  .sp-people .avatar.on { border-color: var(--accent); opacity: 1; }
-  /* フィルタ枠は既定で畳み、ボタンを押すとボタンの右にドロップダウンとして重ねて出す (下のレイアウトは動かさない) */
-  body:not(.filters-open) .sp-people { display: none; }
-  .filter-wrap { position: relative; flex: none; }
-  .filter-wrap .sp-people { position: absolute; z-index: 25; top: 0; left: calc(100% + 6px); width: max-content; max-width: calc(100vw - 120px); box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
-  .filter-toggle::before { content: ''; display: inline-block; width: 14px; height: 14px; vertical-align: -2px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M1 2h14l-5.5 6.5V14l-3-1.5V8.5Z'/%3E%3C/svg%3E") center / contain no-repeat; }
-  .filter-toggle::after { content: ' ▸'; }
-  body.filters-open .filter-toggle::after { content: ' ▾'; }
-  .sp-people label { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border); display: flex; align-items: center; gap: 4px; }
   /* 複数選択のドロップダウン (multiSelect) */
   .ms { position: relative; }
   .ms-field { display: flex; flex-direction: column; gap: 2px; }
@@ -290,6 +276,16 @@
   .pl-dirty { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
   .pl-side .ms-label { display: block; margin-bottom: 2px; }
   .pl-none { font-size: 12px; color: var(--muted); margin: 4px; }
+  /* レビューする・受けるのフィルタ。枠はロードマップの .pl-side を使う */
+  .board-view { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px 16px 16px; }
+  .board-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .board-col .board-bar { padding: 0; }
+  .board-col .board { padding: 8px 0 0; }
+  .board-filters { display: flex; flex-direction: column; gap: 10px; }
+  .board-filters .ms > summary { max-width: none; }
+  .board-filters [data-approved] { width: 100%; }
+  .pl-side:not(.closed) .pl-rail, .pl-side.closed .pl-side-top .ms-label, .pl-side.closed .board-filters { display: none; }
+  .pl-side.filtering .pl-rail { color: var(--accent); font-weight: 600; }
   .pl-dir { font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; overflow-wrap: anywhere; }
   .pl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px 8px; min-height: 0; }
   .pl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -409,8 +405,11 @@
   @media (max-width: 700px) {
     /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
     .board-bar, header { flex-wrap: wrap; }
-    .board-bar > * { margin-bottom: 0; }
     .board { grid-auto-columns: 85vw; }
+    .board-view { flex-direction: column; }
+    .board-view .pl-side { width: auto; }
+    .board-view .pl-side.closed { flex-direction: row; }
+    .board-view .pl-rail { writing-mode: horizontal-tb; }
     .form-row { grid-template-columns: 1fr; }
     .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
@@ -425,8 +424,14 @@
   <details class="user-menu"><summary id="viewer"></summary><nav><a href="#settings" data-i18n="settings"></a><a href="#tips">Tip</a><a href="#about">About</a></nav></details>
 </header>
 <div id="banner"></div>
+<div class="board-view" id="board-view">
+<aside class="pl-side" id="board-side" hidden>
+  <div class="pl-side-top"><span class="ms-label" data-i18n="filter"></span><button class="pl-fold" id="board-fold"></button></div>
+  <div id="repo-filter" class="board-filters"></div>
+  <span class="pl-rail" data-i18n="filter"></span>
+</aside>
+<div class="board-col">
 <div class="board-bar" id="board-bar">
-  <div class="filter-wrap" hidden><button id="filter-toggle" class="filter-toggle" data-i18n-title="filter"></button><div id="repo-filter" class="sp-people"></div></div>
   <button id="stack-order" data-i18n="stackOrder" data-i18n-title="stackOrder.title"></button>
   <button id="edit-lanes" data-i18n="editLanes"></button>
   <button id="card-display" data-i18n="cardDisplay"></button>
@@ -436,6 +441,8 @@
   <button id="refresh" class="refetch"></button>
 </div>
 <main class="board" id="board"></main>
+</div>
+</div>
 <main id="plan" hidden></main>
 <main id="home" class="home" hidden></main>
 <main id="about" class="about" hidden></main>
@@ -961,7 +968,7 @@ function render() {
   const home = view() === 'home';
   const page = PAGES.includes(view());
   const plan = view() === 'plan';
-  $('#board').hidden = $('#board-bar').hidden = page || home || plan;
+  $('#board').hidden = $('#board-bar').hidden = $('#board-view').hidden = page || home || plan;
   $('#plan').hidden = !plan;
   for (const p of PAGES) $(`#${p}`).hidden = view() !== p;
   $('#home').hidden = !home;
@@ -974,7 +981,7 @@ function render() {
   const order = Object.keys(board.config.repos || {});
   const rank = (r) => (order.includes(r) ? order.indexOf(r) : order.length);
   const repos = [...new Set(all.map((p) => p.pr.repo))].sort().sort((a, b) => rank(a) - rank(b));
-  $('#filter-toggle').parentElement.hidden = !repos.length;
+  $('#board-side').hidden = !repos.length;
   const shown = repos.filter((r) => !hidden.includes(r));
   // 両方組み立ててから入れる (先に入れると後のドロップダウンの開閉状態が消える)
   const repoSelect = multiSelect('repos', tr('repo'),
@@ -985,11 +992,11 @@ function render() {
   let authorSelect = '';
   if (mine) {
     const me = board.viewer;
-    authorSelect = '<span class="sep"></span>' + field(tr('author'), `<details class="ms ms-fixed"><summary tabindex="-1">${me ? `<img class="avatar" src="${esc(me.avatarUrl)}" alt="" title="${esc(me.login)}">` : ''}</summary></details>`);
+    authorSelect = field(tr('author'), `<details class="ms ms-fixed"><summary tabindex="-1">${me ? `<img class="avatar" src="${esc(me.avatarUrl)}" alt="" title="${esc(me.login)}">` : ''}</summary></details>`);
   } else {
     const authors = [...new Map(all.filter((p) => p.pr.author).map((p) => [p.pr.author.login, p.pr.author])).values()].sort((a, b) => a.login.localeCompare(b.login));
     const on = authors.filter((a) => !hiddenAuthors.includes(a.login));
-    authorSelect = '<span class="sep"></span>' + multiSelect('authors', tr('author'),
+    authorSelect = multiSelect('authors', tr('author'),
       `${on.length === authors.length ? tr('all') : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : tr('none')}`,
       authors.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !hiddenAuthors.includes(l));
   }
@@ -1000,7 +1007,7 @@ function render() {
   // 押すたびに すべて → のみ → 除外 と切り替わる 1 つのボタン
   const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
   if (!(approved in APPROVED)) approved = '';
-  const approvedSeg = '<span class="sep"></span>' + field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${esc(tr('approved.title'))}">${APPROVED[approved]}</button>`);
+  const approvedSeg = field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${esc(tr('approved.title'))}">${APPROVED[approved]}</button>`);
   // 定期再描画で検索欄の入力中のフォーカスが外れないよう、作り直した欄に戻す
   const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
   const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
@@ -1008,7 +1015,10 @@ function render() {
   const nq = qAt && $(`#repo-filter [data-ms="${qAt[0]}"] [data-ms-q]`);
   if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
   // 畳んでいても絞り込み中だと分かるようにする
-  $('#filter-toggle').classList.toggle('primary', !!(approved || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
+  const sideClosed = plGet('board-side') === '0';
+  $('#board-side').classList.toggle('closed', sideClosed);
+  $('#board-side').classList.toggle('filtering', !!(approved || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
+  $('#board-fold').textContent = sideClosed ? '›' : '‹';
   const prs = all.filter((p) => !hidden.includes(p.pr.repo) && !hiddenAuthors.includes(p.pr.author?.login)
     && (approved === 'only' ? isApproved(p) : approved === 'exclude' ? !isApproved(p) : true)).sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
   $('#edit-lanes').hidden = !!laneEdit;
@@ -2954,6 +2964,7 @@ $('#refresh').onclick = async () => {
   render();
 };
 $('#stack-order').onclick = () => { stackOrder = !stackOrder; render(); };
+$('#board-fold').onclick = () => { plSet('board-side', plGet('board-side') === '0' ? '1' : '0'); render(); };
 $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
   const seg = ev.type === 'click' && ev.target.closest('[data-approved]');
   if (seg) {
@@ -3149,11 +3160,6 @@ const onBackdrop = (ev) => {
   const r = ev.target.getBoundingClientRect();
   return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom;
 };
-// ドロップダウンと同じく、ボタンで開閉し枠の外を押すと閉じる (中の操作で再描画されて押した要素が消えても閉じないよう composedPath で見る)
-document.addEventListener('click', (ev) => {
-  if (ev.target.closest('.filter-toggle')) return document.body.classList.toggle('filters-open');
-  if (!ev.composedPath().some((el) => el.classList?.contains('filter-wrap'))) document.body.classList.remove('filters-open');
-});
 let downOnBackdrop = false;
 document.addEventListener('mousedown', (ev) => (downOnBackdrop = onBackdrop(ev)));
 document.addEventListener('click', (ev) => {
