@@ -862,7 +862,6 @@ function planFile(url, file) {
 function listPlans(url) {
   const dir = projectDir(url);
   const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(validFile).sort() : [];
-  const tracked = inGit(dir);
   return {
     dir,
     plans: files.map((f) => {
@@ -872,7 +871,7 @@ function listPlans(url) {
       const all = flatten(plan.nodes);
       const nodes = all.map(({ node }) => node);
       return {
-        file: f, title: plan.title || f, status: plan.status, count: all.length, dirty: tracked && committedText(full) !== text,
+        file: f, title: plan.title || f, status: plan.status, count: all.length,
         issues: nodes.filter((n) => n.issue).map((n) => fullKey(plan, n)),
         // 画面の「スプリント · 期間」で計画を絞るのに使う
         sprints: [...new Set(nodes.map((n) => n.sprint).filter(Boolean))],
@@ -906,7 +905,7 @@ function planDoc(url, file) {
     if (Object.keys(left).length) conflicts[syncKey(plan, node)] = left;
   }
   const top = tracked && git(dir, ['rev-parse', '--show-toplevel'])?.trim();
-  return { file, rel: top ? path.relative(top, full).split(path.sep).join('/') : full, plan, md, base, git: tracked, dirty: tracked && base !== md, changed, conflicts };
+  return { file, rel: top ? path.relative(top, full).split(path.sep).join('/') : full, plan, md, base, git: tracked, changed, conflicts };
 }
 
 function writePlan(url, file, plan) {
