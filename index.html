@@ -281,6 +281,8 @@
   .board-view .board { min-width: 0; padding: 0; }
   .board-view .board-bar { flex-direction: column; align-items: stretch; padding: 0; }
   .pl-side .refetch { align-self: flex-start; padding: 0; }
+  .pl-side .seg { display: flex; }
+  .pl-side .seg button { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
   /* 中身だけ描き直す部分。枠は持たず、中身をサイドバーに直接並べる */
   .pl-side-part { display: contents; }
   .pl-side label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
@@ -2246,19 +2248,20 @@ function plHeadHtml() {
   // 一度も issue を作っていなければリポジトリを変えられる
   const repo = hasIssue ? `<span class="chip">${esc(plan.repo)}</span>`
     : `<select class="pl-repo" data-pl-repo>${plRepoOptions(plRepoCandidates(pl.opts?.fields), plan.repo)}</select>`;
-  const view = plGet('view') === 'md' ? 'md' : 'timeline';
   const label = !applied ? tr('pl.apply', { n }) : n ? tr('pl.update', { n }) : tr('pl.applied');
   return `<input class="pl-title" data-pl-title value="${esc(plan.title)}" aria-label="${esc(tr('pl.title'))}">
     ${applied ? `<span class="chip ok">${tr('pl.applied')}</span>` : '<span class="chip draft">Draft</span>'}
     ${dirty ? `<span class="chip warn">${tr('pl.dirty')}</span>` : ''}
     ${repo}
-    <span class="right"><span class="seg"><button data-pl-view="timeline"${view === 'timeline' ? ' class="primary"' : ''}>${tr('pl.timeline')}</button><button data-pl-view="md"${view === 'md' ? ' class="primary"' : ''}>Markdown</button></span>
-    <button class="primary" data-pl-apply ${n ? '' : 'disabled'}>${label}</button></span>`;
+    <span class="right"><button class="primary" data-pl-apply ${n ? '' : 'disabled'}>${label}</button></span>`;
 }
 
 function plFilterHtml() {
   const live = pl.live?.fetchedAt ? `<button class="refetch" data-pl-live title="${esc(new Date(pl.live.fetchedAt).toLocaleString(lang))} — ${esc(tr('sp.refetchTitle'))}"><span class="hint">↻ </span>${tr('fetchedAgo', { ago: ago(pl.live.fetchedAt) })}</button>` : '';
-  if (plGet('view') === 'md') return live;
+  const md = plGet('view') === 'md';
+  const viewSec = `<span class="ms-label side-sec">${tr('sideView')}</span>
+    <span class="seg"><button data-pl-view="timeline"${md ? '' : ' class="primary"'}>${tr('pl.timeline')}</button><button data-pl-view="md"${md ? ' class="primary"' : ''}>Markdown</button></span>`;
+  if (md) return live + viewSec;
   const { plan } = pl.doc;
   const nodes = plAll().map(({ n }) => n);
   const repos = [...new Set([plan.repo, ...nodes.map((n) => n.repo)].filter(Boolean))];
@@ -2266,8 +2269,8 @@ function plFilterHtml() {
   const iss = plHasIssues();
   const f = pl.f;
   const sel = (key, opts, off) => `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-  return `${live}
-    <span class="ms-label side-sec">${tr('sideView')}</span><button data-pl-display>${tr('cardDisplay')}</button>
+  return `${live}${viewSec}
+    <button data-pl-display>${tr('cardDisplay')}</button>
     <span class="ms-label side-sec">${tr('filter')}</span>
     <div class="board-filters">${field(tr('repo'), sel('repo', repos.map((r) => [r, r.split('/')[1]])))}
     ${field(tr('sp.assignee'), sel('as', [...people.map((a) => [a, a]), ['-', tr('unset')]]))}
