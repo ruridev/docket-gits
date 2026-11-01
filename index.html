@@ -880,9 +880,10 @@ function confirmTwice(btn, id, label) {
   return false;
 }
 const armedLabel = (id, normal, confirmLabel) => (armed?.id === id && Date.now() < armed.until ? confirmLabel : normal);
-function toast(msg) {
+// 既定は赤 (エラー)。成功の知らせは ok を渡して緑にする
+function toast(msg, ok = false) {
   const el = document.createElement('div');
-  el.className = 'toast';
+  el.className = ok ? 'toast ok' : 'toast';
   el.textContent = msg;
   // モーダルの dialog は top layer に出るので、body に置くと裏に隠れる。開いている dialog の中に出す
   (document.querySelector('dialog[open]') || document.body).append(el);
@@ -1893,7 +1894,7 @@ async function openSettings() {
         return toast(tr('cfg.badFile'));
       }
       renderDlg();
-      return toast(tr('cfg.imported'));
+      return toast(tr('cfg.imported'), true);
     }
     if (ev.target.dataset.cfg !== 'workdir' && ev.target.dataset.field !== 'cwd') return;
     try {
@@ -1919,7 +1920,7 @@ async function openSettings() {
         const { removed, ...rest } = await api('/api/logs/clear', { method: 'POST', body: clear === 'all' ? { all: true } : { days: cfg.logKeepDays } });
         logs = rest;
         renderDlg(); // トーストは開いている dialog の中に出すので、描き直してから出す
-        toast(tr('logs.cleared', { count: removed.count, size: fmtBytes(removed.bytes) }));
+        toast(tr('logs.cleared', { count: removed.count, size: fmtBytes(removed.bytes) }), true);
       } catch (err) {
         toast(err.message);
       }
@@ -1968,7 +1969,7 @@ async function openSettings() {
         return location.reload();
       }
       await load();
-      toast(tr('saved'));
+      toast(tr('saved'), true);
     }
   };
   renderDlg();
@@ -2141,8 +2142,7 @@ async function loadPlanLive(refresh = false) {
       pl.sel = new Set(plAll().filter(({ n }) => n.issue && keys.has(plKey(n))).map(({ n }) => n.id));
       pl.bulk = null;
       const msg = [...(p.updated || p.added ? [tr('pl.pulled', p)] : []), ...(p.conflicts ? [tr('pl.conflicts', { n: p.conflicts })] : [])].join('\n');
-      toast(msg);
-      if (!p.conflicts) [...document.querySelectorAll('.toast')].at(-1)?.classList.add('ok');
+      toast(msg, !p.conflicts);
       return renderPlan();
     }
     plRefresh(['body', 'detail']);
@@ -2830,8 +2830,7 @@ async function openApplyPlan() {
       const res = await api('/api/plan/apply', { method: 'POST', body: { project: plProject(), file: pl.doc.file, addToProject: opt('addToProject'), commit: opt('commit') } });
       dlg.close();
       const warn = res.warnings.map(errText);
-      toast([tr('pl.done', { created: res.created, updated: res.updated }) + (res.committed ? ` · ${tr('pl.committed')}` : ''), ...warn].join('\n'));
-      if (!warn.length) [...document.querySelectorAll('.toast')].at(-1)?.classList.add('ok');
+      toast([tr('pl.done', { created: res.created, updated: res.updated }) + (res.committed ? ` · ${tr('pl.committed')}` : ''), ...warn].join('\n'), !warn.length);
       await loadPlans();
     } catch (e) {
       // 途中で失敗しても作った issue の番号は md に書いてあるので読み直す
