@@ -335,6 +335,7 @@
   .pl-tree .tg { width: 14px; flex: none; cursor: pointer; color: var(--muted); text-align: center; }
   .pl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px dashed var(--accent); }
   .pl-dot.iss { border: none; background: var(--ok); }
+  .pl-row.closed .pl-dot.iss { background: #8250df; }
   .pl-tree .avatar { width: 16px; height: 16px; flex: none; }
   .pl-t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: none; padding: 0 2px; text-align: left; }
   .pl-t:hover:not(:disabled) { background: none; color: var(--accent); }
@@ -353,6 +354,7 @@
   .pl-track { position: relative; flex: none; cursor: crosshair; }
   .pl-bar { position: absolute; top: 4px; height: 22px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: visible; border-radius: 3px; background: var(--panel); border: 1px dashed var(--border); border-left: 3px solid var(--accent); cursor: grab; }
   .pl-bar.iss { border-style: solid; border-left: 3px solid var(--ok); }
+  .pl-row.closed .pl-bar.iss:not(.changed) { border-left-color: #8250df; }
   .pl-bar.changed { border-color: var(--warn); border-left-color: var(--warn); }
   .pl-row.d0 .pl-bar { color: var(--text); }
   .pl-bar .t { color: var(--text); }
