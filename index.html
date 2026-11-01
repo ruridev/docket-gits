@@ -237,7 +237,6 @@
   .ms-label { font-size: 11px; font-weight: 600; color: var(--muted); }
   .ms > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 4px; max-width: 360px; padding: 4px 28px 4px 8px; border: 1px solid var(--border); border-radius: 6px; background-color: var(--bg); white-space: nowrap; overflow: hidden; }
   .ms > summary::-webkit-details-marker { display: none; }
-  .ms-fixed { opacity: .45; pointer-events: none; }
   .ms > summary .t { overflow: hidden; text-overflow: ellipsis; }
   .ms-pop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 240px; max-width: 360px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); }
   .ms-pop input[type=search] { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
@@ -1002,12 +1001,9 @@ function render() {
     `${shown.length === repos.length ? tr('all') : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : tr('none')}`,
     [...new Set([...order, ...repos])].map((r) => ({ value: r, text: r.split('/')[1], disabled: !repos.includes(r) })),
     (r) => !hidden.includes(r));
-  // レビューする側だけ PR 作成者でも絞る。受ける側は全部自分なので、レイアウトを揃えるため自分で固定した無効状態で出す
+  // レビューする側だけ PR 作成者でも絞る (受ける側は全部自分)
   let authorSelect = '';
-  if (mine) {
-    const me = board.viewer;
-    authorSelect = field(tr('author'), `<details class="ms ms-fixed"><summary tabindex="-1">${me ? `<img class="avatar" src="${esc(me.avatarUrl)}" alt="" title="${esc(me.login)}">` : ''}</summary></details>`);
-  } else {
+  if (!mine) {
     const authors = [...new Map(all.filter((p) => p.pr.author).map((p) => [p.pr.author.login, p.pr.author])).values()].sort((a, b) => a.login.localeCompare(b.login));
     const on = authors.filter((a) => !hiddenAuthors.includes(a.login));
     authorSelect = multiSelect('authors', tr('author'),
@@ -1025,7 +1021,17 @@ function render() {
   // 定期再描画で検索欄の入力中のフォーカスが外れないよう、作り直した欄に戻す
   const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
   const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
-  $('#repo-filter').innerHTML = repoSelect + authorSelect + approvedSeg;
+  // 最初から全部出すと多いので、「+」で足したものと絞り込み中のものだけ出す
+  const filters = [
+    ['repos', tr('repo'), repoSelect, repos.some((r) => hidden.includes(r))],
+    ...(mine ? [] : [['authors', tr('author'), authorSelect, hiddenAuthors.length]]),
+    ['approved', tr('approved'), approvedSeg, approved],
+  ];
+  const added = boardFx[view()];
+  const shownF = (x) => added.has(x[0]) || x[3];
+  const rest = filters.filter((x) => !shownF(x));
+  $('#repo-filter').innerHTML = filters.filter(shownF).map(([k, , html]) => `<div class="pl-xf">${html}<button data-filter-del="${k}" title="${esc(tr('pl.removeField'))}">×</button></div>`).join('')
+    + (rest.length ? `<div class="pl-addf"><button data-filter-add aria-expanded="${boardFilterMenu}">+</button>${boardFilterMenu ? `<div class="pop">${rest.map(([k, label]) => `<button data-filter-pick="${k}">${label}</button>`).join('')}</div>` : ''}</div>` : '');
   const nq = qAt && $(`#repo-filter [data-ms="${qAt[0]}"] [data-ms-q]`);
   if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
   // 畳んでいても絞り込み中だと分かるようにする
@@ -1239,6 +1245,9 @@ const msQuery = {};
 // サイドバーの開閉。ロードマップ側は描き直されるので覚えておく (フィルターは再読み込みで畳んだ状態に戻し、表示は開閉を保存する)
 let sideFilterOpen = false;
 const sideViewOpen = () => plGet('side-view') !== '0';
+// レビューする・受けるのフィルターで「+」から足した項目 (タブごと)
+const boardFx = { review: new Set(), receive: new Set() };
+let boardFilterMenu = false;
 document.addEventListener('toggle', (ev) => {
   if (ev.target.matches?.('.side-filter')) sideFilterOpen = ev.target.open;
   if (ev.target.matches?.('.side-view')) plSet('side-view', ev.target.open ? '1' : '0');
@@ -1261,6 +1270,7 @@ document.addEventListener('input', (ev) => {
 });
 // 外側をクリックしたら閉じる
 document.addEventListener('click', (ev) => {
+  if (boardFilterMenu && !ev.target.closest('.pl-addf')) { boardFilterMenu = false; render(); }
   for (const d of document.querySelectorAll('details.ms[open], .user-menu[open]')) if (!d.contains(ev.target) || ev.target.closest('.user-menu a')) d.open = false;
 });
 
@@ -3019,6 +3029,15 @@ $('#refresh').onclick = async () => {
 $('#stack-order').onclick = () => { stackOrder = !stackOrder; render(); };
 $('#board-fold').onclick = () => { plSet('board-side', plGet('board-side') === '0' ? '1' : '0'); render(); };
 $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
+  if (ev.type === 'click' && ev.target.closest('[data-filter-add]')) { boardFilterMenu = !boardFilterMenu; return render(); }
+  const pick = ev.type === 'click' && ev.target.closest('[data-filter-pick]');
+  if (pick) { boardFx[view()].add(pick.dataset.filterPick); boardFilterMenu = false; return render(); }
+  const del = ev.type === 'click' && ev.target.closest('[data-filter-del]')?.dataset.filterDel;
+  if (del) {
+    boardFx[view()].delete(del);
+    try { localStorage.removeItem(del === 'approved' ? `docket-approved:${view()}` : hiddenKey(del, view())); } catch {}
+    return render();
+  }
   const seg = ev.type === 'click' && ev.target.closest('[data-approved]');
   if (seg) {
     const next = { '': 'only', only: 'exclude', exclude: '' }[seg.dataset.approved];
