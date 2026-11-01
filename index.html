@@ -281,13 +281,13 @@
   .board-view .board { min-width: 0; padding: 0; }
   .board-view .board-bar { flex-direction: column; align-items: stretch; padding: 0; }
   .pl-side .refetch { align-self: flex-start; padding: 0; }
-  /* フィルターは場所を取るので既定で畳む。絞り込み中は見出しの点で分かるようにする */
-  .side-filter > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
-  .side-filter > summary::-webkit-details-marker { display: none; }
-  .side-filter > summary::after { content: '▸'; margin-left: auto; font-size: 11px; color: var(--muted); }
-  .side-filter[open] > summary::after { content: '▾'; }
-  .side-filter > summary .ms-label { margin: 0; }
-  .side-filter .board-filters { margin-top: 8px; }
+  /* 表示・フィルターは見出しで開閉する。フィルターは場所を取るので既定で畳み、絞り込み中は見出しの点で分かるようにする */
+  .side-fold > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
+  .side-fold > summary::-webkit-details-marker { display: none; }
+  .side-fold > summary::after { content: '▸'; margin-left: auto; font-size: 11px; color: var(--muted); }
+  .side-fold[open] > summary::after { content: '▾'; }
+  .side-fold > summary .ms-label { margin: 0; }
+  .side-fold .board-filters, .side-fold .board-bar { margin-top: 8px; }
   .side-dot { display: none; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
   .pl-side.filtering .side-dot { display: block; }
   .pl-side .seg { display: flex; }
@@ -298,7 +298,7 @@
   #plan .pl-list { flex: 1 1 120px; min-height: 120px; }
   /* セクションの区切りは枠の端まで伸ばし、見出しは項目のラベルより強くして階層を見せる */
   .side-sec { border-top: 1px solid var(--border); margin: 6px -10px 0; padding: 12px 10px 0; }
-  .pl-side-top .ms-label, .pl-side .ms-label.side-sec, .side-filter > summary .ms-label { font-size: 12px; font-weight: 700; color: var(--text); }
+  .pl-side-top .ms-label, .pl-side .ms-label.side-sec, .side-fold > summary .ms-label { font-size: 12px; font-weight: 700; color: var(--text); }
   .board-filters { display: flex; flex-direction: column; gap: 10px; }
   .board-filters .ms > summary { max-width: none; }
   .board-filters [data-approved] { width: 100%; }
@@ -443,7 +443,7 @@
   <div class="pl-side-top"><span class="ms-label" data-i18n="sideData"></span><button class="pl-fold" id="board-fold"></button></div>
   <button id="refresh" class="refetch"></button>
   <span class="pl-rail" data-i18n="filter"></span>
-  <span class="ms-label side-sec" data-i18n="sideView"></span>
+  <details class="side-fold side-view side-sec" id="board-view-sec"><summary><span class="ms-label" data-i18n="sideView"></span></summary>
   <div class="board-bar" id="board-bar">
     <button id="stack-order" data-i18n="stackOrder" data-i18n-title="stackOrder.title"></button>
     <button id="edit-lanes" data-i18n="editLanes"></button>
@@ -451,7 +451,8 @@
     <button id="lane-save" class="primary" hidden data-i18n="save"></button>
     <button id="lane-cancel" hidden data-i18n="cancel"></button>
   </div>
-  <details class="side-filter side-sec" id="board-filter"><summary><span class="ms-label" data-i18n="filter"></span><span class="side-dot"></span></summary>
+  </details>
+  <details class="side-fold side-filter side-sec" id="board-filter"><summary><span class="ms-label" data-i18n="filter"></span><span class="side-dot"></span></summary>
     <div id="repo-filter" class="board-filters"></div>
   </details>
 </aside>
@@ -1030,6 +1031,7 @@ function render() {
   // 畳んでいても絞り込み中だと分かるようにする
   // レーン編集中は保存・取消のボタンがあるので畳まない
   $('#board-filter').open = sideFilterOpen;
+  $('#board-view-sec').open = !!laneEdit || sideViewOpen(); // レーン編集中は保存・取消のボタンがあるので畳まない
   const sideClosed = plGet('board-side') === '0' && !laneEdit;
   $('#board-side').classList.toggle('closed', sideClosed);
   $('#board-side').classList.toggle('filtering', !!(approved || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
@@ -1234,9 +1236,13 @@ function mineCardHtml(e) {
 // 複数選択のドロップダウン (文字で絞り込める)。開閉と検索語は再描画をまたいで保つ
 // items: [{ value, text, img? }]、summary と extra (一覧の下に足す欄) はエスケープ済み HTML
 const msQuery = {};
-// サイドバーのフィルターの開閉。ロードマップ側は描き直されるので覚えておく (再読み込みで畳んだ状態に戻す)
+// サイドバーの開閉。ロードマップ側は描き直されるので覚えておく (フィルターは再読み込みで畳んだ状態に戻し、表示は開閉を保存する)
 let sideFilterOpen = false;
-document.addEventListener('toggle', (ev) => { if (ev.target.matches?.('.side-filter')) sideFilterOpen = ev.target.open; }, true);
+const sideViewOpen = () => plGet('side-view') !== '0';
+document.addEventListener('toggle', (ev) => {
+  if (ev.target.matches?.('.side-filter')) sideFilterOpen = ev.target.open;
+  if (ev.target.matches?.('.side-view')) plSet('side-view', ev.target.open ? '1' : '0');
+}, true);
 // 選択欄の上に小さいラベルを付ける
 const field = (label, html) => `<div class="ms-field"><span class="ms-label">${label}</span>${html}</div>`;
 function multiSelect(key, label, summary, items, isOn, extra = '') {
@@ -2278,9 +2284,9 @@ function plHeadHtml() {
 function plFilterHtml() {
   const live = pl.live?.fetchedAt ? `<button class="refetch" data-pl-live title="${esc(new Date(pl.live.fetchedAt).toLocaleString(lang))} — ${esc(tr('sp.refetchTitle'))}"><span class="hint">↻ </span>${tr('fetchedAgo', { ago: ago(pl.live.fetchedAt) })}</button>` : '';
   const md = plGet('view') === 'md';
-  const viewSec = `<span class="ms-label side-sec">${tr('sideView')}</span>
-    <span class="seg"><button data-pl-view="timeline"${md ? '' : ' class="primary"'}>${tr('pl.timeline')}</button><button data-pl-view="md"${md ? ' class="primary"' : ''}>Markdown</button></span>`;
-  if (md) return live + viewSec;
+  const viewSec = (extra = '') => `<details class="side-fold side-view side-sec"${sideViewOpen() ? ' open' : ''}><summary><span class="ms-label">${tr('sideView')}</span></summary>
+    <div class="board-filters"><span class="seg"><button data-pl-view="timeline"${md ? '' : ' class="primary"'}>${tr('pl.timeline')}</button><button data-pl-view="md"${md ? ' class="primary"' : ''}>Markdown</button></span>${extra}</div></details>`;
+  if (md) return live + viewSec();
   const { plan } = pl.doc;
   const nodes = plAll().map(({ n }) => n);
   const repos = [...new Set([plan.repo, ...nodes.map((n) => n.repo)].filter(Boolean))];
@@ -2298,9 +2304,8 @@ function plFilterHtml() {
     state: () => [['OPEN', 'Open'], ['CLOSED', 'Closed']],
   })[k]?.() || [...[...new Set(nodes.flatMap((n) => plVals(n, k)))].sort().map((v) => [v, v]), ['-', tr('unset')]];
   const rest = PL_FILTERS.filter((k) => !shown(k));
-  return `${live}${viewSec}
-    <button data-pl-display>${tr('cardDisplay')}</button>
-    <details class="side-filter side-sec"${sideFilterOpen ? ' open' : ''}><summary><span class="ms-label">${tr('filter')}</span><span class="side-dot"></span></summary>
+  return `${live}${viewSec(`<button data-pl-display>${tr('cardDisplay')}</button>`)}
+    <details class="side-fold side-filter side-sec"${sideFilterOpen ? ' open' : ''}><summary><span class="ms-label">${tr('filter')}</span><span class="side-dot"></span></summary>
     <div class="board-filters">${PL_FILTERS.filter(shown).map((k) => `<div class="pl-xf">${field(label(k), sel(k, opts(k), ['st', 'state'].includes(k) && !iss))}<button data-pl-fdel="${k}" title="${esc(tr('pl.removeField'))}">×</button></div>`).join('')}
     ${rest.length ? `<div class="pl-addf"><button data-pl-fadd aria-expanded="${pl.filterMenu}">+</button>${pl.filterMenu ? `<div class="pop">${rest.map((k) => `<button data-pl-fadd-pick="${k}">${label(k)}</button>`).join('')}</div>` : ''}</div>` : ''}</div></details>`;
 }
