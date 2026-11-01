@@ -281,6 +281,15 @@
   .board-view .board { min-width: 0; padding: 0; }
   .board-view .board-bar { flex-direction: column; align-items: stretch; padding: 0; }
   .pl-side .refetch { align-self: flex-start; padding: 0; }
+  /* フィルターは場所を取るので既定で畳む。絞り込み中は見出しの点で分かるようにする */
+  .side-filter > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
+  .side-filter > summary::-webkit-details-marker { display: none; }
+  .side-filter > summary::after { content: '▸'; margin-left: auto; font-size: 11px; color: var(--muted); }
+  .side-filter[open] > summary::after { content: '▾'; }
+  .side-filter > summary .ms-label { margin: 0; }
+  .side-filter .board-filters { margin-top: 8px; }
+  .side-dot { display: none; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .pl-side.filtering .side-dot { display: block; }
   .pl-side .seg { display: flex; }
   .pl-side .seg button { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
   /* 中身だけ描き直す部分。枠は持たず、中身をサイドバーに直接並べる */
@@ -441,8 +450,9 @@
     <button id="lane-save" class="primary" hidden data-i18n="save"></button>
     <button id="lane-cancel" hidden data-i18n="cancel"></button>
   </div>
-  <span class="ms-label side-sec" data-i18n="filter"></span>
-  <div id="repo-filter" class="board-filters"></div>
+  <details class="side-filter side-sec" id="board-filter"><summary><span class="ms-label" data-i18n="filter"></span><span class="side-dot"></span></summary>
+    <div id="repo-filter" class="board-filters"></div>
+  </details>
 </aside>
 <main class="board" id="board"></main>
 </div>
@@ -1018,6 +1028,7 @@ function render() {
   if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
   // 畳んでいても絞り込み中だと分かるようにする
   // レーン編集中は保存・取消のボタンがあるので畳まない
+  $('#board-filter').open = sideFilterOpen;
   const sideClosed = plGet('board-side') === '0' && !laneEdit;
   $('#board-side').classList.toggle('closed', sideClosed);
   $('#board-side').classList.toggle('filtering', !!(approved || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
@@ -1222,6 +1233,9 @@ function mineCardHtml(e) {
 // 複数選択のドロップダウン (文字で絞り込める)。開閉と検索語は再描画をまたいで保つ
 // items: [{ value, text, img? }]、summary と extra (一覧の下に足す欄) はエスケープ済み HTML
 const msQuery = {};
+// サイドバーのフィルターの開閉。ロードマップ側は描き直されるので覚えておく (再読み込みで畳んだ状態に戻す)
+let sideFilterOpen = false;
+document.addEventListener('toggle', (ev) => { if (ev.target.matches?.('.side-filter')) sideFilterOpen = ev.target.open; }, true);
 // 選択欄の上に小さいラベルを付ける
 const field = (label, html) => `<div class="ms-field"><span class="ms-label">${label}</span>${html}</div>`;
 function multiSelect(key, label, summary, items, isOn, extra = '') {
@@ -2175,6 +2189,7 @@ const plIdx = (d) => (Date.parse(d) - Date.parse(pl.range.from)) / 86400000;
 const plSpan = (n) => (n.start || n.end) && { start: n.start || n.end, end: n.end || n.start };
 const plMd = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
 
+const plFiltering = () => !!(pl.f.repo || pl.f.as || pl.f.st || pl.f.open);
 function renderPlan() {
   const el = $('#plan');
   // ヘッダーとフッターの高さを除いた残りを全部使う
@@ -2185,8 +2200,7 @@ function renderPlan() {
     return;
   }
   const closed = plGet('side') === '0';
-  const filtering = pl.f.repo || pl.f.as || pl.f.st || pl.f.open;
-  el.innerHTML = `<aside class="pl-side${closed ? ' closed' : ''}${filtering ? ' filtering' : ''}">${closed ? '' : `
+  el.innerHTML = `<aside class="pl-side${closed ? ' closed' : ''}${plFiltering() ? ' filtering' : ''}">${closed ? '' : `
       <div class="pl-side-top"><span class="ms-label">${tr('sideData')}</span><button class="pl-fold" data-pl-side="0">‹</button></div>
       <div class="pl-side-part" data-pl="filter"></div>`}
       <div class="pl-side-part" data-pl="side"></div></aside>
@@ -2271,11 +2285,11 @@ function plFilterHtml() {
   const sel = (key, opts, off) => `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   return `${live}${viewSec}
     <button data-pl-display>${tr('cardDisplay')}</button>
-    <span class="ms-label side-sec">${tr('filter')}</span>
+    <details class="side-filter side-sec"${sideFilterOpen ? ' open' : ''}><summary><span class="ms-label">${tr('filter')}</span><span class="side-dot"></span></summary>
     <div class="board-filters">${field(tr('repo'), sel('repo', repos.map((r) => [r, r.split('/')[1]])))}
     ${field(tr('sp.assignee'), sel('as', [...people.map((a) => [a, a]), ['-', tr('unset')]]))}
     ${field('Status', sel('st', (pl.ranges?.statuses || []).map((x) => [x, x]), !iss))}
-    <label><input type="checkbox" data-pl-filter="open"${f.open && iss ? ' checked' : ''}${iss ? '' : ' disabled'}>${tr('pl.openOnly')}</label></div>`;
+    <label><input type="checkbox" data-pl-filter="open"${f.open && iss ? ' checked' : ''}${iss ? '' : ' disabled'}>${tr('pl.openOnly')}</label></div></details>`;
 }
 
 function plBodyHtml() {
@@ -2537,6 +2551,7 @@ $('#plan').addEventListener('change', (ev) => {
   if (t.matches('[data-pl-range]')) { plSet(plWindowKey(), t.value); return plRefresh(['side', 'body']); }
   if (t.matches('[data-pl-filter]')) {
     pl.f[t.dataset.plFilter] = t.type === 'checkbox' ? t.checked : t.value;
+    $('#plan .pl-side').classList.toggle('filtering', plFiltering());
     return plRefresh(['filter', 'body']);
   }
   if (t.matches('[data-pl-repo]')) {
