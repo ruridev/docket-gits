@@ -1828,7 +1828,7 @@ async function handlePlan(req, res, url) {
   return send(res, 404, { error: 'not found' });
 }
 
-// 「사내 운영툴」テーマの画素フォント (Fusion Pixel 12px 韓国語版を使う文字だけに絞ったもの。OFL)
+// 画素フォントのテーマで使うフォント (Fusion Pixel 12px 韓国語版を使う文字だけに絞ったもの。OFL)
 const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
 
 async function handle(req, res) {
