@@ -270,8 +270,8 @@ function mergeMine(mine, fetched, login) {
     const skipped = all.map(skipKey).filter((k) => prev.has(k));
     const threads = all.filter((t) => !prev.has(skipKey(t))).map((t, i) => ({ ...t, no: i + 1 }));
     const pending = threads.filter((t) => t.kind !== 'comment').length;
-    // マージ可能・Done に移した PR でも、新しい指摘が来たら指摘ありに戻す
-    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, threads, skipped, ...(pending && { mergeReady: false, done: false }) };
+    // マージ可能に移した PR でも、新しい指摘が来たら指摘ありに戻す
+    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, threads, skipped, ...(pending && { mergeReady: false }) };
   }
   for (const [key, entry] of Object.entries(mine)) {
     if (!next[key] && ['queued', 'running', 'applying'].includes(entry.status)) next[key] = entry;
@@ -1945,13 +1945,7 @@ async function handle(req, res) {
     }
     if (url.pathname === '/api/mine/merge-ready') {
       if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: E('cannotMove') });
-      updateEntry(body.key, { mergeReady: !!body.ready, done: false });
-      return send(res, 200, { ok: true });
-    }
-    if (url.pathname === '/api/mine/done') {
-      // 未対応の指摘が残っていると次の取得で指摘ありに戻るので移せない
-      if (mine.status !== 'idle' || (body.done && mine.pending)) return send(res, 409, { error: E('cannotMove') });
-      updateEntry(body.key, { done: !!body.done, mergeReady: false });
+      updateEntry(body.key, { mergeReady: !!body.ready });
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/cancel') {
