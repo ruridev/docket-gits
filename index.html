@@ -1205,7 +1205,7 @@ function cardHtml(e) {
   let action = '';
   if (e.status === 'requested') {
     action = hasToolSkill(e.pr.repo, 'review')
-      ? `${runButton(tr('btn.review'), e, 'review', true)}<span class="muted">${esc(skillLabel(mapping.skill || tr('unset')))}</span>`
+      ? `${runButton(tr('btn.review'), e, 'review')}<span class="muted">${esc(skillLabel(mapping.skill || tr('unset')))}</span>`
       : `<button disabled>${tr('btn.review')}</button><a href="#settings" data-settings>${tr('skillMissing')}</a>`;
     action += `<button data-skip="${esc(e.key)}" title="${esc(tr('skip.title'))}">${tr('skip')}</button>`;
   } else if (e.status === 'queued') {
@@ -1230,11 +1230,11 @@ const MINE_RUNNING = { self: tr('running.self'), fix: tr('running.fix') };
 const toolMapping = (mapping = {}, provider) => provider === 'codex' ? mapping.codex || {} : mapping;
 const actionSkill = (repo, action, provider) => toolMapping(board.config.repos[repo], provider)[{ review: 'skill', self: 'selfSkill', fix: 'fixSkill' }[action]];
 const hasToolSkill = (repo, action) => ['claude', 'codex'].some((p) => actionSkill(repo, action, p));
-function runButton(label, entry, action, primary = false) {
+function runButton(label, entry, action) {
   const attrs = `data-run-action="${action}" data-key="${esc(entry.key)}" data-run-repo="${esc(entry.pr.repo)}"`;
   const current = board.config.provider || 'claude';
   const available = actionSkill(entry.pr.repo, action, current);
-  return `<span class="run-split"><button ${attrs} class="${primary ? 'primary' : ''}" title="${esc(available ? tr('runWith', { tool: providerLabel(current) }) : tr('skillMissing'))}" ${available ? '' : 'disabled'}>${label}</button><button ${attrs} data-provider-toggle aria-haspopup="dialog" aria-controls="provider-menu" aria-expanded="false" aria-label="${esc(tr('chooseProvider'))}"><span class="run-chevron" aria-hidden="true"></span></button></span>`;
+  return `<span class="run-split"><button ${attrs} title="${esc(available ? tr('runWith', { tool: providerLabel(current) }) : tr('skillMissing'))}" ${available ? '' : 'disabled'}>${label}</button><button ${attrs} data-provider-toggle aria-haspopup="dialog" aria-controls="provider-menu" aria-expanded="false" aria-label="${esc(tr('chooseProvider'))}"><span class="run-chevron" aria-hidden="true"></span></button></span>`;
 }
 const providerLabel = (p) => p === 'codex' ? 'Codex' : 'Claude';
 let providerChoice = null;
