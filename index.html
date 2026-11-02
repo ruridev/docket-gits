@@ -8,7 +8,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%231f2328' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 9q1-6 7-5'/%3E%3Ccircle cx='32' cy='35' r='25' fill='%23f2c94c'/%3E%3Ccircle cx='23' cy='30' r='4' fill='%231f2328' stroke='none'/%3E%3Ccircle cx='41' cy='30' r='4' fill='%231f2328' stroke='none'/%3E%3Cellipse cx='32' cy='41' rx='10' ry='6' fill='%23f2994a'/%3E%3C/svg%3E">
 <style>
   /* テーマ: 色の変数。data-theme が無ければ OS のライト / ダークに合わせる。部品の形 (フォント・角・ボタン) はテーマごとに CSS の最後で変える */
-  @font-face { font-family: "Fusion Pixel KO"; src: url("/fonts/pixel.ttf") format("truetype"); font-display: swap; }
+  /* 画素フォントは英数字・記号・ハングルだけに使う (漢字が無いので、日本語は次の日本語フォントでそろえる) */
+  @font-face { font-family: "Fusion Pixel KO"; src: url("/fonts/pixel.ttf") format("truetype"); font-display: swap; unicode-range: U+0020-024F, U+2000-2BFF, U+3130-318F, U+AC00-D7A3; }
   :root, :root[data-theme="light"] { --bg: #f6f8fa; --panel: #ffffff; --lane: #eef1f4; --border: #d0d7de; --text: #1f2328; --muted: #656d76; --accent: #0969da; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --orange: #bc4c00; --merged: var(--merged); --chip: #eaeef2; --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23656d76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
   :root[data-theme="dark"] { --bg: #0d1117; --panel: #161b22; --lane: #10151c; --border: #30363d; --text: #e6edf3; --muted: #8d96a0; --accent: #2f81f7; --accent-text: #ffffff; --ok: #3fb950; --warn: #d29922; --danger: #f85149; --orange: #db6d28; --merged: #a371f7; --chip: #21262d; --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d96a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
   :root[data-theme="green"] { --bg: #0b1410; --panel: #111d17; --lane: #0e1913; --border: #24412f; --text: #d6f2e0; --muted: #8fb39d; --accent: #2bff88; --accent-text: #04140a; --ok: #5be39a; --warn: #e6c35c; --danger: #ff7f7f; --orange: #ffa45c; --merged: #c39cff; --chip: #18291f; --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238fb39d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
@@ -460,7 +461,7 @@
   :root[data-theme="green"] body .settings-nav button.on { background: rgba(43,255,136,.12); color: var(--accent); }
   :root[data-theme="green"] body .verdict button.on { color: #04140a; }
   :root[data-theme="green"] body .site-foot { background: var(--bg); border-top-color: var(--border); }
-  :root[data-theme="g6"] body { font-family: "Fusion Pixel KO", ui-monospace, monospace; -webkit-font-smoothing: none; }
+  :root[data-theme="g6"] body { font-family: "Fusion Pixel KO", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, ui-monospace, sans-serif; -webkit-font-smoothing: none; }
   :root[data-theme="g6"] body * { border-radius: 0 !important; box-shadow: none !important; font-weight: 400 !important; }
   :root[data-theme="g6"] body :is(button, input, select, textarea) { font-family: inherit; }
   :root[data-theme="g6"] body header { background: var(--panel); border-bottom: 2px solid var(--text); padding: 8px 12px; }
