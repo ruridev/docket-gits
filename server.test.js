@@ -785,6 +785,22 @@ test('GET /: index.html を読めなくても 500 を返し、サーバーは落
   }
 });
 
+test('GET /fonts/pixel.ttf: テーマのフォントを返し、決めたファイル以外は 404', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
+  const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
+  try {
+    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    const font = await fetch(`http://localhost:${port}/fonts/pixel.ttf`);
+    assert.equal(font.status, 200);
+    assert.equal(font.headers.get('content-type'), 'font/ttf');
+    assert.ok((await font.arrayBuffer()).byteLength > 0);
+    for (const p of ['/fonts/OFL-fusion-pixel.txt', '/fonts/../server.js', '/fonts/fusion-pixel-12px-ko.ttf']) assert.equal((await fetch(`http://localhost:${port}${p}`)).status, 404, p);
+  } finally {
+    child.kill();
+  }
+});
+
 test('killRun: 既に終わったプロセスでも投げない (キャンセルが状態を戻せるように)', () => {
   const { pid } = require('node:child_process').spawnSync('true');
   assert.doesNotThrow(() => killRun(pid));

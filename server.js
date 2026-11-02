@@ -1828,6 +1828,9 @@ async function handlePlan(req, res, url) {
   return send(res, 404, { error: 'not found' });
 }
 
+// 「사내 운영툴」テーマの画素フォント (Fusion Pixel 12px 韓国語版を使う文字だけに絞ったもの。OFL)
+const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   // DNS rebinding 対策
@@ -1838,6 +1841,17 @@ async function handle(req, res) {
     const html = fs.readFileSync(path.join(__dirname, 'index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(html);
+  }
+  // テーマ用のフォント。決まったファイルだけ返す (パスを組み立てない)
+  if (req.method === 'GET' && FONTS[url.pathname]) {
+    let font;
+    try {
+      font = fs.readFileSync(path.join(__dirname, 'fonts', FONTS[url.pathname]));
+    } catch {
+      return send(res, 404, { error: 'not found' });
+    }
+    res.writeHead(200, { 'Content-Type': 'font/ttf', 'Cache-Control': 'max-age=86400' });
+    return res.end(font);
   }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
