@@ -2465,7 +2465,7 @@ function plBodyHtml() {
   const rows = plRows().map(({ n, d, dim }) => {
     const g = plLive(n);
     const menu = pl.addMenu === n.id;
-    const toggle = n.children.length ? `<span class="tg" data-pl-toggle="${esc(n.id)}">${pl.collapsed.has(n.id) ? '▸' : '▾'}</span>` : '<span class="tg"></span>';
+    const toggle = d && n.children.length ? `<span class="tg" data-pl-toggle="${esc(n.id)}">${pl.collapsed.has(n.id) ? '▸' : '▾'}</span>` : '<span class="tg"></span>';
     const avatars = hide.has('assignees') ? '' : n.assignees.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
     const changed = plChanged(n);
     const tree = `<div class="pl-tree" style="padding-left:${6 + d * 16}px">${toggle}<span class="pl-dot${n.issue ? ' iss' : ''}"></span>${avatars}
@@ -2482,8 +2482,10 @@ function plBodyHtml() {
     }
     return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}${dim ? ' dim' : ''}${g?.state === 'CLOSED' ? ' closed' : ''}${menu ? ' menu' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
   }).join('');
-  const allFolded = plNodes().every((n) => !n.children.length || pl.collapsed.has(n.id));
-  const foldAll = plNodes().some((n) => n.children.length) ? `<button class="fold-all" data-pl-fold="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
+  // 最上位は畳まない (畳む意味がない)。すべて畳むはその直下の子を畳む
+  const foldable = plNodes().flatMap((r) => r.children).filter((n) => n.children.length);
+  const allFolded = foldable.every((n) => pl.collapsed.has(n.id));
+  const foldAll = foldable.length ? `<button class="fold-all" data-pl-fold="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
   return `<div class="pl-road"><div class="pl-grid" style="--d:${PL_DAY}px;--tree:${PL_TREE}px;width:${PL_TREE + days * PL_DAY}px">
     <div class="pl-bg" style="left:${PL_TREE}px">${bg}</div>
     <div class="pl-hdr"><div class="pl-tree"><span>${tr('pl.issue')}</span>${foldAll}</div><div class="pl-days">${head}</div></div>
@@ -2604,7 +2606,7 @@ $('#plan').addEventListener('click', (ev) => {
   const fold = t.closest('[data-pl-fold]');
   if (fold) {
     if (fold.dataset.plFold === 'open') pl.collapsed.clear();
-    else plNodes().forEach((n) => n.children.length && pl.collapsed.add(n.id));
+    else plNodes().forEach((r) => r.children.forEach((n) => n.children.length && pl.collapsed.add(n.id)));
     return plRefresh(['body']);
   }
   const toggle = t.closest('[data-pl-toggle]');
