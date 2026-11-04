@@ -341,6 +341,18 @@ test('pendingThreads: 返信の無い自分だけのスレッド (セルフ指�
   assert.deepEqual(pendingThreads(n, 'me').map((t) => t.url), ['u1']);
 });
 
+test('pendingThreads: セルフ指摘に AI の対応後に自分が書き足した発言は、再指摘として数える', () => {
+  const c = (login, url, createdAt) => ({ author: { login }, body: '', url, createdAt });
+  const appliedAt = Date.parse('2026-11-05T10:00:00Z');
+  const n = { reviewThreads: { nodes: [
+    { isResolved: false, root: { nodes: [c('me', 'u1')] }, comments: { nodes: [c('me', 'u2', '2026-11-05T10:05:00Z')] } },
+    { isResolved: false, root: { nodes: [c('me', 'u3')] }, comments: { nodes: [c('me', 'u4', '2026-11-05T09:55:00Z')] } },
+    { isResolved: false, root: { nodes: [c('bob', 'u5')] }, comments: { nodes: [c('me', 'u6', '2026-11-05T10:05:00Z')] } },
+  ] } };
+  assert.deepEqual(pendingThreads(n, 'me', appliedAt).map((t) => t.url), ['u1']);
+  assert.deepEqual(pendingThreads(n, 'me').map((t) => t.url), []);
+});
+
 test('pendingThreads: 人が判断できるよう最初の指摘と、返信が続いていれば最新の発言を持つ', () => {
   const c = (login, body, url) => ({ author: { login }, body, url });
   const n = { reviewThreads: { nodes: [

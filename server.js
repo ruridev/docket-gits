@@ -99,7 +99,7 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
   mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...pr ... on PullRequest {
     reviewThreads(first: 100) { nodes { isResolved path line
       root: comments(first: 1) { nodes { author { login } body url } }
-      comments(last: 1) { nodes { author { login } body url } } } }
+      comments(last: 1) { nodes { author { login } body url createdAt } } } }
     comments(last: 30) { nodes { author { login } body url createdAt } }
     reviews(last: 30) { nodes { author { login } body url submittedAt } }
   } } }
@@ -216,11 +216,15 @@ function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DON
 // 返信すると最後の発言が自分になるので、状態を持たずに「新しい指摘」を判定できる
 // AI 実行前に人が判断できるよう、最初の指摘と (返信が続いていれば) 最新の発言も持つ
 // 返信の無い自分だけのスレッド (自分の PR へのセルフ指摘) は、まだ誰も応答していないので数える
-function pendingThreads(node, login) {
+// セルフ指摘は AI の返信も同じアカウントなので、AI の対応 (appliedAt) より後に自分が書き足したものは再指摘として数える
+function pendingThreads(node, login, appliedAt = 0) {
   return (node.reviewThreads?.nodes || [])
     .filter((t) => {
       const last = t.comments.nodes.at(-1);
-      return !t.isResolved && (last?.author?.login !== login || (last.url && last.url === t.root?.nodes[0]?.url));
+      const root = t.root?.nodes[0];
+      if (t.isResolved) return false;
+      if (last?.author?.login !== login || (last.url && last.url === root?.url)) return true;
+      return root?.author?.login === login && appliedAt > 0 && Date.parse(last.createdAt) > appliedAt;
     })
     .map((t, i) => {
       const root = t.root?.nodes[0];
@@ -266,7 +270,7 @@ function mergeMine(mine, fetched, login) {
   for (const node of fetched) {
     const key = mineKey(node);
     // レーンの「指摘あり」はスレッドだけで判定する (PR 全体へのコメントは返信するまで外れず、bot の定期コメントで居座るため)
-    const all = [...pendingThreads(node, login), ...pendingComments(node, login)];
+    const all = [...pendingThreads(node, login, mine[key]?.appliedAt), ...pendingComments(node, login)];
     const prev = new Set(mine[key]?.skipped || []);
     // 今も未対応のものだけ覚えておく (新しい発言が付いた・返信したものは忘れる)
     const skipped = all.map(skipKey).filter((k) => prev.has(k));
