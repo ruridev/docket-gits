@@ -765,11 +765,15 @@ test('filterByAuthors: 設定に文字列以外が混ざっても投げない', 
 
 test('GET /: index.html を読めなくても 500 を返し、サーバーは落ちない', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  fs.copyFileSync(path.join(__dirname, 'server.js'), path.join(dir, 'server.js'));
+  for (const f of ['server.js', 'plans.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
-    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    // 起動前に落ちたら待ち続けずに失敗させる
+    await new Promise((resolve, reject) => {
+      child.stdout.on('data', (d) => /Docket:/.test(d) && resolve());
+      child.on('exit', (code) => reject(new Error(`server exited: ${code}`)));
+    });
     const get = (p) => fetch(`http://localhost:${port}${p}`, { headers: { 'X-Docket': '1' } }).then((r) => r.status);
     assert.equal(await get('/'), 500);
     assert.equal(await get('/api/logs'), 200);
