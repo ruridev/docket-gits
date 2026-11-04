@@ -136,8 +136,16 @@
   body.hide-branch .card .branch, body.hide-issue .card .issue, body.hide-stack .card .stack, body.hide-updated .card .top .time,
   body.hide-applied .card .foot .time, body.hide-usage .card .usage, body.hide-reviewers .card .reviewers, body.hide-author .card .top .avatar,
   body.hide-draft .card .chip.draft, body.hide-provider .card .chip.provider, body.hide-labels .card .chip.label, body.hide-removed .card .chip.off { display: none; }
-  #display-dlg { width: min(360px, calc(100vw - 32px)); }
-  #display-dlg label { display: block; padding: 4px 0; }
+  #display-dlg label { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  #display-dlg { width: min(420px, calc(100vw - 32px)); }
+  /* 表示設定: 上は設定がそのまま効く見本カード、各項目の右は実物と同じ見た目の見本 */
+  .cd-preview { margin-bottom: 8px; }
+  .cd-preview .card { margin: 0; }
+  .cd-preview .cd-hl { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+  .cd-sample { margin-left: auto; display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+  .cd-sample > * { margin: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cd-sample .time { font-size: 11px; color: var(--muted); }
+  .cd-sample .usage { font-size: 11px; color: var(--orange); }
   .muted { color: var(--muted); font-size: 12px; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; max-width: calc(100vw - 32px); background: var(--danger); color: #fff; padding: 8px 16px; border-radius: 6px; white-space: pre-wrap; }
   .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; }
@@ -3374,9 +3382,36 @@ const applyCardHidden = () => { const h = cardHiddenOf(view()); CARD_PARTS.forEa
 applyCardHidden();
 const otherBoard = () => (view() === 'review' ? 'receive' : 'review');
 let cardDisplayChanged = false;
+// 表示設定の各項目がカードのどこか (body.hide-* の CSS と同じ場所)
+const PART_SEL = { branch: '.branch', issue: '.issue', stack: '.stack', updated: '.top .time', applied: '.foot .time', usage: '.usage', reviewers: '.reviewers', author: '.top .avatar', draft: '.chip.draft', provider: '.chip.provider', labels: '.chip.label', removed: '.chip.off' };
+// すべての項目が出る見本カード。表示設定は body のクラスで効くので、切り替えるとこのカードもそのまま変わる
+function cardDisplayPreview() {
+  const t = TIP_TEXT[lang] || TIP_TEXT.ja;
+  const pr = tipPr(1, { isDraft: true, labels: [{ name: 'no-pr-activity', color: 'd4c5f9' }], issues: [{ repo: TIP_REPO, number: 98, title: t.t[4], url: '#' }] });
+  const e = { key: 'tip:cd', provider: 'claude', active: false, usage: tipUsage, appliedAt: tipAgo(90), status: view() === 'receive' ? 'idle' : 'commented', postedUrl: '#', pr };
+  const el = document.createElement('div');
+  el.className = 'cd-preview';
+  el.inert = true;
+  el.innerHTML = withTipRepo(() => (view() === 'receive' ? mineCardHtml : cardHtml)(e));
+  // スタックは実際のボードの PR から作るので、見本では手で足す
+  el.querySelector('.branch')?.insertAdjacentHTML('afterend', `<div class="stack">${tr('stack')}<a>#120</a> → <b>#121</b></div>`);
+  return el;
+}
 function openCardDisplay() {
   const h = cardHiddenOf(view());
-  $('#display-dlg .dlg-body').innerHTML = partsOf(view()).map((p) => `<label><input type="checkbox" data-part="${p}"${h.includes(p) ? '' : ' checked'}> ${esc(tr(`cd.${p}`))}</label>`).join('');
+  const body = $('#display-dlg .dlg-body');
+  body.innerHTML = partsOf(view()).map((p) => `<label data-part-row="${p}"><input type="checkbox" data-part="${p}"${h.includes(p) ? '' : ' checked'}> ${esc(tr(`cd.${p}`))}</label>`).join('');
+  if (view() !== 'plan') {
+    const preview = cardDisplayPreview();
+    body.prepend(preview);
+    for (const row of body.querySelectorAll('[data-part-row]')) {
+      const src = preview.querySelector(PART_SEL[row.dataset.partRow]);
+      if (src) row.insertAdjacentHTML('beforeend', `<span class="cd-sample" aria-hidden="true">${src.outerHTML}</span>`);
+      const hl = (on) => preview.querySelectorAll(PART_SEL[row.dataset.partRow]).forEach((x) => x.classList.toggle('cd-hl', on));
+      row.onmouseenter = () => hl(true);
+      row.onmouseleave = () => hl(false);
+    }
+  }
   $('#display-dlg .dlg-foot').hidden = true;
   cardDisplayChanged = false;
   $('#display-dlg').showModal();
