@@ -121,6 +121,9 @@ test('manualLane: 手で移したレーンは、状態・未対応数・Draft・
   // pending を持たない (レビューする側の) カードでも、保存した JSON を読み戻しても一致する
   const pr = { status: 'requested', pr: { updatedAt: 't1' } };
   assert.equal(manualLane(JSON.parse(JSON.stringify({ ...pr, manual: { lane: 'reviewed', ...laneSnapshot(pr) } }))), 'reviewed');
+
+  // 無くなったレーン (下書き) に移したカードは自動のレーンに戻す
+  assert.equal(manualLane({ ...e, manual: { lane: 'draft', ...laneSnapshot(e) } }), null);
 });
 
 test('boardEntry: 判断ダイアログを開けない状態では Claude の出力を送らない', () => {

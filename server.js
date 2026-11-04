@@ -1773,12 +1773,13 @@ function readBody(req) {
 // /api/board は 5 秒ごとに取られるので、Claude の出力は判断ダイアログを開ける状態のときだけ送る
 // postRaw・decisions・triage は画面で使わない (判断の下書きはブラウザ側に持つ)
 // 手で移せるレーン。実行中のカードは実行が見えなくならないよう移さない
-const MOVE_LANES = { prs: ['requested', 'reviewing', 'reviewed', 'commented'], mine: ['draft', 'mine', 'pending', 'running', 'planned'] };
+const MOVE_LANES = { prs: ['requested', 'reviewing', 'reviewed', 'commented'], mine: ['mine', 'pending', 'running', 'planned'] };
 const RUNNING = ['queued', 'reviewing', 'posting', 'running', 'applying'];
 // 手で移した時点から状態・未対応数・Draft・PR の更新 (コミット・コメントなど) が変わったら、自動のレーンに戻す
 const laneSnapshot = (e) => ({ status: e.status, pending: e.pending ?? null, isDraft: !!e.pr?.isDraft, prUpdatedAt: e.pr?.updatedAt ?? null });
 function manualLane(e) {
-  if (!e.manual) return null;
+  // 無くなったレーン (以前の下書きなど) に移したものは自動のレーンに戻す
+  if (!e.manual || ![...MOVE_LANES.prs, ...MOVE_LANES.mine].includes(e.manual.lane)) return null;
   const now = laneSnapshot(e);
   return Object.keys(now).every((k) => e.manual[k] === now[k]) ? e.manual.lane : null;
 }
