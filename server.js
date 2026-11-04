@@ -1762,8 +1762,20 @@ function readBody(req) {
 
 // /api/board は 5 秒ごとに取られるので、Claude の出力は判断ダイアログを開ける状態のときだけ送る
 // postRaw・decisions・triage は画面で使わない (判断の下書きはブラウザ側に持つ)
-function boardEntry(key, { postRaw, decisions, triage, raw, applyRaw, findings, summary, ...e }) {
-  return { key, ...e, ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }) };
+// 手で移せるレーン。実行中のカードは実行が見えなくならないよう移さない
+const MOVE_LANES = { prs: ['requested', 'reviewing', 'reviewed', 'commented'], mine: ['draft', 'mine', 'pending', 'running', 'planned'] };
+const RUNNING = ['queued', 'reviewing', 'posting', 'running', 'applying'];
+// 手で移した時点から状態・未対応数・Draft・PR の更新 (コミット・コメントなど) が変わったら、自動のレーンに戻す
+const laneSnapshot = (e) => ({ status: e.status, pending: e.pending ?? null, isDraft: !!e.pr?.isDraft, prUpdatedAt: e.pr?.updatedAt ?? null });
+function manualLane(e) {
+  if (!e.manual) return null;
+  const now = laneSnapshot(e);
+  return Object.keys(now).every((k) => e.manual[k] === now[k]) ? e.manual.lane : null;
+}
+
+function boardEntry(key, { postRaw, decisions, triage, raw, applyRaw, findings, summary, manual, ...e }) {
+  const lane = manualLane({ ...e, manual });
+  return { key, ...e, ...(lane && { manualLane: lane }), ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }) };
 }
 
 function boardPayload() {
@@ -1910,6 +1922,15 @@ async function handle(req, res) {
     return send(res, 200, { config });
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/move') {
+    const target = mapOf(String(body.key))[body.key];
+    if (!target) return send(res, 404, { error: 'not found' });
+    if (!MOVE_LANES[body.key.startsWith('mine:') ? 'mine' : 'prs'].includes(body.lane)) return send(res, 400, { error: 'invalid lane' });
+    if (RUNNING.includes(target.status)) return send(res, 409, { error: E('running') });
+    updateEntry(body.key, { manual: { lane: body.lane, ...laneSnapshot(target) } });
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method === 'POST' && url.pathname.startsWith('/api/mine/')) {
     const mine = state.mine[body.key];
     if (!mine) return send(res, 404, { error: 'not found' });
@@ -2036,4 +2057,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -105,6 +105,22 @@ test('mergeBoard: 戻した PR を再レビューして Done にしたら、新�
   assert.equal(prs['acme/api#1'].status, 'commented');
   prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice', true), myThread('me', 'alice')])], 'me');
   assert.equal(prs['acme/api#1'].status, 'requested');
+});
+
+test('manualLane: 手で移したレーンは、状態・未対応数・Draft・PR の更新が変わるまで使う', () => {
+  const e = { status: 'idle', pending: 0, pr: { isDraft: false, updatedAt: 't1' } };
+  const moved = { ...e, manual: { lane: 'planned', ...laneSnapshot(e) } };
+  assert.equal(manualLane(moved), 'planned');
+  assert.equal(boardEntry('k', moved).manualLane, 'planned');
+  assert.equal(boardEntry('k', moved).manual, undefined);
+  assert.equal(manualLane({ ...moved, status: 'running' }), null);
+  assert.equal(manualLane({ ...moved, pending: 1 }), null);
+  assert.equal(manualLane({ ...moved, pr: { isDraft: true, updatedAt: 't1' } }), null);
+  assert.equal(manualLane({ ...moved, pr: { isDraft: false, updatedAt: 't2' } }), null);
+  assert.equal(boardEntry('k', { ...moved, pending: 1 }).manualLane, undefined);
+  // pending を持たない (レビューする側の) カードでも、保存した JSON を読み戻しても一致する
+  const pr = { status: 'requested', pr: { updatedAt: 't1' } };
+  assert.equal(manualLane(JSON.parse(JSON.stringify({ ...pr, manual: { lane: 'reviewed', ...laneSnapshot(pr) } }))), 'reviewed');
 });
 
 test('boardEntry: 判断ダイアログを開けない状態では Claude の出力を送らない', () => {
