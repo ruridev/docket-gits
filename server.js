@@ -270,8 +270,7 @@ function mergeMine(mine, fetched, login) {
     const skipped = all.map(skipKey).filter((k) => prev.has(k));
     const threads = all.filter((t) => !prev.has(skipKey(t))).map((t, i) => ({ ...t, no: i + 1 }));
     const pending = threads.filter((t) => t.kind !== 'comment').length;
-    // マージ可能に移した PR でも、新しい指摘が来たら指摘ありに戻す
-    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, threads, skipped, ...(pending && { mergeReady: false }) };
+    next[key] = { status: 'idle', ...mine[key], pr: normalizePr(node), pending, threads, skipped };
   }
   for (const [key, entry] of Object.entries(mine)) {
     if (!next[key] && ['queued', 'running', 'applying'].includes(entry.status)) next[key] = entry;
@@ -1941,11 +1940,6 @@ async function handle(req, res) {
     if (url.pathname === '/api/mine/apply-comments') {
       if (mine.status !== 'planned' || !mine.sessionId) return send(res, 409, { error: E('cannotApply') });
       enqueueApply(body.key, null);
-      return send(res, 200, { ok: true });
-    }
-    if (url.pathname === '/api/mine/merge-ready') {
-      if (mine.status !== 'idle' || (body.ready && mine.pending)) return send(res, 409, { error: E('cannotMove') });
-      updateEntry(body.key, { mergeReady: !!body.ready });
       return send(res, 200, { ok: true });
     }
     if (url.pathname === '/api/mine/cancel') {

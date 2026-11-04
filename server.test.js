@@ -351,13 +351,6 @@ test('mergeMine: 状態を保持して未対応数を更新し、クローズさ
   assert.equal(mine['mine:acme/api#4'], undefined);
 });
 
-test('mergeMine: マージ可能に移した PR は新しい指摘が来たら外れる', () => {
-  const prev = { 'mine:acme/api#1': { status: 'idle', mergeReady: true }, 'mine:acme/api#2': { status: 'idle', mergeReady: true } };
-  const mine = mergeMine(prev, [{ ...node(1), reviewThreads: { nodes: [thread(false, 'bob')] } }, node(2)], 'me');
-  assert.equal(mine['mine:acme/api#1'].mergeReady, false);
-  assert.equal(mine['mine:acme/api#2'].mergeReady, true);
-});
-
 const triage = [
   { no: 1, author: 'bob', url: 'u1', path: 'a.rb', line: 3, comment: '直して', verdict: 'agree', reason: '' },
   { no: 2, author: 'amy', url: 'u2', path: null, line: null, comment: 'なぜ?', verdict: 'disagree', reason: '仕様どおり' },
