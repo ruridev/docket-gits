@@ -65,6 +65,8 @@ const DEFAULT_CONFIG = {
   plansDir: '',
   // Claude が PR に書く文章・ボードに出す指摘の言語: ja / ko / en
   outputLang: 'ja',
+  // 他の人の PR へ投稿するコメントの言語を作成者ごとに変える (例: { "tanaka": "ja", "nguyen": "en" })。ない人は outputLang
+  authorLangs: {},
   // 同意しない指摘を理由付きで投稿するとき、レビュアー本人の意見の頭に付けるアイコン
   disagreeIcon: '🤔💭',
   // 終わった実行のログ (.log) を残す日数。これより古いものは毎日自動で消す
@@ -507,6 +509,13 @@ function withOutputLang(prompt, lang) {
 ## 出力言語
 - PR・issue に書く文章 (レビューコメント・返信・issue / PR の本文) と、<docket-*> ブロック内の文章 (summary・title・body・comment・plan・rebuttal・reply・error) はすべて${name}で書く。上の指示にある定型文 (「人間のレビュアーもコードを読みました ✅」「修正しました」など) も${name}にして使う。
 - category など値が決められている項目は指示どおりの値のままにする。`;
+}
+
+// 投稿は PR 作成者が読むので、作成者ごとの言語があればそれを使う
+function postLang(login, cfg) {
+  const want = authorKey(login);
+  const lang = want && Object.entries(cfg.authorLangs || {}).find(([k]) => authorKey(k) === want)?.[1];
+  return OUTPUT_LANGS[lang] ? lang : cfg.outputLang;
 }
 
 // 最終回答から <tag>JSON</tag> を取り出す (最後の出現を優先)
@@ -1468,14 +1477,14 @@ function waitForExit(pid, provider) {
 }
 
 // サーバーを再起動しても claude を止めず結果を回収できるよう、別プロセスグループで起動し出力をファイルに書かせる
-function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude' }) {
+function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang = config.outputLang }) {
   return new Promise((resolve) => {
     // ログファイルを開けないなどで投げると呼び出し側のカードが実行中のまま止まるので、失敗として返す
     // 起動後に投げた場合 (状態の保存失敗など) は claude が動いているので、close で結果を返す
     let child;
     try {
       const model = modelOptions(config);
-      const instruction = withOutputLang(prompt, config.outputLang);
+      const instruction = withOutputLang(prompt, lang);
       const args = provider === 'codex' ? codexOptions(config, instruction, resume) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...splitArgs(config.claudeArgs)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -1621,6 +1630,7 @@ function enqueuePost(key, decisions, approve, humanRead) {
       cwd: entry.cwd,
       resume: entry.sessionId,
       logName: logName(key, 'post'),
+      lang: postLang(entry.pr.author?.login, config),
     });
     finishPost(key, res);
   } });
@@ -2057,4 +2067,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

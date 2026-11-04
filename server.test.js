@@ -589,6 +589,17 @@ test('withOutputLang: 書かせる文章の言語を指示し、未知の言語�
   assert.match(withOutputLang('p', undefined), /すべて日本語で書く/);
 });
 
+const { postLang } = require('./server');
+
+test('postLang: 作成者ごとの言語を使い、未設定・未知の言語は出力言語にする', () => {
+  const cfg = { outputLang: 'ko', authorLangs: { Tanaka: 'ja', 'nguyen[bot]': 'en', kim: 'fr' } };
+  assert.equal(postLang('tanaka', cfg), 'ja');
+  assert.equal(postLang('nguyen', cfg), 'en');
+  assert.equal(postLang('kim', cfg), 'ko');
+  assert.equal(postLang('lee', cfg), 'ko');
+  assert.equal(postLang(undefined, { outputLang: 'en' }), 'en');
+});
+
 test('i18n: 各言語のキーがそろい、サーバーのエラーコードがすべて翻訳されている', () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const I18N = new Function(`return ${/const I18N = (\{[\s\S]*?\n\});/.exec(html)[1]}`)();
