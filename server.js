@@ -594,6 +594,11 @@ function pathSettings(env) {
   return env.PATH ? ['--settings', JSON.stringify({ env: { PATH: env.PATH } })] : [];
 }
 
+// -p 実行では .claude/ 配下 (保護パス) の編集が確認待ちになり拒否されるので、確認を permission-mcp.js に回して skill の編集だけ通す
+function permissionArgs() {
+  return ['--mcp-config', JSON.stringify({ mcpServers: { docket: { command: process.execPath, args: [path.join(__dirname, 'permission-mcp.js')] } } }), '--permission-prompt-tool', 'mcp__docket__approve'];
+}
+
 // 未指定だとサブエージェント (Explore など) は Haiku で動くので、設定のモデルに揃える
 function modelOptions(cfg) {
   return {
@@ -1589,7 +1594,7 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
     try {
       const model = modelOptions(config);
       const instruction = withOutputLang(prompt, lang);
-      const args = provider === 'codex' ? codexOptions(config, instruction, resume) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...splitArgs(config.claudeArgs)];
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...permissionArgs(), ...splitArgs(config.claudeArgs)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true });
       const base = path.join(LOG_DIR, logName);
@@ -2173,4 +2178,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

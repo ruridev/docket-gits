@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -888,4 +888,25 @@ test('withPlanLock: 同じ計画の処理は順に、失敗しても次を止め
   assert.equal(await b, 'a2');
   await c;
   assert.deepEqual(order, ['b1', 'a1', 'a2']);
+});
+
+test('permission-mcp: .claude/skills 配下の Edit / Write だけ承認する', () => {
+  const { approves } = require('./permission-mcp');
+  assert.equal(approves('Edit', { file_path: '/r/.claude/skills/a/SKILL.md' }), true);
+  assert.equal(approves('Write', { file_path: '/r/.claude/worktrees/w/.claude/skills/a/scripts/x.js' }), true);
+  assert.equal(approves('Edit', { file_path: '/r/.claude/settings.json' }), false);
+  // .. で skills の外へ出るパスは承認しない
+  assert.equal(approves('Edit', { file_path: '/r/.claude/skills/../settings.json' }), false);
+  assert.equal(approves('Bash', { command: 'echo x > /r/.claude/skills/a' }), false);
+  assert.equal(approves('Edit', {}), false);
+  assert.equal(approves('Edit', undefined), false);
+});
+
+test('permissionArgs: 権限確認ツールとして permission-mcp.js を claude に渡す', () => {
+  const args = permissionArgs();
+  assert.equal(args[0], '--mcp-config');
+  const { command, args: [script] } = JSON.parse(args[1]).mcpServers.docket;
+  assert.equal(command, process.execPath);
+  assert.ok(fs.existsSync(script));
+  assert.deepEqual(args.slice(2), ['--permission-prompt-tool', 'mcp__docket__approve']);
 });
