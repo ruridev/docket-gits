@@ -2815,6 +2815,9 @@ window.addEventListener('pointermove', (ev) => {
   if (!d) return;
   const dd = Math.round((ev.clientX - d.x) / PL_DAY);
   if (!dd && !d.moved) return;
+  // 日付は PL_DAY ごとにしか変わらないので、変わらない間は描き直さない (毎回行 × 日のマスを作り直すと重い)
+  if (d.moved && dd === d.lastDd) return;
+  d.lastDd = dd;
   if (!d.moved) document.body.classList.add('pl-dragging');
   d.moved = true;
   const [first] = d.orig;
@@ -2832,7 +2835,11 @@ window.addEventListener('pointermove', (ev) => {
     if (d.mode === 'l') [first.n.start, first.n.end] = [spDay(start, dd) > end ? end : spDay(start, dd), end];
     else [first.n.start, first.n.end] = [start, spDay(end, dd) < start ? start : spDay(end, dd)];
   }
-  plRefresh(['body', 'detail']);
+  // 速く動かしたときも 1 フレームに 1 回だけ描く
+  if (!d.frame) d.frame = requestAnimationFrame(() => {
+    d.frame = 0;
+    if (pl.drag === d) plRefresh(['body', 'detail']);
+  });
 });
 window.addEventListener('pointerup', (ev) => {
   const d = pl.drag;
