@@ -98,3 +98,13 @@ test('snapshotFields / fieldsOf: syncSnapshot と同じ並び・同じ値にな�
   const n = { title: 't', body: 'b', assignees: ['b', 'a'], labels: ['x'], milestone: 'v1', sprint: 'S', start: '2026-11-01', end: null };
   assert.deepEqual(snapshotFields(syncSnapshot(n)), fieldsOf(n));
 });
+
+test('serializePlan: 「}」で終わる題名は読み直しても題名のまま', () => {
+  const plan = { title: 't', repo: 'acme/api', status: 'draft', nodes: [{ title: 'Use {pr-number}', children: [{ title: 'Ref {x}', issue: 3, children: [] }] }] };
+  const md = serializePlan(plan);
+  const back = parsePlan(md);
+  assert.equal(back.nodes[0].title, 'Use {pr-number}');
+  assert.equal(back.nodes[0].children[0].title, 'Ref {x}');
+  assert.equal(back.nodes[0].children[0].issue, 3);
+  assert.equal(serializePlan(back), md);
+});

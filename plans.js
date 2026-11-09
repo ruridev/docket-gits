@@ -53,7 +53,9 @@ function attrsText(n) {
   if (n.labels?.length) parts.push(`labels=${quote(n.labels.join(','))}`);
   if (n.sprint) parts.push(`sprint=${quote(n.sprint)}`);
   if (n.milestone) parts.push(`milestone=${quote(n.milestone)}`);
-  return parts.length ? ` {${parts.join(' ')}}` : '';
+  if (parts.length) return ` {${parts.join(' ')}}`;
+  // 「}」で終わる題名は、読み直したときに末尾の {…} を属性と取られないよう空の属性を付ける
+  return /\}\s*$/.test(n.title || '') ? ' {}' : '';
 }
 
 // 階層が飛んだ見出し (# の次に ###) は 1 つ上の階層の子にする
