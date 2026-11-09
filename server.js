@@ -781,11 +781,18 @@ async function ghql(query, vars = {}) {
 
 // 消された issue など一部が読めなくても、読めた分を返す
 async function ghqlPartial(query, vars = {}) {
+  return (await ghqlResult(query, vars)).data;
+}
+
+// 読めた分と、「無い」以外の理由 (rate limit・SAML・権限など) で読めなかったか
+async function ghqlResult(query, vars = {}) {
   const out = await gh(ghqlArgs(query, vars)).catch((e) => {
     if (e.stdout) return e.stdout;
     throw e;
   });
-  return JSON.parse(out).data || {};
+  const json = JSON.parse(out);
+  const errors = (json.errors || []).filter((e) => e.type !== 'NOT_FOUND');
+  return { data: json.data || {}, failed: !json.data || errors.length > 0, message: errors.map((e) => e.message).join('\n') };
 }
 
 const projectRoot = (p) => `${p.owner}(login: $login) { projectV2(number: $number)`;
@@ -1090,7 +1097,7 @@ async function remoteIssues(url, plan, nodes) {
   for (const n of nodes) (byRepo[n.repo || plan.repo] ||= new Set()).add(n.issue);
   const repos = Object.keys(byRepo).filter(validRepo);
   if (!repos.length) return { meta, issues: {} };
-  const data = await ghqlPartial(`query($sprint: String!, $start: String!, $end: String!) { ${repos.map((r, i) => {
+  const { data, failed, message } = await ghqlResult(`query($sprint: String!, $start: String!, $end: String!) { ${repos.map((r, i) => {
     const [owner, name] = r.split('/');
     return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { ${[...byRepo[r]].map((num) => `i${num}: issue(number: ${num}) { ...iss }`).join(' ')} }`;
   }).join('\n')} }
@@ -1102,7 +1109,7 @@ async function remoteIssues(url, plan, nodes) {
       if (n) issues[`${r}#${num}`] = n;
     }
   });
-  return { meta, issues };
+  return { meta, issues, failed, message };
 }
 
 // GitHub の値を計画の項目の形にする。スプリント・開始日・終了日は Project から読めなければ (Project に無い issue、フィールドが無い) 計画の値のままとみなす
@@ -1172,9 +1179,10 @@ async function planLive(url, file, refresh) {
   const keys = nodes.map((n) => fullKey(plan, n)).sort();
   let pulled = null;
   const live = await cached(`plan-live:${url}:${keys.join(',')}`, refresh, async () => {
-    const { meta, issues } = await remoteIssues(url, plan, nodes);
+    const { meta, issues, failed } = await remoteIssues(url, plan, nodes);
     pulled = await pullPlan(url, file, meta, issues);
-    return { issues: Object.fromEntries(Object.entries(issues).map(([k, n]) => [k, liveOf(n, meta)])), fetchedAt: Date.now() };
+    // 一部読めなかったときはキャッシュしない (cached が partial を見て残さない)
+    return { issues: Object.fromEntries(Object.entries(issues).map(([k, n]) => [k, liveOf(n, meta)])), fetchedAt: Date.now(), ...(failed && { partial: true }) };
   });
   return { ...live, pulled };
 }
@@ -1262,7 +1270,9 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
   // 前回そろえた後に GitHub で変わった issue があれば、上書きせずに止める (先に ↻ で取り込んでもらう)
   const existing = applyTargets(doc).map(({ node }) => node).filter((n) => n.issue && synced[syncKey(plan, n)]);
   if (existing.length) {
-    const { meta, issues } = await remoteIssues(url, plan, existing);
+    const { meta, issues, failed, message } = await remoteIssues(url, plan, existing);
+    // 読めなかった issue を「GitHub では変わっていない」とみなすと、GitHub での変更を上書きしてしまう
+    if (failed) throw E('planReadFailed', { message });
     for (const n of existing) {
       const raw = issues[fullKey(plan, n)];
       const base = snapshotFields(synced[syncKey(plan, n)]);
