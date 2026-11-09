@@ -835,6 +835,8 @@ async function cached(key, refresh, fn) {
   const hit = sprintCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < SPRINT_CACHE_MS) return hit.data;
   const data = await fn();
+  // 一部取れなかった結果は残さない (次に開いたときに取り直す)
+  if (data?.partial) return data;
   sprintCache.set(key, { at: Date.now(), data });
   for (const [k, v] of sprintCache) if (Date.now() - v.at >= SPRINT_CACHE_MS) sprintCache.delete(k);
   writeJson(SPRINT_CACHE_FILE, Object.fromEntries(sprintCache));
@@ -1214,12 +1216,14 @@ const validRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(repo || '');
 async function repoOptions(repo, refresh = false) {
   if (!validRepo(repo)) return { assignees: [], labels: [], milestones: [] };
   return cached(`plan-repo:${repo}`, refresh, async () => {
-    const get = (p) => gh(['api', '--paginate', '--slurp', p]).then((out) => JSON.parse(out).flat()).catch(() => []);
+    let partial = false;
+    const get = (p) => gh(['api', '--paginate', '--slurp', p]).then((out) => JSON.parse(out).flat()).catch(() => { partial = true; return []; });
     const [assignees, labels, milestones] = await Promise.all([get(`repos/${repo}/assignees?per_page=100`), get(`repos/${repo}/labels?per_page=100`), get(`repos/${repo}/milestones?state=open&per_page=100`)]);
     return {
       assignees: assignees.map((a) => ({ login: a.login, avatarUrl: a.avatar_url })),
       labels: labels.map((l) => ({ name: l.name, color: l.color })),
       milestones: milestones.map((m) => ({ title: m.title, number: m.number })),
+      ...(partial && { partial }),
     };
   });
 }
@@ -1279,6 +1283,15 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     const milestone = node.milestone ? opts.milestones.find((m) => m.title === node.milestone) : null;
     if (node.milestone && !milestone) warnings.push(E('planMilestoneMissing', { title: node.title, milestone: node.milestone }));
     const body = { title: node.title, assignees: node.assignees, labels: node.labels, milestone: milestone ? milestone.number : null };
+    // 候補に無いマイルストーン (閉じた・取れなかった) で GitHub の値を消さない
+    if (node.milestone && !milestone) delete body.milestone;
+    // 反映済みの issue は計画で変えた項目だけ送る (担当者・ラベルは GitHub から一部しか読まないので、全部送ると残りが消える)
+    const snap = node.issue && synced[syncKey(plan, node)];
+    if (snap) {
+      const base = snapshotFields(snap);
+      const local = fieldsOf(node);
+      for (const f of ['title', 'assignees', 'labels', 'milestone']) if (same(local[f], base[f])) delete body[f];
+    }
     // 本文を書くのは作るときだけ。GitHub にある issue の本文は GitHub で書き、計画からは上書きしない
     if (!node.issue) body.body = node.body || '';
     const isNew = !node.issue;
