@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 const node = (number, repo = 'acme/api') => ({
   number,
@@ -864,4 +864,14 @@ test('isTruncated: ページが上限まで埋まり、まだ続きがあると�
   assert.equal(isTruncated({ open: page(100, 101), mine: page(20, 20) }), true);
   assert.equal(isTruncated({ open: page(4, 4), mine: page(50, 51) }), true);
   assert.equal(isTruncated({ open: page(100, 100), mine: page(50, 50) }), false);
+});
+
+test('sharedPrompt: 空か、どれかの言語の既定値のままなら画面の言語の既定値を使い、書き換えたものはそのまま使う', () => {
+  assert.equal(sharedPrompt({ reviewPrompt: '', uiLang: 'ko' }, 'reviewPrompt'), DEFAULT_PROMPTS.ko.reviewPrompt);
+  // 以前の config.json に保存された日本語の既定値
+  assert.equal(sharedPrompt({ fixPrompt: DEFAULT_PROMPTS.ja.fixPrompt, uiLang: 'en' }, 'fixPrompt'), DEFAULT_PROMPTS.en.fixPrompt);
+  // 言語が未設定・不明なら日本語
+  assert.equal(sharedPrompt({ reviewPrompt: '  ', uiLang: 'fr' }, 'reviewPrompt'), DEFAULT_PROMPTS.ja.reviewPrompt);
+  assert.equal(sharedPrompt({ reviewPrompt: 'Review {pr-url}', uiLang: 'ko' }, 'reviewPrompt'), 'Review {pr-url}');
+  for (const l of ['ko', 'en']) for (const k of ['reviewPrompt', 'fixPrompt']) assert.match(DEFAULT_PROMPTS[l][k], /\{pr-url\}/);
 });

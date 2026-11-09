@@ -38,22 +38,12 @@ const DEFAULT_CONFIG = {
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
   // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
   repos: {},
-  // スキルの代わりに「設定のプロンプト」(PROMPT_SKILL) を選んだリポジトリで使うレビュー指示。空なら既定値に戻す
-  reviewPrompt: `PR {pr-url} をレビューしてください。
-
-- \`gh pr view {pr-url}\` で概要を、\`gh pr diff {pr-url}\` で差分を確認する。必要なら周辺のコードも読む。
-- 正しさ (バグ・境界値・エラー処理)・セキュリティ・性能・可読性の観点で、修正すべき点を挙げる。好みの問題は避ける。
-- 重要度は must (直さないと壊れる) / want (直した方がよい) / imo (意見) / nit (些細) のいずれかにする。
-- 各指摘は該当するファイルと diff 上の行番号を添え、なぜ問題か・どう直すかを具体的に書く。`,
-  // 指摘への対応で「設定のプロンプト」を選んだリポジトリで使う指示。空なら既定値に戻す
-  fixPrompt: `PR {pr-url} に付いたレビュー指摘に対応してください。
-
-- カレントディレクトリが対象リポジトリの clone でなければ、何もせず理由を返す。
-- 未コミットの変更があれば、何もせず理由を返す (ユーザーの作業を消さないため)。
-- \`gh pr checkout {pr-url}\` で PR ブランチをチェックアウトする。
-- 未解決のレビュースレッドとPR コメントを \`gh api\` で取得し、指摘ごとに修正・返信のどちらで対応するかを決める。
-- 修正は 1 指摘 1 コミットにし、既存のコミットメッセージの書き方に合わせる。push は force しない。
-- 返信には対応したコミット SHA を含める。スレッドへは \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`、PR コメントへは元のコメントを引用して \`gh pr comment {pr-url}\` で返信する。`,
+  // スキルの代わりに「設定のプロンプト」(PROMPT_SKILL) を選んだリポジトリで使うレビュー指示。空なら画面の言語の既定値 (DEFAULT_PROMPTS) を使う
+  reviewPrompt: '',
+  // 指摘への対応で「設定のプロンプト」を選んだリポジトリで使う指示。空なら画面の言語の既定値を使う
+  fixPrompt: '',
+  // 画面の言語 (ja / ko / en)。画面を開くと送られ、共通プロンプトの既定値を選ぶのに使う
+  uiLang: '',
   // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
   projects: [],
   // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
@@ -76,6 +66,64 @@ const DEFAULT_CONFIG = {
   // 同意した「使用前の注意」の版。CONSENT_VERSION 未満なら claude を起動しない
   consentVersion: 0,
 };
+
+// 共通プロンプトの既定値。設定が空なら画面の言語のものを使う
+const DEFAULT_PROMPTS = {
+  ja: {
+    reviewPrompt: `PR {pr-url} をレビューしてください。
+
+- \`gh pr view {pr-url}\` で概要を、\`gh pr diff {pr-url}\` で差分を確認する。必要なら周辺のコードも読む。
+- 正しさ (バグ・境界値・エラー処理)・セキュリティ・性能・可読性の観点で、修正すべき点を挙げる。好みの問題は避ける。
+- 重要度は must (直さないと壊れる) / want (直した方がよい) / imo (意見) / nit (些細) のいずれかにする。
+- 各指摘は該当するファイルと diff 上の行番号を添え、なぜ問題か・どう直すかを具体的に書く。`,
+    fixPrompt: `PR {pr-url} に付いたレビュー指摘に対応してください。
+
+- カレントディレクトリが対象リポジトリの clone でなければ、何もせず理由を返す。
+- 未コミットの変更があれば、何もせず理由を返す (ユーザーの作業を消さないため)。
+- \`gh pr checkout {pr-url}\` で PR ブランチをチェックアウトする。
+- 未解決のレビュースレッドとPR コメントを \`gh api\` で取得し、指摘ごとに修正・返信のどちらで対応するかを決める。
+- 修正は 1 指摘 1 コミットにし、既存のコミットメッセージの書き方に合わせる。push は force しない。
+- 返信には対応したコミット SHA を含める。スレッドへは \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`、PR コメントへは元のコメントを引用して \`gh pr comment {pr-url}\` で返信する。`,
+  },
+  ko: {
+    reviewPrompt: `PR {pr-url} 를 리뷰해 주세요.
+
+- \`gh pr view {pr-url}\` 로 개요를, \`gh pr diff {pr-url}\` 로 변경 내용을 확인한다. 필요하면 주변 코드도 읽는다.
+- 정확성 (버그·경계값·오류 처리)·보안·성능·가독성 관점에서 고쳐야 할 점을 든다. 취향 문제는 피한다.
+- 중요도는 must (고치지 않으면 깨짐) / want (고치는 편이 좋음) / imo (의견) / nit (사소함) 중 하나로 한다.
+- 각 지적에는 해당 파일과 diff 상의 줄 번호를 붙이고, 왜 문제인지·어떻게 고칠지를 구체적으로 쓴다.`,
+    fixPrompt: `PR {pr-url} 에 달린 리뷰 지적에 대응해 주세요.
+
+- 현재 디렉터리가 대상 저장소의 clone 이 아니면, 아무것도 하지 말고 이유를 돌려준다.
+- 커밋하지 않은 변경이 있으면, 아무것도 하지 말고 이유를 돌려준다 (사용자의 작업을 지우지 않기 위해).
+- \`gh pr checkout {pr-url}\` 로 PR 브랜치를 체크아웃한다.
+- 해결되지 않은 리뷰 스레드와 PR 코멘트를 \`gh api\` 로 가져와, 지적마다 수정·답글 중 어느 쪽으로 대응할지 정한다.
+- 수정은 지적 하나에 커밋 하나로 하고, 기존 커밋 메시지 작성 방식에 맞춘다. push 는 force 하지 않는다.
+- 답글에는 대응한 커밋 SHA 를 넣는다. 스레드에는 \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`, PR 코멘트에는 원래 코멘트를 인용해 \`gh pr comment {pr-url}\` 로 답한다.`,
+  },
+  en: {
+    reviewPrompt: `Please review PR {pr-url}.
+
+- Check the overview with \`gh pr view {pr-url}\` and the changes with \`gh pr diff {pr-url}\`. Read the surrounding code if needed.
+- List what should be fixed in terms of correctness (bugs, edge cases, error handling), security, performance and readability. Avoid matters of taste.
+- Give each one a severity of must (breaks if not fixed) / want (better fixed) / imo (opinion) / nit (minor).
+- Attach the file and the line number in the diff to each finding, and write concretely why it is a problem and how to fix it.`,
+    fixPrompt: `Please address the review comments on PR {pr-url}.
+
+- If the current directory is not a clone of the target repository, do nothing and return the reason.
+- If there are uncommitted changes, do nothing and return the reason (so the user's work is not lost).
+- Check out the PR branch with \`gh pr checkout {pr-url}\`.
+- Fetch the unresolved review threads and PR comments with \`gh api\`, and decide for each one whether to fix it or reply.
+- Make one commit per comment, following the style of the existing commit messages. Do not force push.
+- Include the SHA of the fixing commit in each reply. Reply to threads with \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`, and to PR comments by quoting the original with \`gh pr comment {pr-url}\`.`,
+  },
+};
+// 以前は既定値の本文を config.json にそのまま保存していたので、どれかの言語の既定値と同じなら空とみなす
+function sharedPrompt(cfg, key) {
+  const value = (cfg[key] || '').trim();
+  const isDefault = !value || Object.values(DEFAULT_PROMPTS).some((p) => p[key] === value);
+  return isDefault ? (DEFAULT_PROMPTS[cfg.uiLang] || DEFAULT_PROMPTS.ja)[key] : value;
+}
 
 // 「使用前の注意」の内容を大きく変えたら上げる (全員にもう一度同意を求める)
 const CONSENT_VERSION = 2;
@@ -324,9 +372,9 @@ function fillTemplate(template, pr) {
 // スキルの選択肢のうち、ローカルの skill ではなく設定の reviewPrompt を使うことを表す値
 const PROMPT_SKILL = '(prompt)';
 
-function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_CONFIG.reviewPrompt, provider = 'claude', cwd) {
+function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.ja.reviewPrompt, provider = 'claude', cwd) {
   const head = mapping.skill === PROMPT_SKILL
-    ? fillTemplate(reviewPrompt?.trim() || DEFAULT_CONFIG.reviewPrompt, pr)
+    ? fillTemplate(reviewPrompt?.trim() || DEFAULT_PROMPTS.ja.reviewPrompt, pr)
     : skillInvocation(mapping.skill, fillTemplate(mapping.args, pr), provider, cwd);
   return `${head}
 
@@ -405,14 +453,14 @@ function triageFrom(threads, decisions) {
 const triageTargets = (triage) => triage.filter((t) => t.verdict !== 'skip');
 
 // review-fix は手順 1〜3 (取得・チェックアウト・分類) で止め、対応計画だけを返させる
-function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_CONFIG.fixPrompt, provider = 'claude', cwd) {
+function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_PROMPTS.ja.fixPrompt, provider = 'claude', cwd) {
   const lines = triageTargets(triage).map((t) => {
     const loc = t.path ? ` ${t.path}${t.line ? `:${t.line}` : ''}` : '';
     const summary = t.comment.replace(/\s+/g, ' ').slice(0, 80);
     return `- #${t.no}${t.kind === 'comment' ? ' [PR コメント]' : ''} @${t.author}${loc} ${t.url}\n  指摘: ${summary}\n  ${t.verdict === 'agree' ? '同意' : '非同意'} / ${t.reason ? `理由: ${t.reason}` : '理由なし'}`;
   });
   const head = mapping.fixSkill === PROMPT_SKILL
-    ? fillTemplate(fixPrompt?.trim() || DEFAULT_CONFIG.fixPrompt, pr)
+    ? fillTemplate(fixPrompt?.trim() || DEFAULT_PROMPTS.ja.fixPrompt, pr)
     : skillInvocation(mapping.fixSkill, fillTemplate(mapping.fixArgs, pr), provider, cwd);
   return `${head}
 
@@ -1590,7 +1638,7 @@ function enqueueReview(key, provider = config.provider) {
   const mapping = repoTool(config.repos[entry.pr.repo], provider);
   const cwd = mapping.cwd || config.workdir;
   const runId = newRunId();
-  const prompt = buildReviewPrompt(entry.pr, mapping, config.reviewPrompt, provider, cwd);
+  const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'), provider, cwd);
   updateEntry(key, { status: 'queued', provider, runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
@@ -1688,7 +1736,7 @@ function enqueueMine(key, mode, triage = null, provider = config.provider) {
   const entry = state.mine[key];
   const mapping = repoTool(config.repos[entry.pr.repo], provider);
   const cwd = mapping.cwd || config.workdir;
-  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, config.reviewPrompt, provider, cwd) : buildFixPlanPrompt(entry.pr, mapping, triage, config.fixPrompt, provider, cwd);
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt'), provider, cwd) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'), provider, cwd);
   const runId = newRunId();
   updateEntry(key, { status: 'queued', provider, mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
@@ -1805,6 +1853,7 @@ function boardPayload() {
     config,
     // 設定画面の「すべて既定に戻す」用
     defaults: DEFAULT_CONFIG,
+    defaultPrompts: DEFAULT_PROMPTS,
   };
 }
 
@@ -2072,4 +2121,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { CONSENT_VERSION, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

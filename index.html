@@ -1022,6 +1022,8 @@ async function load(refresh = false) {
     if (seq < loadApplied && !refresh) return;
     loadApplied = Math.max(loadApplied, seq);
     board = next;
+    // 共通プロンプトの既定値はサーバーが画面の言語で選ぶので、今の言語を知らせておく
+    if (board.config.uiLang !== lang) api('/api/config', { method: 'PUT', body: { uiLang: lang } }).catch(() => {});
   } catch (e) {
     board.fetchError = e.message;
   }
@@ -1551,6 +1553,8 @@ function openReview(key) {
 // server.js の PROMPT_SKILL と同じ値。スキルではなく設定のレビュープロンプトを使う
 const PROMPT_SKILL = '(prompt)';
 const skillLabel = (s) => (s === PROMPT_SKILL ? tr('opt.prompt') : s);
+// 既定値 (どの言語のものでも) のままなら空として見せ、placeholder に今の言語の既定値を出す
+const ownPrompt = (cfg, key) => (Object.values(board.defaultPrompts).some((p) => p[key] === cfg[key]?.trim()) ? '' : cfg[key] ?? '');
 const disagreeIcon = () => board.config?.disagreeIcon?.trim() || '🤔💭';
 function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr('ph.disagree', { icon: disagreeIcon() }) }, skippable = false) {
   const loc = f.path ? `${f.path}${f.line ? `:${f.line}` : ''}` : '';
@@ -1928,10 +1932,10 @@ async function openSettings() {
           <h3>${tr('agent.prompts')}</h3>
           <h4>${tr('s.reviewPrompt')}</h4>
           <p class="muted">${tr('s.reviewPrompt.help')}</p>
-          <textarea data-cfg="reviewPrompt" rows="8" style="width:100%" placeholder="${esc(board.defaults.reviewPrompt)}">${esc(cfg.reviewPrompt ?? '')}</textarea>
+          <textarea data-cfg="reviewPrompt" rows="8" style="width:100%" placeholder="${esc(board.defaultPrompts[lang].reviewPrompt)}">${esc(ownPrompt(cfg, 'reviewPrompt'))}</textarea>
           <h4>${tr('s.fixPrompt')}</h4>
           <p class="muted">${tr('s.fixPrompt.help')}</p>
-          <textarea data-cfg="fixPrompt" rows="10" style="width:100%" placeholder="${esc(board.defaults.fixPrompt)}">${esc(cfg.fixPrompt ?? '')}</textarea>
+          <textarea data-cfg="fixPrompt" rows="10" style="width:100%" placeholder="${esc(board.defaultPrompts[lang].fixPrompt)}">${esc(ownPrompt(cfg, 'fixPrompt'))}</textarea>
           ${resetBtn('agent-prompts')}
         </div>
         <div class="settings-pane" data-pane-body="agent-roadmap">
@@ -2086,7 +2090,7 @@ async function openSettings() {
     if (t.matches('[data-save]')) {
       // 失敗したらダイアログを閉じず、入力を残したまま知らせる
       try {
-        await api('/api/config', { method: 'PUT', body: cfg });
+        await api('/api/config', { method: 'PUT', body: { ...cfg, uiLang } });
       } catch (err) {
         return toast(err.message);
       }
