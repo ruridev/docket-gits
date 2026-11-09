@@ -145,14 +145,14 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
   open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...pr } }
   merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...pr } }
   mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...pr ... on PullRequest {
-    reviewThreads(first: 100) { nodes { isResolved path line
+    reviewThreads(last: 100) { nodes { isResolved path line
       root: comments(first: 1) { nodes { author { login } body url } }
       comments(last: 1) { nodes { author { login } body url createdAt } } } }
-    comments(last: 30) { nodes { author { login } body url createdAt } }
-    reviews(last: 30) { nodes { author { login } body url submittedAt } }
+    comments(last: 50) { nodes { author { login } body url createdAt } }
+    reviews(last: 50) { nodes { author { login } body url submittedAt } }
   } } }
   reviewed: search(query: $reviewed, type: ISSUE, first: 50) { nodes { ...pr ... on PullRequest {
-    reviewThreads(first: 100) { nodes { isResolved
+    reviewThreads(last: 100) { nodes { isResolved
       root: comments(first: 1) { nodes { author { login } } }
       comments(last: 1) { nodes { author { login } } } } }
   } } }
