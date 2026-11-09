@@ -206,7 +206,7 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   assert.match(prompt, /- #3 非同意 \/ 理由なし/);
   assert.match(prompt, /event: APPROVE/);
   assert.match(prompt, /繰り返さず、残りだけを行う/);
-  assert.match(prompt, /🤔💭/);
+  assert.match(prompt, /🙅💭/);
   assert.match(prompt, /🤖: /);
   assert.match(prompt, /---/);
 });
@@ -214,7 +214,7 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
 test('buildPostPrompt: 非同意の意見のアイコンを指定できる', () => {
   const prompt = buildPostPrompt({ url: 'https://x/1' }, [{ no: 1 }], { 1: { verdict: 'disagree', reason: 'r' } }, false, false, '🙋');
   assert.match(prompt, /「🙋 」で始め/);
-  assert.doesNotMatch(prompt, /🤔💭/);
+  assert.doesNotMatch(prompt, /🙅💭/);
 });
 
 test('modelOptions: 指定したモデル・effort を渡し、サブエージェントも同じモデルにする。未指定なら何も足さない', () => {
@@ -457,6 +457,14 @@ test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信�
   assert.match(prompt, /<docket-fix-plan>/);
   assert.match(prompt, /category を split にし/);
   assert.match(prompt, /category を followup にし/);
+});
+
+test('buildFixApplyPrompt / buildSelfApplyPrompt: 同意 + 理由は返信にアイコン付きの本人の意見として添えさせる', () => {
+  const decisions = { 1: { verdict: 'agree', reason: '空でも登録できるように' } };
+  assert.match(buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions), /「🙆💭 」で始め/);
+  assert.match(buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions), /「🙆💭 」で始め/);
+  assert.match(buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions, '🙋'), /「🙋 」で始め/);
+  assert.match(buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions, '', '🙋'), /「🙋 」で始め/);
 });
 
 test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済みとして push・返信させる', () => {

@@ -58,7 +58,8 @@ const DEFAULT_CONFIG = {
   // 他の人の PR へ投稿するコメントの言語を作成者ごとに変える (例: { "tanaka": "ja", "nguyen": "en" })。ない人は outputLang
   authorLangs: {},
   // 同意しない指摘を理由付きで投稿するとき、レビュアー本人の意見の頭に付けるアイコン
-  disagreeIcon: '🤔💭',
+  disagreeIcon: '🙅💭',
+  agreeIcon: '🙆💭',
   // 終わった実行のログ (.log) を残す日数。これより古いものは毎日自動で消す
   logKeepDays: 30,
   // 依頼が外れた Done (完了) を残す日数。投稿・スキップした日から数える
@@ -487,14 +488,14 @@ ${lines.join('\n')}
 </docket-fix-plan>`;
 }
 
-function buildFixApplyPrompt(pr, items, decisions) {
+function buildFixApplyPrompt(pr, items, decisions, icon = DEFAULT_CONFIG.agreeIcon) {
   return `レビューボードでユーザーが各指摘への対応計画を判断しました。以下に従って、PR ${pr.url} についてスキル (または最初の指示) の修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
 
 ## 判断
 ${decisionLines(items, decisions)}
 
 ## ルール
-- 同意: 計画どおり修正・返信する。理由が書かれていれば、その内容を反映する。
+- 同意: 計画どおり修正・返信する。理由が書かれていれば、その内容を反映する。理由が書かれた同意は、返信の末尾に段落を分け、「${icon} 」で始めてユーザー本人の意見として理由を添える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由あり): 計画どおりには対応しない。理由に沿って対応を決め直す (修正方針の変更、または返信のみ)。返信はユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 - 非同意 (理由なし): 修正も返信もしない。
 - split に同意した指摘は次の順に行う。
@@ -517,7 +518,7 @@ ${decisionLines(items, decisions)}
 
 // セルフレビューは所感を本文に同意した指摘と合わせて PR に投稿 → 修正・push → 投稿した指摘へ返信、までを行う
 // 同意 0 件でも所感は投稿し、セルフレビューした記録を PR に残す
-function buildSelfApplyPrompt(pr, findings, decisions, summary) {
+function buildSelfApplyPrompt(pr, findings, decisions, summary, icon = DEFAULT_CONFIG.agreeIcon) {
   return `レビューボードでユーザーがセルフレビューの各指摘を判断しました。PR ${pr.url} について次を行ってください。これがユーザーの投稿・push の承認であり、追加の確認は不要です。
 
 ## セルフレビューの所感
@@ -530,7 +531,7 @@ ${decisionLines(findings, decisions)}
 1. 上の所感をレビュー本文 (body) にし、同意した指摘と合わせて、このスキルの投稿手順で 1 つのレビューとして PR に投稿する (Approve はしない。event: COMMENT)。理由が書かれていれば本文に反映する。同意が 0 件でも所感だけのレビューを投稿する。
 2. AGENTS.md の規約に従い対象リポジトリの clone で PR ブランチをチェックアウトし、同意した指摘ごとに修正して 1 指摘 1 コミットにする。
 3. push する (force-push はしない)。
-4. 1 で投稿した各指摘コメントに、対応したコミット SHA を含む返信をする (例: 「修正しました ( commit abc123 )」。SHA と括弧の間の半角スペースは GitHub の自動リンクのため残す)。resolve はしない。
+4. 1 で投稿した各指摘コメントに、対応したコミット SHA を含む返信をする (例: 「修正しました ( commit abc123 )」。SHA と括弧の間の半角スペースは GitHub の自動リンクのため残す)。resolve はしない。理由が書かれた同意は、返信の末尾に段落を分け、「${icon} 」で始めてユーザー本人の意見として理由を添える。ユーザーの文章をそのまま貼らず、文脈を補ったうえでチームのレビュー文化に合う口調に整える。
 
 ## ルール
 - 非同意の指摘は投稿も修正もしない。
@@ -1806,7 +1807,8 @@ function enqueueMine(key, mode, triage = null, provider = config.provider) {
 // decisions が無ければ PR 上のコメントを指示として対応する
 function enqueueApply(key, decisions) {
   const entry = state.mine[key];
-  const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions, entry.summary) : buildFixApplyPrompt(entry.pr, entry.findings, decisions);
+  const icon = config.agreeIcon.trim() || DEFAULT_CONFIG.agreeIcon;
+  const prompt = !decisions ? buildCommentApplyPrompt(entry.pr) : entry.mode === 'self' ? buildSelfApplyPrompt(entry.pr, entry.findings, decisions, entry.summary, icon) : buildFixApplyPrompt(entry.pr, entry.findings, decisions, icon);
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     finishApply(key, await runAgent(prompt, { key, cwd: entry.cwd, provider: sessionProvider(entry), resume: entry.sessionId, logName: logName(key, 'apply') }));
