@@ -2238,6 +2238,8 @@ async function loadPlans() {
   if (!url) return renderPlan();
   try {
     const res = await api(`/api/plans?${plQuery()}`);
+    // 待つ間に別のプロジェクトに切り替えたら、古い一覧で今のプロジェクトの記憶を書き換えない
+    if (plProject() !== url) return;
     pl.list = res.plans;
     pl.dir = res.dir;
     if (pl.ranges?.project !== url) loadPlanRanges(url);
@@ -2246,15 +2248,24 @@ async function loadPlans() {
     if (open) await openPlan(open.file, false);
     else pl.doc = null;
   } catch (e) {
+    if (plProject() !== url) return;
     pl.error = e.message;
   }
   renderPlan();
 }
 
+// 続けて計画を選んだとき、最後に選んだものだけを開く
+let plOpenSeq = 0;
 async function openPlan(file, render = true) {
+  const seq = ++plOpenSeq;
+  const url = plProject();
+  const stale = () => seq !== plOpenSeq || plProject() !== url;
   await plFlush();
-  plSet(`file:${plProject()}`, file);
-  pl.doc = await api(`/api/plan?${plQuery({ file })}`);
+  if (stale()) return;
+  plSet(`file:${url}`, file);
+  const doc = await api(`/api/plan?${plQuery({ file })}`);
+  if (stale()) return;
+  pl.doc = doc;
   pl.sel.clear();
   pl.anchor = null;
   pl.bulk = null;
