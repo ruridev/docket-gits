@@ -1463,6 +1463,7 @@ function openReview(key) {
   const findings = e.findings;
 
   const renderDlg = () => {
+    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length;
     dlg.innerHTML = `
@@ -1605,6 +1606,7 @@ function openMine(key) {
   const newCount = hasToolSkill(e.pr.repo, 'fix') ? (e.threads || []).length : 0;
 
   const renderDlg = () => {
+    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length && draft.confirmed;
     dlg.innerHTML = `
@@ -1726,6 +1728,7 @@ function openTriage(key, provider = board.config.provider || 'claude') {
   };
 
   const renderDlg = () => {
+    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
     const { ds, ready, label, text } = tally();
     dlg.innerHTML = `
       <div class="dlg-head">
@@ -1893,6 +1896,7 @@ async function openSettings() {
     </button>`;
   }).join('');
   const renderDlg = () => {
+    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
     dlg.innerHTML = `
       <h2>${tr('settings')}</h2>
       <div class="settings-body">
