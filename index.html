@@ -2440,7 +2440,11 @@ function plFilterHtml() {
   const people = [...new Set(nodes.flatMap((n) => n.assignees))].sort();
   const iss = plHasIssues();
   const f = pl.f;
-  const sel = (key, opts, off) => `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  // 今の計画に無い値で絞っているときも選択肢に出す (出さないと「すべて」に見えたまま全部の行が消える)
+  const sel = (key, opts0, off) => {
+    const opts = f[key] && !opts0.some(([v]) => v === f[key]) ? [[f[key], f[key]], ...opts0] : opts0;
+    return `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  };
   // 最初から全部出すと多いので、「+」で足したものだけ出す
   const shown = (k) => pl.fx.has(k) || f[k];
   const label = (k) => ({ repo: tr('repo'), as: tr('sp.assignee'), st: 'Status', state: 'Open / Closed' })[k] || plFieldLabel(k);
