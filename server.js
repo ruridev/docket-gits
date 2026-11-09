@@ -1283,7 +1283,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     const isNew = !node.issue;
     let issue;
     if (isNew) {
-      issue = await ghRest('POST', `repos/${repo}/issues`, body);
+      issue = await ghRest('POST', `repos/${nodeRepo}/issues`, body);
       node.issue = issue.number;
       plan.status = 'applied';
       created++;
