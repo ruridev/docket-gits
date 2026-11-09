@@ -1139,7 +1139,22 @@ const liveOf = (n, meta) => {
 
 // GitHub で変わった値を計画に取り込む。計画でも変えた項目は衝突として記録し、どちらを使うかは画面で選ぶ
 // GitHub で計画の issue に足された sub issue は、他の計画に入っていなければ計画にも足す
-async function pullPlan(url, file, meta, issues) {
+// 計画の md を読んで書き戻す処理を 1 ファイルずつ順に行う (取り込み中の保存・適用中の取り込みで、古い内容を書き戻さないように)
+const planLocks = new Map();
+function withPlanLock(url, file, fn) {
+  const key = `${url}\n${file}`;
+  const run = (planLocks.get(key) || Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  planLocks.set(key, tail);
+  tail.then(() => { if (planLocks.get(key) === tail) planLocks.delete(key); });
+  return run;
+}
+
+function pullPlan(url, file, meta, issues) {
+  return withPlanLock(url, file, () => pullPlanNow(url, file, meta, issues));
+}
+
+async function pullPlanNow(url, file, meta, issues) {
   const full = planFile(url, file);
   const { plan } = planDoc(url, file);
   const synced = (planSync[full] ||= {});
@@ -1910,7 +1925,7 @@ async function handlePlan(req, res, url) {
     }
     if (req.method === 'PUT' && url.pathname === '/api/plan') {
       if (!body.plan || !Array.isArray(body.plan.nodes)) return send(res, 400, { error: E('planInvalid') });
-      writePlan(project, file, body.plan);
+      await withPlanLock(project, file, () => writePlan(project, file, body.plan));
       return send(res, 200, planDoc(project, file));
     }
     if (req.method === 'POST' && url.pathname === '/api/plan/new') {
@@ -1929,7 +1944,7 @@ async function handlePlan(req, res, url) {
       if (planApplying.has(key)) return send(res, 409, { error: E('planApplying') });
       planApplying.add(key);
       try {
-        return send(res, 200, await applyPlan(project, file, { addToProject: body.addToProject !== false, commit: !!body.commit }));
+        return send(res, 200, await withPlanLock(project, file, () => applyPlan(project, file, { addToProject: body.addToProject !== false, commit: !!body.commit })));
       } finally {
         planApplying.delete(key);
       }
@@ -2158,4 +2173,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

@@ -875,3 +875,17 @@ test('sharedPrompt: 空か、どれかの言語の既定値のままなら画面
   assert.equal(sharedPrompt({ reviewPrompt: 'Review {pr-url}', uiLang: 'ko' }, 'reviewPrompt'), 'Review {pr-url}');
   for (const l of ['ko', 'en']) for (const k of ['reviewPrompt', 'fixPrompt']) assert.match(DEFAULT_PROMPTS[l][k], /\{pr-url\}/);
 });
+
+test('withPlanLock: 同じ計画の処理は順に、失敗しても次を止めない', async () => {
+  const { withPlanLock } = require('./server');
+  const url = 'https://github.com/users/acme/projects/2';
+  const order = [];
+  const slow = (name, ms, fail) => () => new Promise((resolve, reject) => setTimeout(() => { order.push(name); fail ? reject(new Error(name)) : resolve(name); }, ms));
+  const a = withPlanLock(url, 'a.md', slow('a1', 30, true));
+  const b = withPlanLock(url, 'a.md', slow('a2', 1));
+  const c = withPlanLock(url, 'b.md', slow('b1', 5));
+  await assert.rejects(a, /a1/);
+  assert.equal(await b, 'a2');
+  await c;
+  assert.deepEqual(order, ['b1', 'a1', 'a2']);
+});
