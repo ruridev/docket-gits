@@ -1014,19 +1014,30 @@ let loadSeq = 0;
 let loadApplied = 0;
 // 手動更新中はロードマップと同じくスピナーを出して押せなくする
 let refreshing = false;
-async function load(refresh = false) {
+// 前に描いた応答。同じ内容なら描き直さない (5 秒ごとに作り直すとフォーカスや選択中の文字が消える)
+let lastBoardText = '';
+let lastLoadRenderAt = 0;
+// 「○分前」は分単位なので、内容が同じでもこの間隔で描き直す
+const SAME_BOARD_RENDER_MS = 30000;
+// quiet: 定期取得。操作の後の取得は、応答が同じでも描き直す
+async function load(refresh = false, quiet = false) {
   const seq = ++loadSeq;
   try {
     const next = await api(`/api/board${refresh ? '?refresh=1' : ''}`);
     // 「更新」は GitHub の取得を待つ間に後発のポーリングが先に返るが、結果は一番新しいので捨てない
     if (seq < loadApplied && !refresh) return;
     loadApplied = Math.max(loadApplied, seq);
+    const text = JSON.stringify(next);
+    const unchanged = quiet && text === lastBoardText && !board.fetchError && Date.now() - lastLoadRenderAt < SAME_BOARD_RENDER_MS;
+    lastBoardText = text;
     board = next;
     // 共通プロンプトの既定値はサーバーが画面の言語で選ぶので、今の言語を知らせておく
     if (board.config.uiLang !== lang) api('/api/config', { method: 'PUT', body: { uiLang: lang } }).catch(() => {});
+    if (unchanged) return;
   } catch (e) {
     board.fetchError = e.message;
   }
+  lastLoadRenderAt = Date.now();
   render();
 }
 
@@ -3458,7 +3469,7 @@ load().then(enterView);
 // 設定変更を即反映するため毎回間隔を読み直す
 (function poll() {
   // setTimeout は約 24.8 日を超えると 1 ms になるので 1 日で頭打ちにする
-  setTimeout(() => load().finally(poll), Math.min(Math.max(1, Number(board.config.refreshSeconds) || 5), 86400) * 1000);
+  setTimeout(() => load(false, true).finally(poll), Math.min(Math.max(1, Number(board.config.refreshSeconds) || 5), 86400) * 1000);
 })();
 </script>
 </body>
