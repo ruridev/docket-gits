@@ -687,7 +687,16 @@ function periodWindows(today, unit, { past, future }) {
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
+  } catch (err) {
+    if (err.code === 'ENOENT') return fallback;
+    // 手で直して壊した設定などを、次の保存で既定値に上書きしてしまわないよう別名で残す
+    const keep = `${file}.broken-${Date.now()}`;
+    try {
+      fs.copyFileSync(file, keep);
+      console.error(`${file} を読めないため既定値で始めます (元のファイルは ${keep} に残しました): ${err.message}`);
+    } catch {
+      console.error(`${file} を読めないため既定値で始めます: ${err.message}`);
+    }
     return fallback;
   }
 }
