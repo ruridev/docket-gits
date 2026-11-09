@@ -953,7 +953,8 @@ function planDoc(url, file) {
   const changed = flatten(plan.nodes).filter(({ node, parent }) => {
     if (!node.issue) return false;
     const key = syncKey(plan, node);
-    return (synced[key] && synced[key] !== syncSnapshot(node)) || relinked(synced, plan, node, parent);
+    // 「+キー」は作ったが親への付け替え・Project への追加が終わっていない issue (途中で失敗したら次の反映でやり直す)
+    return (synced[key] && synced[key] !== syncSnapshot(node)) || `+${key}` in synced || relinked(synced, plan, node, parent);
   }).map(({ node }) => syncKey(plan, node));
   // GitHub と計画の両方で変わった項目 (計画の値を GitHub に合わせたものは除く)。キー → 項目 → GitHub の値
   const conflicts = {};
@@ -1281,18 +1282,21 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     // 本文を書くのは作るときだけ。GitHub にある issue の本文は GitHub で書き、計画からは上書きしない
     if (!node.issue) body.body = node.body || '';
     const isNew = !node.issue;
+    // 前回、作ったところで止まった issue。作ったときと同じく親に付けて、Project の値は消さない
+    const fresh = isNew || `+${syncKey(plan, node)}` in synced;
     let issue;
     if (isNew) {
       issue = await ghRest('POST', `repos/${nodeRepo}/issues`, body);
       node.issue = issue.number;
       plan.status = 'applied';
+      synced[`+${syncKey(plan, node)}`] = true;
       created++;
       save();
     } else {
       issue = await ghRest('PATCH', `repos/${nodeRepo}/issues/${node.issue}`, body);
       updated++;
     }
-    if (parent?.issue && (isNew || relink)) await ghRest('POST', `repos/${parent.repo || repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id, replace_parent: true });
+    if (parent?.issue && (fresh || relink)) await ghRest('POST', `repos/${parent.repo || repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id, replace_parent: true });
     if (fields) {
       const { addProjectV2ItemById: { item } } = await ghql('mutation($project: ID!, $content: ID!) { addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } } }', { project: fields.id, content: issue.node_id });
       const ids = { project: fields.id, item: item.id };
@@ -1302,16 +1306,17 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
       for (const k of ['start', 'end']) {
         if (!fields[k]) continue;
         if (node[k]) await set(fields[k], node[k], 'Date', 'date');
-        else if (!isNew) await clear(fields[k]);
+        else if (!fresh) await clear(fields[k]);
       }
       if (node.sprint) {
         const it = fields.sprint && fields.iterations.find((i) => i.title === node.sprint);
         if (it) await set(fields.sprint, it.id, 'String', 'iterationId');
         else warnings.push(E('planSprintMissing', { title: node.title, sprint: node.sprint }));
-      } else if (fields.sprint && !isNew) await clear(fields.sprint);
+      } else if (fields.sprint && !fresh) await clear(fields.sprint);
     }
     synced[syncKey(plan, node)] = syncSnapshot(node);
     delete synced[`!${syncKey(plan, node)}`];
+    delete synced[`+${syncKey(plan, node)}`];
     if (parent) synced[`^${syncKey(plan, node)}`] = parentKey(plan, parent);
     save();
   }
