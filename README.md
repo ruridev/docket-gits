@@ -29,14 +29,15 @@ Everything runs on your machine. There are no dependencies to install, and state
 2. Open http://localhost:4649.
 3. Read the notice about the risks and agree to it. Nothing that starts `claude` or `codex` works until you do.
 4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
-   - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line).
+   - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.
    - **Claude settings** / **Codex settings**: pick a review skill per repository, or use the built-in review prompt.
 5. Press **Refresh** in the left sidebar. Review requests show up under **Requested**.
 
 | Environment variable | Default | |
 | --- | --- | --- |
 | `PORT` | `4649` | Port to listen on |
-| `DOCKET_DATA` | `./data` | Where settings, state and logs are stored |
+| `DOCKET_DATA` | `./data` | Where settings, state and logs are stored (created with mode 0700) |
+| `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`) |
 
 If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
 
@@ -124,7 +125,8 @@ Pick the default tool under **Execution & logs**. The arrow next to each button 
 
 - Claude skills are read from `.claude/skills`, Codex skills from `.agents/skills` and `.codex/skills`. Each tool has its own skill settings, and a tool that is not set up is disabled.
 - For Claude, list the commands your skill needs in `--allowedTools` under **Extra claude args**.
-- Codex runs with `codex exec --json`, by default with `--approve-for-me` and network access. Its output has no price, so its cost is shown as unavailable.
+- Review, self-review and **Have the AI plan** must not change anything. For these Claude runs, `--permission-mode` and `--allowedTools` are removed from the extra args and only **Read-only tools** (`readOnlyTools`) are allowed, with Write / Edit denied. Empty `readOnlyTools` uses the extra args as they are. Codex runs them with `--sandbox read-only`. Posting and applying fixes use the full args.
+- Codex runs with `codex exec --json`, by default with `--approve-for-me` and no network access. Its output has no price, so its cost is shown as unavailable.
 
 ### Several GitHub accounts
 
@@ -143,7 +145,11 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **Only configure repositories you trust.** The content of a pull request goes to the AI as it is, so a malicious pull request can try to steer it (prompt injection).
 - **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
 - **AI runs cost money.** Costs are shown per pull request and in total.
-- The server listens on `127.0.0.1` only, and rejects requests from other web pages.
+- The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API has no password or token: any program on this PC that can reach `127.0.0.1` (a container, for example) can use it. Don't run docket-gits on a PC you share with other people.
+- Reviews and plans run with read-only tools (`readOnlyTools`), and no run starts in your home directory or `/`.
+- Claude may edit files only under `<working directory>/.claude/skills` without asking; other protected paths are denied.
+- Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).
+- `data/` is readable only by you (0700, files 0600).
 
 ## Related
 

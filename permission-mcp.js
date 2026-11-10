@@ -2,13 +2,38 @@
 
 // Minimal MCP server (stdio) for claude's --permission-prompt-tool.
 // claude treats .claude/ as a protected path and refuses edits under -p even with allow rules or hooks.
-// To support PRs that fix skills, approve only Edit / Write under .claude/skills and deny everything else as before.
+// To support PRs that fix skills, approve only Edit / Write under <run cwd>/.claude/skills and deny everything else as before.
+// The run's cwd comes in DOCKET_SKILLS_ROOT (set by server.js), so global ~/.claude/skills and other repos stay protected
+const fs = require('node:fs');
 const path = require('node:path');
 
-function approves(toolName, input) {
-  if (!['Edit', 'Write'].includes(toolName) || typeof input?.file_path !== 'string') return false;
-  // Normalize first so paths escaping skills via .. are rejected
-  return /\/\.claude\/skills\/./.test(path.resolve(input.file_path));
+// Real path of p, or of its nearest existing parent plus the rest (for new files)
+function realish(p) {
+  let rest = '';
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(p), rest);
+    } catch (e) {
+      if (e.code !== 'ENOENT' || path.dirname(p) === p) return null;
+      rest = path.join(path.basename(p), rest);
+      p = path.dirname(p);
+    }
+  }
+}
+
+function approves(toolName, input, root = process.env.DOCKET_SKILLS_ROOT) {
+  const file = input?.file_path;
+  if (!['Edit', 'Write'].includes(toolName) || typeof file !== 'string' || !root) return false;
+  // Reject .. outright: symlinks make lexical and real resolution disagree
+  if (file.split(/[\\/]/).includes('..')) return false;
+  let skills;
+  try {
+    skills = fs.realpathSync(path.join(root, '.claude', 'skills'));
+  } catch {
+    return false;
+  }
+  const target = realish(path.resolve(root, file));
+  return !!target && target.startsWith(skills + path.sep);
 }
 
 function main() {

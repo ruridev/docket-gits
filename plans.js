@@ -20,7 +20,8 @@
 
 const MAX_DEPTH = 6;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const REPO = /^[\w.-]+\/[\w.-]+$/;
+// Segments made only of dots (. / ..) are rejected so they can't walk paths
+const REPO = /^(?!\.+\/)[\w.-]+\/(?!\.+$)[\w.-]+$/;
 
 const unquote = (v) => (v.startsWith('"') ? v.slice(1, -1).replace(/\\(["\\])/g, '$1') : v);
 const quote = (v) => (/^[^\s"{}=]+$/.test(v) ? v : `"${v.replace(/(["\\])/g, '\\$1')}"`);

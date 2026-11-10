@@ -177,6 +177,11 @@ test('HTTP flow: default and explicit tools, triage, posting and applying retain
   assert.equal((await wait('mine', 'planned')).provider, 'claude');
   const calls = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(calls.map((c) => c.command), ['codex', 'codex', 'codex', 'codex', 'claude']);
+  // Review, self-review and fix plan are read-only; posting and applying keep the configured args
+  const sandbox = (c) => c.args.slice(c.args.indexOf('exec') + 1, c.args.indexOf('exec') + 3).join(' ');
+  assert.deepEqual(calls.slice(0, 4).map(sandbox), ['--sandbox read-only', 'resume codex-thread', '--sandbox read-only', 'resume codex-thread']);
+  assert.ok(calls[4].args.includes('--disallowedTools'));
+  assert.ok(!calls[4].args.includes('--permission-mode'));
   assert.deepEqual(calls[1].args.slice(calls[1].args.indexOf('exec'), calls[1].args.indexOf('exec') + 3), ['exec', 'resume', 'codex-thread']);
   assert.ok(calls[3].args.includes('codex-thread'));
   for (const [scope, name] of [['.claude', 'docket-claude-review'], ['.agents', 'docket-codex-review']]) {
