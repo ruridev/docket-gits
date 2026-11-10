@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>docket-gits</title>
-<!-- 仮のマスコット (正面の黄色いアヒル)。あとで差し替える予定 -->
+<!-- Placeholder mascot (yellow duck, front view). To be replaced later -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%231f2328' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 9q1-6 7-5M33 9q3-3 6-1'/%3E%3Ccircle cx='32' cy='34' r='24' fill='%23f2c94c'/%3E%3Ccircle cx='23' cy='29' r='3.2' fill='%231f2328' stroke='none'/%3E%3Ccircle cx='41' cy='29' r='3.2' fill='%231f2328' stroke='none'/%3E%3Ccircle cx='24' cy='28' r='1' fill='%23fff' stroke='none'/%3E%3Ccircle cx='42' cy='28' r='1' fill='%23fff' stroke='none'/%3E%3Cellipse cx='32' cy='39' rx='9' ry='5' fill='%23f2994a'/%3E%3Cpath d='M24 39h16'/%3E%3Ccircle cx='15' cy='37' r='3' fill='%23f4a6a6' stroke='none'/%3E%3Ccircle cx='49' cy='37' r='3' fill='%23f4a6a6' stroke='none'/%3E%3C/svg%3E">
 <style>
-  /* テーマ: 色の変数。data-theme が無ければ OS のライト / ダークに合わせる。部品の形 (フォント・角・ボタン) はテーマごとに CSS の最後で変える */
-  /* 画素フォントは英数字・記号・ハングルだけに使う (漢字が無いので、日本語は次の日本語フォントでそろえる) */
+  /* Theme: color variables. Without data-theme, follow the OS light / dark setting. Shape of parts (fonts, corners, buttons) is changed per theme at the end of the CSS */
+  /* Use the pixel font only for Latin letters, digits, symbols and Hangul (it has no kanji, so Japanese falls through to the next Japanese font) */
   @font-face { font-family: "Fusion Pixel KO"; src: url("/fonts/pixel.ttf") format("truetype"); font-display: swap; unicode-range: U+0020-024F, U+2000-2BFF, U+3130-318F, U+AC00-D7A3; }
   :root, :root[data-theme="light"] { --bg: #f6f8fa; --panel: #ffffff; --lane: #eef1f4; --border: #d0d7de; --text: #1f2328; --muted: #656d76; --accent: #0969da; --accent-text: #ffffff; --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --orange: #bc4c00; --merged: var(--merged); --chip: #eaeef2; --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23656d76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
   :root[data-theme="dark"] { --bg: #0d1117; --panel: #161b22; --lane: #10151c; --border: #30363d; --text: #e6edf3; --muted: #8d96a0; --accent: #2f81f7; --accent-text: #ffffff; --ok: #3fb950; --warn: #d29922; --danger: #f85149; --orange: #db6d28; --merged: #a371f7; --chip: #21262d; --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d96a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
@@ -25,10 +25,10 @@
   :where(button:not(:disabled)):hover { background: var(--chip); }
   button.primary:not(:disabled):hover { filter: brightness(1.1); }
   input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
-  /* select と複数選択のドロップダウンで同じ矢印を使う */
+  /* Same arrow for select and the multi-select dropdown */
   select, .ms > summary { appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 10px center; }
   select { padding-right: 28px; }
-  /* 選んだ項目の長さに合わせる (スプリント・期間は閉じているとタイトルだけになる) */
+  /* Fit the width to the selected item (sprint / period shows only the title when closed) */
   select[data-sp-iteration] { field-sizing: content; }
   header { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 30; }
   .user-menu { position: relative; }
@@ -66,25 +66,25 @@
   nav.tabs a.changed::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
   .avatar { width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; }
   .banner { margin: 12px 16px 0; padding: 8px 12px; border: 1px solid var(--danger); color: var(--danger); border-radius: 6px; white-space: pre-wrap; }
-  [hidden] { display: none !important; } /* .board などの display 指定に hidden 属性が負けないように */
+  [hidden] { display: none !important; } /* So the hidden attribute wins over display rules like .board */
   .board-bar { display: flex; gap: 6px; align-items: flex-end; padding: 12px 16px 0; }
   .board-bar > * { white-space: nowrap; flex-shrink: 0; }
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(260px, 1fr); gap: 12px; padding: 8px 16px 16px; overflow-x: auto; }
-  /* ボードは画面の残りの高さでスクロールさせ、ヘッダ・フィルタ・レーン見出しを固定する */
+  /* The board scrolls in the remaining screen height; header, filters and lane headings stay fixed */
   body:has(#board:not([hidden])) { display: flex; flex-direction: column; height: 100dvh; }
   body:has(#board:not([hidden])) .board { flex: 1; min-height: 0; overflow-y: auto; grid-auto-rows: max-content; }
-  /* 設定も画面に収め、保存ボタンとフッタを常に見せる (各ペインは残りの高さでスクロール) */
+  /* Settings also fit the screen, so the save button and footer are always visible (each pane scrolls in the remaining height) */
   body:has(#settings:not([hidden])) { height: 100dvh; }
   #settings:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 16px; }
   #settings .settings-body { flex: 1; min-height: 0; height: auto; }
-  /* メイン・About は内容が短くてもフッタを画面の最下部に置き、長いときはスクロール中も最下部に固定する */
+  /* Main and About: keep the footer at the bottom of the screen even with short content, and pinned to the bottom while scrolling long content */
   body:has(#home:not([hidden])), body:has(#about:not([hidden])) { display: flex; flex-direction: column; min-height: 100dvh; }
   #home, #about { width: 100%; box-sizing: border-box; }
   .site-foot { margin-top: auto; position: sticky; bottom: 0; }
   .lane { background: var(--lane); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px 8px; min-height: 60vh; }
-  /* 見出しはレーンの枠に重ねて固定する。スクロール中も角丸の枠に見えるよう、
-     角の外側は背景色で塗り (h2 の background)、枠と角丸は ::before で描く。
-     top はボードの上 padding 分 (8px) を詰めてカードが見出しの上にのぞかないようにする */
+  /* Lane headings stick on top of the lane frame. To keep the rounded frame look while scrolling,
+     paint outside the corners with the background color (h2 background) and draw the frame and corners with ::before.
+     top pulls up by the board top padding (8px) so cards do not peek above the heading */
   .lane h2 { font-size: 14px; margin: -1px -9px 0; padding: 13px 13px 8px; display: flex; gap: 8px; align-items: center; position: sticky; top: -8px; z-index: 1; background: var(--bg); }
   .lane h2::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--lane); border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; }
   .lane h2 .count { background: var(--chip); border-radius: 10px; padding: 0 8px; font-size: 12px; color: var(--muted); }
@@ -144,7 +144,7 @@
   body.hide-draft .card .chip.draft, body.hide-provider .card .chip.provider, body.hide-labels .card .chip.label, body.hide-removed .card .chip.off { display: none; }
   #display-dlg label { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
   #display-dlg { width: min(420px, calc(100vw - 32px)); }
-  /* 表示設定: 上は設定がそのまま効く見本カード、各項目の右は実物と同じ見た目の見本 */
+  /* Display settings: the sample card on top reflects the settings directly; the sample to the right of each item looks like the real thing */
   .cd-preview { margin-bottom: 8px; }
   .cd-preview .card { margin: 0; }
   .cd-preview .cd-hl { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
@@ -195,12 +195,12 @@
   .settings-pane h3 { margin: 0 0 16px; font-size: 16px; }
   .tip { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
   .tip summary { cursor: pointer; font-weight: 600; }
-  /* Tip の説明図。実際の描画関数に架空のデータを渡して描く (操作はできない) */
+  /* Tip illustrations. Drawn by passing fake data to the real render functions (not interactive) */
   .tip-shot { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: auto; max-height: 420px; }
   .tip-shot .lane { min-height: 0; }
   .tip-shot .cards { display: grid; grid-template-columns: repeat(2, 280px); gap: 12px; padding: 12px; }
   #consent-dlg { width: min(640px, calc(100vw - 32px)); }
-  /* About: この画面を作った理由と考え方 */
+  /* About: why this screen was built and how it is meant to be used */
   .about { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; font-size: 15px; line-height: 1.75; }
   .about h2 { font-size: 24px; margin: 0 0 8px; }
   .about h3 { font-size: 18px; margin: 36px 0 8px; padding-top: 20px; border-top: 1px solid var(--border); }
@@ -213,7 +213,7 @@
   .about-flow .human { border: 2px solid var(--ok); font-weight: 600; }
   .about-flow i { font-style: normal; color: var(--muted); }
   .site-foot { padding: 6px 16px; text-align: right; font-size: 12px; border-top: 1px solid var(--border); background: var(--panel); color: var(--muted); }
-  /* どの画面でもフッタを画面の下に出す (短いページは下端、長いページはスクロールしても常に見える) */
+  /* Show the footer at the bottom on every screen (bottom edge for short pages, always visible while scrolling long ones) */
   body { display: flex; flex-direction: column; min-height: 100dvh; }
   body > main { width: 100%; }
   .site-foot { margin-top: auto; position: sticky; bottom: 0; }
@@ -238,11 +238,11 @@
   .consent .star svg { display: block; width: 26px; height: 26px; }
   .consent .star svg:nth-child(2) { transform: rotate(-10deg) translateY(-2px); }
   .consent .star svg:nth-child(3) { transform: rotate(12deg); }
-  /* 表示方法の切り替えはボタンをくっつけて 1 つの部品に見せる */
+  /* Join the view-mode toggle buttons so they look like one control */
   .seg { display: inline-flex; }
   .seg button:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
   .seg button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-  /* 複数選択のドロップダウン (multiSelect) */
+  /* Multi-select dropdown (multiSelect) */
   .ms { position: relative; }
   .ms-field { display: flex; flex-direction: column; gap: 2px; }
   .ms-label { font-size: 11px; font-weight: 600; color: var(--muted); }
@@ -265,7 +265,7 @@
   .refetch:hover:not(:disabled) .hint { display: inline; }
   .st-blue { --c: #0969da; } .st-green { --c: #1a7f37; } .st-yellow { --c: #9a6700; } .st-orange { --c: #bc4c00; }
   .st-red { --c: #cf222e; } .st-pink { --c: #bf3989; } .st-purple { --c: var(--merged); }
-  /* 計画 (Draft)。ブラウザの高さいっぱいに使い、中の一覧・タイムライン・詳細だけをスクロールさせる */
+  /* Plan (Draft). Uses the full browser height; only the list, timeline and details inside scroll */
   #plan { display: flex; gap: 12px; padding: 12px 16px; height: calc(100dvh - var(--pl-top, 58px) - var(--pl-foot, 31px)); min-height: 360px; }
   #plan[hidden] { display: none; }
   .pl-side { flex: none; width: 220px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 0; }
@@ -285,12 +285,12 @@
   .pl-item.on { background: var(--chip); font-weight: 600; }
   .pl-side .ms-label { display: block; margin-bottom: 2px; }
   .pl-none { font-size: 12px; color: var(--muted); margin: 4px; }
-  /* レビューする・受けるのフィルタ。枠はロードマップの .pl-side を使う */
+  /* Filters for reviewing / being reviewed. The frame reuses the roadmap .pl-side */
   .board-view { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px 16px 16px; }
   .board-view .board { min-width: 0; padding: 0; }
   .board-view .board-bar { flex-direction: column; align-items: stretch; padding: 0; }
   .pl-side .refetch { align-self: flex-start; padding: 0; }
-  /* 表示・フィルターは見出しで開閉する。フィルターは場所を取るので既定で畳み、絞り込み中は見出しの点で分かるようにする */
+  /* Display and Filters open/close by their heading. Filters take space so they start collapsed; a dot on the heading shows an active filter */
   .side-fold > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; }
   .side-fold > summary::-webkit-details-marker { display: none; }
   .side-fold > summary::after { content: '▸'; margin-left: auto; font-size: 11px; color: var(--muted); }
@@ -301,11 +301,11 @@
   .pl-side.filtering .side-dot { display: block; }
   .pl-side .seg { display: flex; }
   .pl-side .seg button { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
-  /* 中身だけ描き直す部分。枠は持たず、中身をサイドバーに直接並べる */
+  /* Part where only the content is redrawn. No frame of its own; content sits directly in the sidebar */
   .pl-side-part { display: contents; }
   #plan .pl-side { overflow-y: auto; }
   #plan .pl-list { flex: 1 1 120px; min-height: 120px; }
-  /* セクションの区切りは枠の端まで伸ばし、見出しは項目のラベルより強くして階層を見せる */
+  /* Section dividers extend to the frame edges, and headings are stronger than item labels to show the hierarchy */
   .side-sec { border-top: 1px solid var(--border); margin: 6px -10px 0; padding: 12px 10px 0; }
   .pl-side-top .ms-label, .pl-side .ms-label.side-sec, .side-fold > summary .ms-label { font-size: 12px; font-weight: 700; color: var(--text); }
   .board-filters { display: flex; flex-direction: column; gap: 10px; }
@@ -425,7 +425,7 @@
   #plan-dlg .pl-kind { margin-bottom: 12px; }
   .toast.ok { background: var(--ok); }
   @media (max-width: 700px) {
-    /* 狭い画面ではフィルタやボタンを折り返して横にはみ出させない */
+    /* On narrow screens, wrap filters and buttons instead of overflowing horizontally */
     .board-bar, header { flex-wrap: wrap; }
     .board { grid-auto-columns: 85vw; }
     .board-view { flex-direction: column; }
@@ -437,7 +437,7 @@
     .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .settings-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
   }
-  /* 設定の「画面テーマ」: 各テーマの見本カード */
+  /* Settings "Screen theme": sample card for each theme */
   .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 8px 0 16px; }
   .theme-card { position: relative; display: flex; flex-direction: column; text-align: left; padding: 8px; border-radius: 8px; background: var(--panel); }
   .theme-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -454,7 +454,7 @@
   .theme-prev .t1 { height: 6px; width: 70%; border-radius: 3px; }
   .theme-prev .t2 { height: 5px; width: 50%; border-radius: 3px; }
   .theme-prev .bt { margin-top: auto; height: 10px; width: 44%; border-radius: 3px; }
-  /* テーマごとの部品の形。基本の規則より後に置く */
+  /* Per-theme shape of parts. Must come after the base rules */
   :root[data-theme="green"] body { font-family: "IBM Plex Sans KR", -apple-system, "Segoe UI", sans-serif; }
   :root[data-theme="green"] body header { background: var(--bg); border-bottom-color: var(--border); }
   :root[data-theme="green"] body :is(header h1, nav.tabs a, .lane h2, .home h2, .dlg-head h3, .settings-pane h3, .settings-pane h4, .settings-group-title, .about h2, .about h3, .page > h2, .tip summary) { font-family: "Barlow Condensed", "IBM Plex Sans KR", sans-serif; text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
@@ -507,13 +507,13 @@
   :root[data-theme="g6"] body .theme-card.on { outline: 2px solid var(--text); outline-offset: -2px; }
 </style>
 <script>
-// テーマは描画前に当てる (ちらつかないように)。保存が無い・不明な値なら OS のライト / ダークに合わせる
+// Apply the theme before rendering (avoids flicker). If nothing is saved or the value is unknown, follow the OS light / dark setting
 const UI_THEMES = ['light', 'dark', 'green', 'g6'];
 const THEME_KEY = 'docket-theme';
 function applyTheme(t) {
   if (UI_THEMES.includes(t)) document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
-  // 緑のテーマだけ Google Fonts を使う。選んだときに初めて読み込む
+  // Only the green theme uses Google Fonts. Loaded the first time it is selected
   if (t === 'green' && !document.getElementById('theme-fonts')) {
     const link = document.createElement('link');
     link.id = 'theme-fonts';
@@ -593,9 +593,9 @@ applyTheme(savedTheme());
 </dialog>
 
 <script>
-// ---------- 多言語 ----------
-// 画面の言語はブラウザごとに保存する (未設定ならブラウザの言語)。切り替えたら再読み込みする
-// 値は HTML としてそのまま入れるので、ユーザーデータは呼び出し側でエスケープして params に渡す
+// ---------- i18n ----------
+// The UI language is saved per browser (defaults to the browser language). Switching reloads the page
+// Values are inserted as raw HTML, so callers must escape user data before passing it in params
 const LANGS = { ja: '日本語', ko: '한국어', en: 'English' };
 const browserLang = () => {
   const nav = (navigator.language || '').slice(0, 2);
@@ -621,7 +621,7 @@ const I18N = {
     'about.html': '<h2>docket-gits について</h2><p class="lead">AI エージェントと一緒にコードをレビューし、受けた指摘を直す。それを 1 つの画面で。ただし、最後に判断するのはいつも人間です。</p><h3>AI は速い。だからこそ気をつけたい</h3><p>AI エージェントでコードを書き、レビューすることはすでに日常になり、生産性は驚くほど上がりました。AI の進化の速さを考えると、この流れはこれからさらに加速していくはずです。</p><p>ただ、便利になるほど気になることが 1 つあります。人が少しずつ怠けてしまうことです。「AI がうまくやってくれただろう」と中身を見ずに Approve を押すようになると、作っているサービスが本当に望んだものになっているのか、だんだん誰にも分からなくなっていきます。</p><p>コーディングスタイルのようなことは、もう AI に任せて構いません。大事なのは<b>自分の意図がコードにきちんと込められているか</b>です。それが抜けていれば、AI でどれだけ早く完成させても意味がありません。</p><blockquote>仕事は AI に任せられても、責任までは任せられない。コードと成果物の最終的な責任は人間にある。</blockquote><h3>人と AI が一緒にレビューしたことを、当たり前に保証する</h3><p>そこで docket-gits では、AI に仕事を渡すところに、あえて人が判断するステップを入れています。</p><div class="about-flow"><b>🔍 レビューする側</b><span>🤖 AI が一次レビュー</span><i>→</i><span class="human">👤 コードを読み、指摘ごとに同意 / 非同意 (+意見)</span><i>→</i><span>💬 PR に投稿</span></div><div class="about-flow"><b>✍️ レビューを受ける側</b><span>💬 指摘を受ける</span><i>→</i><span class="human">👤 指摘の妥当性に同意 / 非同意 (+ 理由) / 対象外</span><i>→</i><span>🤖 AI が修正方針・反論を提案</span><i>→</i><span class="human">👤 方針と反論に同意 / 非同意</span><i>→</i><span>🤖 AI が修正を反映</span></div><ul><li><b>レビューする側</b>: 一次レビューは AI に任せます。ただし投稿の前に「コードを読みました」のチェックボックスで、人が一度は自分でコードを読むようにしています。AI の指摘を採用するかどうかも 1 件ずつ人が「同意 / 非同意」で決め、必要なら自分の意見を添えます。</li><li><b>レビューを受ける側</b>: 受けた指摘を直す手間は AI に任せます。ただし、AI の方針に引きずられないよう、その指摘がそもそも妥当かは AI を動かす前に人が判断します。AI はその判断に沿って修正方針を出し、人の判断が誤りだと考えれば反論します。最後にどうするかを決めるのも人です。</li></ul><div data-shot="findings"></div><div data-shot="triage"></div><p>こうすることで、レビューする側もされる側も、相手のコメントの裏に人の判断があると分かります。だからお互いの意見を、より安心して信頼できるようになります。</p><h3>疲れないために: 画面設計の原則</h3><p>AI エージェントのおかげでレビューも修正も楽になりました。それでも、その周りの細かな作業がかえって疲れを溜めていました。docket-gits の画面は、その疲れを減らすことを目指しています。</p><ul><li><b>ブラウザのタブを無限に開かない</b>: レビュー依頼・自分の PR・ロードマップを 1 つの画面で見られます。GitHub のリンクもいつも同じ 1 つのタブで開きます。</li><li><b>ツールを行き来しない</b>: ブラウザで PR を見て、ターミナルに移って AI エージェントに skill の実行を指示して、また戻って……という往復を、ボタン 1 つにまとめました。</li><li><b>新しい情報を探しに行かない</b>: GitHub Notifications を定期的に確認しなくても、新しいレビュー依頼や指摘がボードに自動で入ってきます。</li></ul><div data-shot="review"></div><blockquote>スピードは AI に。判断と責任は人間に。</blockquote>',
     'tips.html': '<summary>GitHub のページを右側に固定して開く</summary><p>ボード内の PR / Issue リンクはすべて同じ 1 つのタブ (docket-viewer) で開きます。何度クリックしてもタブは増えません。</p><ol><li>ボード内のリンクを 1 つクリックし、GitHub のタブを開きます。</li><li>ブラウザの分割表示 (Chrome の分割表示、Edge の分割画面、Arc の Split View など) で、ボードを左、開いた GitHub タブを右に並べます。</li><li>以降はリンクをクリックするたびに右側の表示だけが切り替わります。</li></ol><p class="muted">このボードより前に開いた GitHub タブは再利用されません。右側のタブを閉じた場合は、次のクリックで新しく開くので手順 2 からやり直してください。</p>',
     'tips.lanes': '<summary>レーンの見方</summary><p><b>レビューする</b> タブ (他の人の PR)</p><ul><li>レビュー依頼: 自分にレビューが依頼された PR。「レビューする」で AI のレビューを始めます。</li><li>レビュー中: AI がレビュー中、または順番待ち。</li><li>判断待ち: 指摘が出て、自分の判断を待っています。カードを開いて確認してください。</li><li>完了: PR に投稿した、またはスキップしたもの。自分の指摘に作成者が全部返信・解決すると、再レビューできるようレビュー依頼に戻ります。</li><li>カードはドラッグでも動かせます。レビュー依頼 → レビュー中でレビュー開始、レビュー中 → レビュー依頼で中止、レビュー依頼・判断待ち → 完了でスキップ、完了 → レビュー中で再レビューです。</li></ul><p><b>レビューを受ける</b> タブ (自分の PR)</p><ul><li>レビュー待ち: レビューを待っている PR。Draft もここに出て、下の方に並びます。</li><li>指摘あり: 未解決スレッドのうち、最後の発言が自分でないものがある PR (対象外にしたものは、新しい発言が付くまで除きます)。</li><li>実行中: セルフレビューや指摘対応が進行中。</li><li>判断待ち: セルフレビューの指摘や対応計画が出て、自分の判断を待っています。</li></ul><p>どちらのタブでも、カードはドラッグでどのレーンへも移せます (実行中のものを除く)。レビュー中へ移すとレビューを始め、完了へ移すとスキップ、判断待ちから実行中へ移すと PR 上のコメントどおりに対応します。それ以外は表示するレーンだけが変わり、状態・未対応の指摘・Draft・PR の更新 (コミットやコメント) が変わると自動のレーンに戻ります。</p>', 'tips.review': '<summary>指摘を判断して投稿する</summary><ol><li>カードを開くと指摘が 1 件ずつ並びます。それぞれ「同意」か「同意しない」を選び、必要ならメモを書きます。レビューするタブでは、投稿しない指摘を「対象外」にもできます。</li><li>レビューするタブ: 同意した指摘だけが PR にコメントとして投稿されます。同意しない指摘も理由を書けば <span data-disagree-icon>🙅💭</span> 付きで投稿されます。Approve するかもここで選びます。</li><li>レビューを受けるタブ: セルフレビューは同意した指摘を投稿し、修正・push・返信まで進めます。「指摘に対応」は AI を動かす前に、まず各指摘に「同意 / 非同意 (理由必須) / 対象外」を選びます (下の図)。AI は同意した指摘の対応計画と、非同意の指摘への反論か返信案を返すので、それを見てもう一度判断すると、修正・push・返信します。</li><li>「コードを読みました」は AI のレビューをそのまま出さないためのチェックです。自分でコードを読んでからチェックしてください。</li></ol><p class="muted">選んだ内容はブラウザに保存されるので、閉じて開き直しても残っています。投稿・Approve・再レビューなどのボタンは誤操作防止のため 2 回押すと実行されます。</p>', 'tips.buttons': '<summary>サイドバーのボタン</summary><ul><li>スタック順: 同じレーンの中でスタック PR を 親 → 子 → 孫 の順に並べます。もう一度押すと更新順に戻ります。</li><li>フィルター: 「+」でリポジトリ・作成者 (レビューするタブのみ)・Approve 済み・マージ済み (レビューするタブのみ) の絞り込みを足します。Approve 済みとマージ済みは押すたびに すべて → のみ → 除外 と切り替わります。マージ済みは最初から除外です。</li><li>保管庫: カード右上のボタンで、今は見なくていい PR をボードから外します。「保管庫」ボタンで保管した PR だけを表示し、同じ位置のボタンでボードに戻せます。保管した PR はタブの件数やホームの集計に入りません。ブラウザごとに保存します。</li><li>レーン編集: レーンをドラッグして順番を変えたり、名前を変えたりできます。「保存」を押すと反映されます。</li><li>表示設定: カードに出す項目 (ブランチ名、issue、スタック、トークン使用量、レビュアー画像、Draft・AI エージェント・ラベル・依頼解除済みの印など) を選びます。見本のカードで見え方を確かめられます。</li><li>サイドバーの一番上の更新ボタン:GitHub からすぐに取り直します。</li></ul>', 'tips.home': '<summary>ホーム画面</summary><ul><li>左上の「docket-gits」を押すとホーム画面に戻ります。</li><li>残りのレビュー依頼・判断待ち・未対応の指摘・AI の費用と、各タブのレーンごとの件数をまとめて見られます。数字を押すとそのタブへ移ります。</li><li>すでに取得したデータだけで集計するので、開いても GitHub への取得や AI の実行は起きません。AI の費用と使用量は、ボードに残っている PR の分だけの合計です。</li></ul>', 'tips.tools': '<summary>Claude と Codex の使い分け</summary><ul><li>設定の「Agent 関連設定」→「実行・ログ」の「既定の作業ツール」で、ボタン本体を押したときに使うツールを選びます。</li><li>ボタン右の矢印から、その実行だけ Claude / Codex を選べます。既定値は変わりません。</li><li>スキル・モデル・追加引数はツールごとに「Claude の設定」「Codex の設定」で別々に設定します。スキルが未設定のツールはメニューで選べず、もう一方の設定を代わりに使うこともありません。</li><li>投稿や修正は、最初にレビュー・計画を作ったツールのセッションを再開して行います。途中で既定値を変えても切り替わりません。</li></ul>', 'tips.roadmap': '<summary>ロードマップ画面</summary><ul><li>設定の「ロードマップ画面の GitHub Projects」にプロジェクトの URL を入れると、計画 (issue のツリー) を md ファイルで作れます。</li><li>左の「スプリント · 期間」を選ぶと、そこに issue が掛かる計画だけを出し、タイムラインもその範囲で絞ります。</li><li>サイドバーでリポジトリ・担当者・Status・Open / Closed で絞れます (Status と Open / Closed は GitHub にある issue だけ)。項目は「+」で足します (ラベル・マイルストーン・スプリントもあります)。</li><li>行の「+」から sub issue を足すか、既存の issue を sub issue ごと取り込めます。</li><li>Status・PR は 24 時間キャッシュされます。すぐに最新を見たいときは取り直しボタンを押してください。</li><li>GitHub にまだ無い issue は「GitHub に適用」で親 → 子の順にまとめて作ります。適用した後に計画で変えた内容は「変更を反映」で GitHub に送ります。</li><li>GitHub から読み直すと、GitHub 側で変わったタイトル・担当者・日付なども計画に取り込みます。計画と GitHub の両方で変わった項目は「衝突」になり、詳細でどちらの値にするかを選びます。</li><li>GitHub に作った issue は計画から消せません。GitHub 側で閉じてください。</li></ul>', 'tips.settings': '<summary>設定のコツ</summary><ul><li>リポジトリとスキルの対応の引数テンプレートでは {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name} が使えます。</li><li>GitHub 自動取得の時間帯の外では自動で取得しません。更新ボタンで手動取得はいつでもできます。</li><li>同時実行数を超えたレビューは「待機中」として順番に実行されます。</li><li>各設定画面の「すべて既定に戻す」で初期状態に戻せます。</li><li>設定画面の「ファイルに書き出す」で設定を docket-settings.json に保存し、「ファイルから読み込む」で別の環境に取り込めます。読み込んだ後に「保存」を押すと反映されます。</li></ul>', 'tips.trouble': '<summary>うまくいかないとき</summary><ul><li>レビュー依頼が出ない: 一覧に出るのは自分個人宛ての依頼だけです。チーム宛ての依頼は出ません。設定の「PR 作成者」に名前を入れている場合は、その作成者の PR だけが出ます。</li><li>ボタンの代わりに「スキル未設定」と出る: 設定の「Claude の設定」「Codex の設定」で、そのリポジトリのスキル (または「設定のプロンプト」) を選んでください。</li><li>「GitHub の取得に失敗しました」と出る: ターミナルで gh auth status を実行し、ログイン状態を確認してください。</li><li>一覧が古いまま: 自動取得の時間帯 (既定 9–19 時) の外では自動で取得しません。サイドバーの一番上の更新ボタンを押してください。</li><li>GitHub アカウントを替えたい: 実行中の作業がないことを確認してから、ターミナルで gh auth switch を実行し、更新ボタンを押します。右上のアカウント表示が替わったことを確認してください。</li><li>起動時に spawn claude ENOENT と出る: claude / codex / gh のあるディレクトリが PATH に入っていません。PATH に含めて起動し直してください。</li></ul>', 'tips.cost': '<summary>トークン使用量とログ</summary><ul><li>カードのトークン使用量は、その PR で使ったトークン (キャッシュ含む) と費用の累計です。「表示設定」でオン / オフできます。</li><li>Codex の実行はトークンだけを計上し、費用は「費用不明」と表示します。</li><li>実行中のカードの「ログ」で AI の出力を見られます。</li><li>終わった実行のログは設定の「ログ保持日数」だけ残り、毎日自動で削除されます。設定画面からすぐに削除することもできます。</li></ul>',
-    // README がこの英語のレーン名で説明しているので、日本語でも英語のままにする
+    // The README describes lanes by these English names, so keep them in English for Japanese too
     'lane.requested': 'レビュー依頼', 'lane.reviewing': 'レビュー中', 'lane.reviewed': '判断待ち', 'lane.done': '完了',
     'lane.mine': 'レビュー待ち', 'lane.pending': '指摘あり', 'lane.running': '実行中', 'lane.planned': '判断待ち',
         'ago.min': '{n}分前', 'ago.hour': '{n}時間前', 'ago.day': '{n}日前', fetchedAgo: '{ago}に更新', startedAgo: '({ago}に開始)',
@@ -885,14 +885,14 @@ const I18N = {
     'err.restartApplyInterrupted': 'Applying was interrupted by a server restart. Check the PR before retrying',
   },
 };
-// {name} を params で埋める。{pr-number} のように \w 以外を含むものは置き換えない
+// Fill {name} from params. Placeholders with non-\w characters like {pr-number} are left as is
 const tr = (key, params = {}) => (I18N[lang][key] ?? I18N.ja[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => (k in params ? params[k] : m));
-// サーバーのエラーは { code, params } (旧データや GitHub・claude 由来は文字列)
+// Server errors are { code, params } (plain strings for old data or errors from GitHub / claude)
 const errText = (err) => (err && typeof err === 'object' ? tr(`err.${err.code}`, err.params) : err || '');
 document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = tr(el.dataset.i18n)));
 document.querySelectorAll('[data-i18n-title]').forEach((el) => (el.title = tr(el.dataset.i18nTitle)));
 document.querySelectorAll('[data-i18n-html]').forEach((el) => (el.innerHTML = tr(el.dataset.i18nHtml)));
-// 「はじめる前に」の挿絵。色は CSS (.art) 側でテーマに合わせる
+// Illustration for "Before you start". Colors follow the theme via CSS (.art)
 const ROBOT_HEAD = '<line x1="32" y1="9" x2="32" y2="4"/><circle class="a" cx="32" cy="3.5" r="2.5"/><rect class="b" x="20" y="9" width="24" height="18" rx="6"/>';
 const ART = {
   house: '<path class="d" d="M6 30 32 8l26 22"/><rect class="b" x="13" y="27" width="38" height="30" rx="2"/><path d="M27 40v-4a5 5 0 0 1 10 0v4"/><rect class="w" x="24" y="40" width="16" height="13" rx="2"/><circle class="k" cx="32" cy="46" r="1.8"/><path class="h" d="M50 14c-2-3-6-1-4 2l4 4 4-4c2-3-2-5-4-2z"/>',
@@ -903,7 +903,7 @@ const ART = {
   cookie: `${ROBOT_HEAD}<circle class="k" cx="27" cy="16" r="2"/><circle class="k" cx="37" cy="16" r="2"/><ellipse class="k" cx="32" cy="22.5" rx="4" ry="3"/><circle class="w" cx="46" cy="40" r="12"/><circle class="k" cx="42" cy="36" r="1.5"/><circle class="k" cx="49" cy="35" r="1.5"/><circle class="k" cx="45" cy="44" r="1.5"/><circle class="k" cx="51" cy="43" r="1.5"/><path class="c" d="M34 30l2 2M30 34l1 2M38 36l1 1"/><rect class="b" x="14" y="30" width="16" height="14" rx="3"/><path d="M30 36l6 2"/>`,
 };
 document.querySelectorAll('.consent [data-art]').forEach((el) => el.insertAdjacentHTML('afterbegin', `<svg class="art" viewBox="0 0 64 64" aria-hidden="true">${ART[el.dataset.art]}</svg>`));
-// 一番大事な項目の目印。線を少しずらして重ね、鉛筆で描いたように見せる
+// Marker for the most important item. Overlaps slightly offset strokes to look hand-drawn in pencil
 const STAR = '<svg viewBox="0 0 40 40" aria-hidden="true"><path fill="#f7d84a" opacity=".55" d="M20 4l4.6 10.2 11 1.1-8.3 7.4 2.5 10.9L20 28l-9.7 5.6 2.4-10.9-8.2-7.5 11-1z"/><g fill="none" stroke="#d9a400" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.3 3.6l4.4 10.5 11.2 1-8.5 7.5 2.7 11-9.9-5.8-9.6 5.9 2.3-11.1-8.4-7.3 11.2-1.2z"/><path d="M19.6 4.8l4.9 9.6 10.6 1.5-8 7.1 2.2 10.6-9.6-5.4-9.9 5.2 2.6-10.6-8-7.6 10.7-.6z" opacity=".6"/><path d="M15 17l8-2M14 21l12-4M15 25l12-4M18 28l7-3" opacity=".45" stroke-width="1.1"/></g></svg>';
 document.querySelectorAll('.consent .star').forEach((el) => (el.innerHTML = STAR.repeat(3)));
 document.querySelectorAll('.consent li > div').forEach((el) => el.insertAdjacentHTML('beforeend', `<label class="got"><input type="checkbox"> ${tr('consent.got')}</label>`));
@@ -914,16 +914,16 @@ const LANES = [
   { id: 'reviewed', label: tr('lane.reviewed'), color: 'var(--accent)', statuses: ['reviewed', 'posting'] },
   { id: 'commented', label: tr('lane.done'), color: 'var(--merged)', statuses: ['commented'] },
 ];
-// レビューを受ける (自分の PR)
+// Being reviewed (my PRs)
 const MINE_LANES = [
-  // Draft も同じレーンに出す (カードに Draft の印を付け、スタック順でなければレーンの下へ寄せる)
+  // Drafts go in the same lane too (marked as Draft on the card, and moved to the bottom of the lane unless sorted by stack)
   { id: 'mine', label: tr('lane.mine'), color: 'var(--ok)', match: (e) => e.status === 'idle' && !e.pending, badge: true },
   { id: 'pending', label: tr('lane.pending'), color: 'var(--danger)', match: (e) => e.status === 'idle' && e.pending > 0, badge: true },
   { id: 'running', label: tr('lane.running'), color: 'var(--warn)', match: (e) => ['queued', 'running', 'applying'].includes(e.status), badge: true },
   { id: 'planned', label: tr('lane.planned'), color: 'var(--accent)', match: (e) => e.status === 'planned', badge: true },
 ];
-// レーンの並び順と名前はブラウザごとに保存する。「レーン編集」モード中だけドラッグで並び替え・名前の変更ができる
-// 名前は表示だけの上書きで、key は `${view}:${lane id}`。無ければ既定の名前
+// Lane order and names are saved per browser. Drag to reorder and rename only in "Edit lanes" mode
+// Names only override the display; key is `${view}:${lane id}`. Falls back to the default name
 const LANE_NAMES_KEY = 'docket-lane-names';
 const laneNames = () => { try { return JSON.parse(localStorage.getItem(LANE_NAMES_KEY)) || {}; } catch { return {}; } };
 const saveLaneNames = (names) => {
@@ -938,24 +938,24 @@ function lanesFor(v) {
   const rank = (l) => (order.includes(l.id) ? order.indexOf(l.id) : order.length + lanes.indexOf(l));
   return [...lanes].sort((a, b) => rank(a) - rank(b));
 }
-// 手で移したカードは、変更があるまでそのレーンに出す (manualLane はサーバーが判定する)
+// A card moved by hand stays in that lane until something changes (manualLane is decided by the server)
 const laneMatch = (lane) => (p) => (p.manualLane ? p.manualLane === lane.id : lane.match ? lane.match(p) : lane.statuses.includes(p.status));
-let laneEdit = null; // 編集中の lane id 配列
-let laneNameEdit = null; // 編集中のレーン名 (laneNames と同じ形)
-// リポジトリ・作成者の絞り込み (非表示にしたもの) もタブごと・ブラウザごとに保存する。kind は multiSelect の key
+let laneEdit = null; // lane id array being edited
+let laneNameEdit = null; // Lane names being edited (same shape as laneNames)
+// Repository / author filters (the hidden ones) are also saved per tab and per browser. kind is the multiSelect key
 const hiddenKey = (kind, v) => `docket-hidden-${kind}:${v}`;
 function hiddenOf(kind, v) {
   try { return JSON.parse(localStorage.getItem(hiddenKey(kind, v))) || []; } catch { return []; }
 }
-// 保管庫: 今は見なくていい PR をボードから外しておく。タブごと・ブラウザごとに repo#number を保存する
+// Archive: takes PRs you do not need to watch now off the board. Saves repo#number per tab and per browser
 const archivedOf = (v) => { try { return JSON.parse(localStorage.getItem(`docket-archived:${v}`)) || []; } catch { return []; } };
-// 保管庫に入れていないものだけ (タブの件数やホームの集計に使う)
+// Only items not in the archive (used for tab counts and home totals)
 const unarchived = (v) => { const a = archivedOf(v); return (v === 'receive' ? board.mine : board.prs).filter((p) => !a.includes(prId(p.pr))); };
-let archiveView = false; // 保管した PR だけを表示中
+let archiveView = false; // Showing only archived PRs
 const ARCH_ICON = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="3.5" rx="1"/><path d="M2.5 6v6.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6M6.5 9h3"/></svg>';
 const UNARCH_ICON = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10V2.5M5 5.5l3-3 3 3M2.5 9.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3"/></svg>';
 let laneDrag = null;
-// ロードマップは計画の画面にまとめた。以前のロードマップ (スプリント別・期間別など) のブックマークはそちらへ
+// The roadmap moved into the plan screen. Redirect old roadmap bookmarks (by sprint, by period, etc.) there
 const OLD_ROADMAP = ['#sprint', '#period', '#milestone', '#repo'];
 if (OLD_ROADMAP.includes(location.hash)) location.replace('#plan');
 const PAGES = ['about', 'tips', 'settings'];
@@ -964,12 +964,12 @@ const REVIEW_ICON = { APPROVED: '✅', CHANGES_REQUESTED: '🔴', COMMENTED: '�
 
 let board = { prs: [], mine: [], config: { repos: {} } };
 let openKey = null;
-// 表示中でないタブの status 変化をタブ名の赤丸で知らせる (メモリ保持のみ)
+// Flag status changes in tabs not being shown with a red dot on the tab name (memory only)
 const seenSig = {};
 const tabSig = (v) => (v === 'receive' ? board.mine : board.prs).map((p) => `${p.key}:${p.status}`).sort().join();
 
-// 内蔵ブラウザ (Electron など) では confirm()/alert() が表示されず即 false になるため、
-// 確認は「もう一度押す」方式、通知はトーストで行う
+// Embedded browsers (Electron etc.) do not show confirm()/alert() and return false immediately, so
+// confirmations use "press again" and notifications use toasts
 const CONFIRM_MS = 5000;
 let armed = null;
 function confirmTwice(btn, id, label) {
@@ -987,16 +987,16 @@ function confirmTwice(btn, id, label) {
   return false;
 }
 const armedLabel = (id, normal, confirmLabel) => (armed?.id === id && Date.now() < armed.until ? confirmLabel : normal);
-// 既定は赤 (エラー)。成功の知らせは ok を渡して緑にする
+// Red (error) by default. Pass ok for green success messages
 function toast(msg, ok = false) {
   const el = document.createElement('div');
   el.className = ok ? 'toast ok' : 'toast';
-  // 読み上げにも伝える (失敗はすぐ、成功は区切りのいいところで)
+  // Also announce to screen readers (failures right away, successes at a natural pause)
   el.setAttribute('role', ok ? 'status' : 'alert');
   el.textContent = msg;
-  // モーダルの dialog は top layer に出るので、body に置くと裏に隠れる。開いている dialog の中に出す
+  // Modal dialogs live in the top layer, so a toast in body would be hidden behind them. Put it inside the open dialog
   const box = document.querySelector('dialog[open]') || document.body;
-  // 前のトーストを隠さないよう、出ているものの上に積む
+  // Stack on top of existing toasts so earlier ones are not hidden
   const below = [...box.querySelectorAll(':scope > .toast')].reduce((h, t) => Math.max(h, parseFloat(t.style.bottom || 24) + t.offsetHeight + 8), 24);
   el.style.bottom = `${below}px`;
   box.append(el);
@@ -1005,11 +1005,11 @@ function toast(msg, ok = false) {
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// Claude の出力由来の URL も href に入るので、javascript: などを踏ませないよう https だけ通す
+// URLs from Claude output also end up in href, so allow only https to avoid javascript: and the like
 const safeUrl = (u) => (/^https:\/\//i.test(u || '') ? u : '#');
 
 async function api(path, opts = {}) {
-  // サーバーが止まっている・JSON でない応答のときも、ブラウザの英語のメッセージではなく画面の言語で出す
+  // Even when the server is down or the response is not JSON, show the message in the UI language, not the browser's English one
   const res = await fetch(path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'X-Docket': '1' },
@@ -1020,7 +1020,7 @@ async function api(path, opts = {}) {
   return json;
 }
 
-// 時刻が無い古いデータでも render 全体を落とさないよう空にする
+// Return empty for old data without a timestamp, so render as a whole does not crash
 function ago(iso) {
   const min = Math.round((Date.now() - new Date(iso)) / 60000);
   if (Number.isNaN(min)) return '';
@@ -1029,33 +1029,33 @@ function ago(iso) {
   return tr('ago.day', { n: Math.round(min / 1440) });
 }
 
-// 定期取得と操作後の取得が重なったとき、後から届いた古い応答で新しい表示を戻さないようにする
+// When a polling fetch and a post-action fetch overlap, do not let an older response arriving later overwrite a newer view
 let loadSeq = 0;
 let loadApplied = 0;
-// 手動更新中はロードマップと同じくスピナーを出して押せなくする
+// During a manual refresh, show a spinner and disable the button, like the roadmap
 let refreshing = false;
-// 前に描いた応答。同じ内容なら描き直さない (5 秒ごとに作り直すとフォーカスや選択中の文字が消える)
+// Last rendered response. Skip redraw if unchanged (rebuilding every 5 s loses focus and text selection)
 let lastBoardText = '';
 let lastLoadRenderAt = 0;
-// 「○分前」は分単位なので、内容が同じでもこの間隔で描き直す
+// "N min ago" is in minutes, so redraw at this interval even if the content is unchanged
 const SAME_BOARD_RENDER_MS = 30000;
-// quiet: 定期取得。操作の後の取得は、応答が同じでも描き直す
+// quiet: polling fetch. Fetches after an action redraw even if the response is the same
 async function load(refresh = false, quiet = false) {
   const seq = ++loadSeq;
   try {
     const next = await api(`/api/board${refresh ? '?refresh=1' : ''}`);
-    // 「更新」は GitHub の取得を待つ間に後発のポーリングが先に返るが、結果は一番新しいので捨てない
+    // For "Refresh", a later poll may return first while GitHub is being fetched, but this result is the newest, so keep it
     if (seq < loadApplied && !refresh) return;
     loadApplied = Math.max(loadApplied, seq);
     const text = JSON.stringify(next);
     const unchanged = quiet && text === lastBoardText && !board.fetchError && Date.now() - lastLoadRenderAt < SAME_BOARD_RENDER_MS;
     lastBoardText = text;
     board = next;
-    // 共通プロンプトの既定値はサーバーが画面の言語で選ぶので、今の言語を知らせておく
+    // The server picks the default shared prompts in the UI language, so tell it the current language
     if (board.config.uiLang !== lang) api('/api/config', { method: 'PUT', body: { uiLang: lang } }).catch(() => {});
     if (unchanged) return;
   } catch (e) {
-    // 後から始めた取得がもう成功していれば、古い失敗で「取得に失敗」を出さない
+    // If a later fetch already succeeded, do not show "fetch failed" for an older failure
     if (seq < loadApplied) return;
     board.fetchError = e.message;
   }
@@ -1063,30 +1063,30 @@ async function load(refresh = false, quiet = false) {
   render();
 }
 
-// 押している間に再描画するとボタンが作り直され、離したときの click が消える。離したときに描き直す
+// Redrawing while a button is pressed recreates it and the click on release is lost. Redraw on release
 let pointerDown = false;
 let renderSkipped = false;
 document.addEventListener('pointerdown', () => (pointerDown = true), true);
-// 押したまま別のアプリへ移ると pointerup が来ないことがあるので、フォーカスが外れたときも離したとみなす
+// Moving to another app while pressed may never send pointerup, so treat losing focus as a release too
 const release = () => {
   pointerDown = false;
-  if (renderSkipped) setTimeout(render); // click の処理が終わってから
+  if (renderSkipped) setTimeout(render); // after the click handler finishes
 };
 for (const type of ['pointerup', 'pointercancel']) document.addEventListener(type, release, true);
 window.addEventListener('blur', release);
 
 function render() {
-  if (dragging || laneDrag) return; // 再描画するとドラッグが途切れる
+  if (dragging || laneDrag) return; // Redrawing would interrupt the drag
   if (board.consentVersion && (board.config.consentVersion || 0) < board.consentVersion) openConsent(true);
   if (pointerDown) return void (renderSkipped = true);
   renderSkipped = false;
   for (const el of document.querySelectorAll('[data-disagree-icon]')) el.textContent = disagreeIcon();
   $('#viewer').innerHTML = board.viewer ? `<img class="avatar" src="${esc(board.viewer.avatarUrl)}" alt=""> ${esc(board.viewer.login)}` : '';
-  // 取得時刻を兼ねた手動更新ボタン (ロードマップの spRefetch と同じ見た目)
+  // Manual refresh button that also shows the fetch time (same look as roadmap spRefetch)
   $('#refresh').disabled = refreshing;
   $('#refresh').innerHTML = `${refreshing ? '<span class="spin"></span> ' : '<span class="hint">↻ </span>'}${board.lastFetchedAt ? tr('fetchedAgo', { ago: ago(board.lastFetchedAt) }) : tr('refreshNow')}`;
   $('#refresh').title = `${board.lastFetchedAt ? `${new Date(board.lastFetchedAt).toLocaleString(lang)} — ` : ''}${tr('refetchTitle')}`;
-  // 別のタブを見ていても、判断待ち (Reviewed / 判断待ち) が出たことをブラウザのタブ名で分かるようにする
+  // Show in the browser tab title when something needs a decision (Reviewed / Needs decision), even while another tab is open
   const waiting = unarchived('review').filter((p) => p.status === 'reviewed').length + unarchived('receive').filter((p) => p.status === 'planned').length;
   document.title = `${waiting ? `(${waiting}) ` : ''}docket-gits`;
   $('#banner').innerHTML = (board.fetchError ? `<div class="banner">${tr('fetchFailed', { msg: esc(board.fetchError) })}</div>` : '')
@@ -1100,7 +1100,7 @@ function render() {
     a.title = board.lastFetchedAt ? tr('lastFetched', { ago: ago(board.lastFetchedAt) }) : '';
     a.classList.toggle('on', v === view());
     a.classList.toggle('changed', seenSig[v] !== undefined && seenSig[v] !== tabSig(v));
-    // 残作業の件数をレーンの色で表示 (0 件は出さない)
+    // Show remaining work counts in the lane color (hide zero)
     const entries = unarchived(v);
     a.querySelector('.badges').innerHTML = lanesFor(v).filter((l) => l.badge).map((l) => {
       const n = entries.filter(laneMatch(l)).length;
@@ -1115,7 +1115,7 @@ function render() {
   $('#plan').hidden = !plan;
   for (const p of PAGES) $(`#${p}`).hidden = view() !== p;
   $('#home').hidden = !home;
-  if (about && !$('#about').innerHTML) renderAbout(); // 言語を変えると再読み込みになるので 1 回だけ描く
+  if (about && !$('#about').innerHTML) renderAbout(); // Changing the language reloads the page, so draw this only once
   if (home) renderHome();
   if (page || home || plan) return;
   const hidden = hiddenOf('repos', view());
@@ -1130,12 +1130,12 @@ function render() {
   const rank = (r) => (order.includes(r) ? order.indexOf(r) : order.length);
   const repos = [...new Set(all.map((p) => p.pr.repo))].sort().sort((a, b) => rank(a) - rank(b));
   const shown = repos.filter((r) => !hidden.includes(r));
-  // 両方組み立ててから入れる (先に入れると後のドロップダウンの開閉状態が消える)
+  // Build both before inserting (inserting first would lose the open state of the later dropdown)
   const repoSelect = multiSelect('repos', tr('repo'),
     `${shown.length === repos.length ? tr('all') : shown.length ? esc(shown.map((r) => r.split('/')[1]).join(', ')) : tr('none')}`,
     [...new Set([...order, ...repos])].map((r) => ({ value: r, text: r.split('/')[1], disabled: !repos.includes(r) })),
     (r) => !hidden.includes(r));
-  // レビューする側だけ PR 作成者でも絞る (受ける側は全部自分)
+  // Only the reviewing side also filters by PR author (on the receiving side they are all mine)
   let authorSelect = '';
   if (!mine) {
     const authors = [...new Map(all.filter((p) => p.pr.author).map((p) => [p.pr.author.login, p.pr.author])).values()].sort((a, b) => a.login.localeCompare(b.login));
@@ -1144,15 +1144,15 @@ function render() {
       `${on.length === authors.length ? tr('all') : on.length ? on.map((a) => `<img class="avatar" src="${esc(a.avatarUrl)}" alt="" title="${esc(a.login)}">`).join('') : tr('none')}`,
       authors.map((a) => ({ value: a.login, text: a.login, img: a.avatarUrl })), (l) => !hiddenAuthors.includes(l));
   }
-  // 1 人以上に approve された PR だけ / それ以外だけ に絞れる (latestReviews なので今も approve のまま)。タブごとに保存
+  // Filter to PRs approved by at least one person / all others (latestReviews, so still approved now). Saved per tab
   let approved = '';
   try { approved = localStorage.getItem(`docket-approved:${view()}`) || ''; } catch {}
   const isApproved = (p) => p.pr.reviews.some((r) => r.state === 'APPROVED');
-  // 押すたびに すべて → のみ → 除外 と切り替わる 1 つのボタン
+  // One button that cycles all -> only -> exclude on each press
   const APPROVED = { '': tr('all'), only: tr('approved.only'), exclude: tr('approved.exclude') };
   if (!(approved in APPROVED)) approved = '';
   const approvedSeg = field(tr('approved'), `<button data-approved="${approved}"${approved ? ' class="primary"' : ''} title="${esc(tr('approved.title'))}">${APPROVED[approved]}</button>`);
-  // マージ済み PR も同じ 3 状態で絞る。レビューする側だけ (受ける側は open しか取らない)。保存が無ければ除外
+  // Merged PRs use the same 3 states. Reviewing side only (the receiving side fetches only open). Excluded when nothing is saved
   let merged = '';
   if (!mine) {
     try { merged = localStorage.getItem('docket-merged:review') ?? 'exclude'; } catch { merged = 'exclude'; }
@@ -1160,10 +1160,10 @@ function render() {
   }
   const isMerged = (p) => p.pr.state === 'MERGED';
   const mergedSeg = field(tr('merged'), `<button data-merged="${merged}"${merged ? ' class="primary"' : ''} title="${esc(tr('approved.title'))}">${APPROVED[merged]}</button>`);
-  // 定期再描画で検索欄の入力中のフォーカスが外れないよう、作り直した欄に戻す
+  // Keep focus in the search box during periodic redraws by moving it back to the rebuilt field
   const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
   const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
-  // 最初から全部出すと多いので、「+」で足したものと絞り込み中のものだけ出す
+  // Showing everything at first is too much, so show only ones added with "+" and ones with an active filter
   const filters = [
     ['repos', tr('repo'), repoSelect, repos.some((r) => hidden.includes(r))],
     ...(mine ? [] : [['authors', tr('author'), authorSelect, hiddenAuthors.length]]),
@@ -1177,10 +1177,10 @@ function render() {
     + (rest.length ? `<div class="pl-addf"><button data-filter-add aria-expanded="${boardFilterMenu}">+</button>${boardFilterMenu ? `<div class="pop">${rest.map(([k, label]) => `<button data-filter-pick="${k}">${label}</button>`).join('')}</div>` : ''}</div>` : '');
   const nq = qAt && $(`#repo-filter [data-ms="${qAt[0]}"] [data-ms-q]`);
   if (nq) { nq.focus(); nq.setSelectionRange(qAt[1], qAt[2]); }
-  // 畳んでいても絞り込み中だと分かるようにする
-  // レーン編集中は保存・取消のボタンがあるので畳まない
+  // Show an active filter even when collapsed
+  // Do not collapse while editing lanes, since the save / cancel buttons are there
   $('#board-filter').open = sideFilterOpen;
-  $('#board-view-sec').open = !!laneEdit || sideViewOpen(); // レーン編集中は保存・取消のボタンがあるので畳まない
+  $('#board-view-sec').open = !!laneEdit || sideViewOpen(); // Do not collapse while editing lanes, since the save / cancel buttons are there
   const sideClosed = plGet('board-side') === '0' && !laneEdit;
   $('#board-side').classList.toggle('closed', sideClosed);
   $('#board-side').classList.toggle('filtering', !!(approved || merged || hiddenAuthors.length || repos.some((r) => hidden.includes(r))));
@@ -1193,9 +1193,9 @@ function render() {
   $('#lane-save').hidden = $('#lane-cancel').hidden = !laneEdit;
   $('#board').classList.toggle('editing', !!laneEdit);
   $('#board').classList.toggle('archived', archiveView);
-  // 名前の入力中に再描画されても入力を続けられるようにする
+  // Let typing continue even if a redraw happens while editing a name
   const nameAt = document.activeElement?.dataset.laneName && [document.activeElement.dataset.laneName, document.activeElement.selectionStart, document.activeElement.selectionEnd];
-  // 保管庫の表示中は、カードが減って見える理由が分かるようレーンの上に帯を出す
+  // While viewing the archive, show a banner above the lanes so it is clear why there are fewer cards
   const archNote = archiveView ? `<div class="arch-note" style="grid-column:1 / span ${lanesFor(view()).length}">${ARCH_ICON}<span><b>${tr('archive')}</b> · ${tr('archive.note', { n: prs.length })}</span><button data-archive-back>${tr('archive.back')}</button></div>` : '';
   $('#board').innerHTML = archNote + lanesFor(view()).map((lane) => {
     let cards = prs.filter(laneMatch(lane));
@@ -1226,10 +1226,10 @@ function render() {
   }
 }
 
-// メイン画面: 取得済みのボードのデータだけで件数をまとめる (GitHub への追加の問い合わせはしない)
+// Main screen: totals come only from the board data already fetched (no extra GitHub queries)
 const formatCost = (cost) => cost == null ? tr('costUnknown') : `$${cost.toFixed(2)}`;
 function renderHome() {
-  // 保管庫に入れた PR は件数に入れない (AI コストは使った分なので入れる)
+  // Archived PRs are not counted (AI cost is counted, since it was already spent)
   const prs = unarchived('review');
   const mine = unarchived('receive');
   const count = (v, l) => (v === 'receive' ? mine : prs).filter(laneMatch(l)).length;
@@ -1288,7 +1288,7 @@ function cardHtml(e) {
   }
 
   const clickable = e.status === 'reviewed';
-  // どのレーンへも手で移せる。投稿中は移さない (動きは drop の処理を参照)
+  // Can be moved by hand to any lane. Not moved while posting (see the drop handler for behavior)
   const draggable = e.status !== 'posting';
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open="${esc(e.key)}"` : ''} ${draggable ? `draggable="true" data-drag="${esc(e.key)}"` : ''}`, e.status !== 'reviewed');
 }
@@ -1384,26 +1384,26 @@ function mineCardHtml(e) {
     action = `<span class="muted"><span class="spin"></span> ${tr('applying')}</span><button data-log="${esc(e.key)}">${tr('log')}</button>`;
   }
   const clickable = e.status === 'planned';
-  // どのレーンへも手で移せる。実行中は移さない (動きは drop の処理を参照)
+  // Can be moved by hand to any lane. Not moved while running (see the drop handler for behavior)
   const draggable = !['queued', 'running', 'applying'].includes(e.status);
   return cardShell(e, action, `class="card${clickable ? ' clickable' : ''}" ${clickable ? `data-open-mine="${esc(e.key)}"` : ''} ${draggable ? `draggable="true" data-drag="${esc(e.key)}"` : ''}`, e.status !== 'planned');
 }
 
-// ボード上の同じリポジトリの PR で、base = 相手の head なら積まれている関係。親 → 自分 → 子 の順に並べる
-// 複数選択のドロップダウン (文字で絞り込める)。開閉と検索語は再描画をまたいで保つ
-// items: [{ value, text, img? }]、summary と extra (一覧の下に足す欄) はエスケープ済み HTML
+// PRs in the same repo on the board are stacked when base = the other's head. Order: parent -> self -> child
+// Multi-select dropdown (filterable by text). Open state and search text survive redraws
+// items: [{ value, text, img? }]; summary and extra (a field added below the list) are escaped HTML
 const msQuery = {};
-// サイドバーの開閉。ロードマップ側は描き直されるので覚えておく (フィルターは再読み込みで畳んだ状態に戻し、表示は開閉を保存する)
+// Sidebar open/close. The roadmap side is redrawn, so remember it (Filters go back to collapsed on reload; Display saves its open state)
 let sideFilterOpen = false;
 const sideViewOpen = () => plGet('side-view') !== '0';
-// レビューする・受けるのフィルターで「+」から足した項目 (タブごと)
+// Items added via "+" in the reviewing / being-reviewed filters (per tab)
 const boardFx = { review: new Set(), receive: new Set() };
 let boardFilterMenu = false;
 document.addEventListener('toggle', (ev) => {
   if (ev.target.matches?.('.side-filter')) sideFilterOpen = ev.target.open;
   if (ev.target.matches?.('.side-view')) plSet('side-view', ev.target.open ? '1' : '0');
 }, true);
-// 選択欄の上に小さいラベルを付ける
+// Small label above the select
 const field = (label, html) => `<div class="ms-field"><span class="ms-label">${label}</span>${html}</div>`;
 function multiSelect(key, label, summary, items, isOn, extra = '') {
   const open = document.querySelector(`details.ms[data-ms="${key}"]`)?.open;
@@ -1419,7 +1419,7 @@ document.addEventListener('input', (ev) => {
   const q = (msQuery[ms.dataset.ms] = ev.target.value).toLowerCase();
   for (const l of ms.querySelectorAll('[data-ms-text]')) l.hidden = !l.dataset.msText.includes(q);
 });
-// 外側をクリックしたら閉じる
+// Close on outside click
 document.addEventListener('click', (ev) => {
   if (boardFilterMenu && !ev.target.closest('.pl-addf')) { boardFilterMenu = false; render(); }
   for (const d of document.querySelectorAll('details.ms[open], .user-menu[open]')) if (!d.contains(ev.target) || ev.target.closest('.user-menu a')) d.open = false;
@@ -1436,7 +1436,7 @@ function stackHtml(pr) {
   return `<div class="stack">${tr('stack')}${[links(parents), `<b>#${pr.number}</b>`, links(children)].filter(Boolean).join(' → ')}</div>`;
 }
 
-// レーン内のカードをスタックごとにまとめ、親 → 子 → 孫 の順にする。親がレーン内にないカードを起点に、更新順を保って辿る
+// Group cards in a lane by stack, ordered parent -> child -> grandchild. Start from cards whose parent is not in the lane, keeping update order
 let stackOrder = false;
 function stackSort(cards) {
   const isChild = (c, p) => c !== p && c.pr.repo === p.pr.repo && c.pr.base === p.pr.head;
@@ -1449,13 +1449,13 @@ function stackSort(cards) {
     cards.filter((x) => isChild(x, c)).forEach(visit);
   };
   cards.filter((c) => !cards.some((p) => isChild(c, p))).forEach(visit);
-  cards.forEach(visit); // 循環していて起点がないもの
+  cards.forEach(visit); // Cycles with no starting point
   return out;
 }
 
-// スタックのリンク先カードを一時的に強調する。再描画されても消えないよう状態で持つ
+// Temporarily highlight the card a stack link points to. Kept in state so it survives redraws
 let highlight = null;
-// 右のタブ (docket-viewer) で最後に開いたリンクのカード
+// Card of the link last opened in the right tab (docket-viewer)
 let viewing = null;
 function jumpTo(id) {
   highlight = id;
@@ -1500,7 +1500,7 @@ function cardShell(e, action, attrs, showError) {
   </article>`;
 }
 
-// ---------- 判断ダイアログ ----------
+// ---------- Decision dialog ----------
 
 const draftKey = (key) => `docket:decisions:${key}`;
 function loadDraft(key) {
@@ -1518,7 +1518,7 @@ function openReview(key) {
   const findings = e.findings;
 
   const renderDlg = () => {
-    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
+    armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length;
     dlg.innerHTML = `
@@ -1606,10 +1606,10 @@ function openReview(key) {
   dlg.showModal();
 }
 
-// server.js の PROMPT_SKILL と同じ値。スキルではなく設定のレビュープロンプトを使う
+// Same value as PROMPT_SKILL in server.js. Use the review prompt from settings instead of a skill
 const PROMPT_SKILL = '(prompt)';
 const skillLabel = (s) => (s === PROMPT_SKILL ? tr('opt.prompt') : s);
-// 既定値 (どの言語のものでも) のままなら空として見せ、placeholder に今の言語の既定値を出す
+// If still the default (in any language), show it as empty and put the current-language default in the placeholder
 const ownPrompt = (cfg, key) => (Object.values(board.defaultPrompts).some((p) => p[key] === cfg[key]?.trim()) ? '' : cfg[key] ?? '');
 const disagreeIcon = () => board.config?.disagreeIcon?.trim() || '🙅💭';
 function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr('ph.disagree', { icon: disagreeIcon() }) }, skippable = false) {
@@ -1628,14 +1628,14 @@ function findingHtml(f, d, placeholders = { agree: tr('ph.agree'), disagree: tr(
   </div>`;
 }
 
-// ---------- 自分の PR の判断ダイアログ ----------
+// ---------- Decision dialog for my PRs ----------
 
 const MINE_PLACEHOLDER = {
   self: { agree: tr('ph.self.agree'), disagree: tr('ph.self.disagree') },
   fix: { agree: tr('ph.fix.agree'), disagree: tr('ph.fix.disagree') },
 };
 
-// review-fix の対応計画を指摘カードの形にそろえる
+// Shape the review-fix plan like comment cards
 function planToFinding(item) {
   return {
     ...item,
@@ -1657,11 +1657,11 @@ function openMine(key) {
   const dlg = $('#review-dlg');
   const findings = e.findings && (e.mode === 'fix' ? e.findings.map(planToFinding) : e.findings);
   const runLabel = e.mode === 'self' ? tr('rerunSelf') : tr('rerunFix');
-  // 判断待ちの間に PR へ付いた新しい指摘。ここから事前判断 → 指摘対応を始められるようにする
+  // New comments added to the PR while waiting for a decision. Allow starting pre-judgment -> addressing comments from here
   const newCount = hasToolSkill(e.pr.repo, 'fix') ? (e.threads || []).length : 0;
 
   const renderDlg = () => {
-    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
+    armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length && draft.confirmed;
     dlg.innerHTML = `
@@ -1751,12 +1751,12 @@ function openMine(key) {
   dlg.showModal();
 }
 
-// ---------- 指摘への事前判断 (AI 実行前) ----------
+// ---------- Pre-judgment of review comments (before running AI) ----------
 
-// AI の方針に引きずられないよう、AI を動かす前に人が各スレッドの妥当性を判断する。
-// スレッドの番号は取得のたびに振り直されるので、判断は URL に結び付けて持つ
+// A human judges whether each thread is valid before running AI, so as not to be swayed by the AI's take.
+// Thread numbers are reassigned on every fetch, so judgments are keyed by URL
 function openTriage(key, provider = board.config.provider || 'claude') {
-  openKey = null; // idle のまま開くので、再描画で閉じないようにする
+  openKey = null; // Opened while idle, so keep it from closing on redraw
   const e = board.mine.find((p) => p.key === key);
   const threads = e.threads || [];
   const draft = { decisions: {}, ...loadDraft(`triage:${key}`) };
@@ -1772,18 +1772,18 @@ function openTriage(key, provider = board.config.provider || 'claude') {
     body: [th.comment, th.latest && `── ${tr('latestComment')}${th.latest.author ? ` (@${th.latest.author})` : ''}\n${th.latest.body}`].filter(Boolean).join('\n\n'),
   });
 
-  // 非同意は理由必須 (理由が無いと AI に判断材料を渡せない)。指摘ではないものは対象外にする
+  // Disagree requires a reason (without one, the AI has nothing to go on). Things that are not review comments are excluded
   const tally = () => {
     const ds = threads.map((th) => draft.decisions[th.url] || {});
     const decided = ds.filter((d) => d.verdict).length;
     const targets = ds.filter((d) => d.verdict && d.verdict !== 'skip').length;
     const ready = threads.length > 0 && decided === threads.length && !ds.some((d) => d.verdict === 'disagree' && !d.reason?.trim());
-    // すべて対象外なら AI は動かさず、対象外として覚えるだけ
+    // If all are excluded, do not run AI; just remember them as excluded
     return { ds, ready, label: tr(ready && targets === 0 ? 'triageSkipAll' : 'triageSubmit'), text: `${tr('decided', { n: decided, total: threads.length })} · ${tr('triageTargets', { n: targets })}` };
   };
 
   const renderDlg = () => {
-    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
+    armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     const { ds, ready, label, text } = tally();
     dlg.innerHTML = `
       <div class="dlg-head">
@@ -1821,7 +1821,7 @@ function openTriage(key, provider = board.config.provider || 'claude') {
     const url = urlOf(ev.target.dataset.no);
     draft.decisions[url] = { ...draft.decisions[url], reason: ev.target.value };
     saveDraft(`triage:${key}`, draft);
-    // 理由の有無で送信できるかが変わるが、入力中の textarea を作り直さないようボタンだけ切り替える
+    // Whether it can be sent depends on the reason, but toggle only the button so the textarea being typed in is not rebuilt
     const { ready, label } = tally();
     Object.assign(dlg.querySelector('[data-submit]'), { disabled: !ready, textContent: label });
   };
@@ -1830,10 +1830,10 @@ function openTriage(key, provider = board.config.provider || 'claude') {
   dlg.showModal();
 }
 
-// ---------- 設定ダイアログ ----------
+// ---------- Settings dialog ----------
 
 async function openSettings() {
-  // 最初の取得に失敗したままだと空の設定を編集・保存し、リポジトリの対応などを消してしまう
+  // If the first fetch failed, editing and saving would save empty settings and wipe things like repo mappings
   if (!board.defaults) await load();
   if (!board.defaults) return toast(board.fetchError);
   const dlg = $('#settings');
@@ -1848,7 +1848,7 @@ async function openSettings() {
   };
   let skills = await fetchSkills();
   let logs = await api('/api/logs');
-  // テキストエリアから一度消して戻した行は、消す前の設定を使う
+  // A line removed from the textarea and then restored uses its settings from before removal
   const known = { ...cfg.repos };
 
   const skillOptions = (current, provider) => {
@@ -1857,7 +1857,7 @@ async function openSettings() {
     return `<option value="">${tr('unset')}</option>`
       + `<option value="${PROMPT_SKILL}" ${current === PROMPT_SKILL ? 'selected' : ''}>${tr('opt.prompt')}</option>` + list.map((s) => `<option ${s === current ? 'selected' : ''}>${esc(s)}</option>`).join('');
   };
-  // 引数テンプレートを例の PR で展開し、実際に渡るコマンドを入力欄の下に出す
+  // Expand the argument template with a sample PR and show the actual command below the input
   const ARG_SKILL = { args: 'skill', selfArgs: 'selfSkill', fixArgs: 'fixSkill' };
   const preview = (r, field, provider) => {
     const m = toolMapping(cfg.repos[r], provider);
@@ -1914,7 +1914,7 @@ async function openSettings() {
           </table>`;
   };
   const PANES = ['agent-run', 'agent-targets', 'agent-prompts', 'agent-claude', 'agent-codex', 'agent-roadmap', 'refresh', 'lang', 'theme', 'terms'];
-  // 「すべて既定に戻す」で戻す設定 (用語と画面の言語は別に扱う)
+  // Settings restored by "Reset all to defaults" (terms and UI language are handled separately)
   const PANE_KEYS = {
     agent: ['workdir', 'provider', 'model', 'effort', 'claudeArgs', 'codexModel', 'codexEffort', 'codexArgs', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
     'agent-run': ['provider', 'maxConcurrent', 'logKeepDays'],
@@ -1931,7 +1931,7 @@ async function openSettings() {
   const termRows = (v, lanes) => `<h4>${tr(`tab.${v}`)}</h4>${lanes.map((l) => `<div class="form-row"><label>${esc(l.label)}</label>`
     + `<input data-term="${v}:${l.id}" placeholder="${esc(l.label)}" value="${esc(terms[`${v}:${l.id}`] || '')}"></div>`).join('')}`;
   let pane = PANES[0];
-  // 画面テーマはほかの設定と違い、選んだらすぐ当てて保存する (見ながら選べるように)
+  // Unlike other settings, the screen theme is applied and saved immediately (so you can preview while choosing)
   let uiTheme = savedTheme();
   const setTheme = (t) => {
     uiTheme = UI_THEMES.includes(t) ? t : '';
@@ -1951,7 +1951,7 @@ async function openSettings() {
     </button>`;
   }).join('');
   const renderDlg = () => {
-    armed = null; // 描き直すとボタンの文言が元に戻るので、「もう一度押す」待ちも解く
+    armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     dlg.innerHTML = `
       <h2>${tr('settings')}</h2>
       <div class="settings-body">
@@ -2049,7 +2049,7 @@ async function openSettings() {
       dlg.querySelector('[data-repo-workdirs]').innerHTML = repoWorkdirs();
       for (const el of dlg.querySelectorAll('[data-agent-tools]')) el.innerHTML = agentToolSettings(el.dataset.agentTools);
     } else if (t.dataset.cfg === 'authorLangs') {
-      // 「login 言語」の行だけを拾う。言語が ja / ko / en 以外の行は捨てる
+      // Pick only "login language" lines. Drop lines whose language is not ja / ko / en
       cfg.authorLangs = Object.fromEntries(t.value.split('\n').map((s) => s.trim().split(/\s+/)).filter(([a, l]) => a && LANGS[l]));
     } else if (t.dataset.cfg === 'authors' || t.dataset.cfg === 'projects') cfg[t.dataset.cfg] = t.value.split('\n').map((s) => s.trim()).filter(Boolean);
     else if (t.dataset.cfg) cfg[t.dataset.cfg] = t.type === 'number' ? Number(t.value) : t.value;
@@ -2064,9 +2064,9 @@ async function openSettings() {
       if (r === t.dataset.repo && el.dataset.tool === t.dataset.tool) el.textContent = preview(r, field, t.dataset.tool);
     }
   };
-  // 作業ディレクトリを変えたらスキル候補を取り直す
+  // Refetch skill candidates when the working directory changes
   dlg.onchange = async (ev) => {
-    // 別の PC の設定を入力欄に読み込むだけで、反映は「保存」で行う (サーバー側でも sanitizeConfig で弾く)
+    // Only loads another PC's settings into the inputs; "Save" applies them (the server also filters with sanitizeConfig)
     if (ev.target.matches('[data-import]')) {
       const file = ev.target.files[0];
       ev.target.value = '';
@@ -2095,28 +2095,28 @@ async function openSettings() {
   };
   dlg.onclick = async (ev) => {
     const t = ev.target;
-    // 再描画すると入力途中のテキストエリアが整形されるので、表示の切り替えだけにする
+    // A redraw would reformat the textarea being edited, so only toggle visibility
     if (t.dataset.themePick !== undefined) return setTheme(t.dataset.themePick);
     if (t.dataset.pane) {
       pane = t.dataset.pane;
       for (const el of dlg.querySelectorAll('[data-pane], [data-pane-body]')) el.classList.toggle('on', (el.dataset.pane || el.dataset.paneBody) === pane);
       return;
     }
-    // 「古いもの」は入力中 (未保存) の保存日数で消す
+    // "Old ones" are removed using the retention days currently in the input (unsaved)
     const clear = t.dataset.logsClear;
     if (clear) {
       if (!confirmTwice(t, `logs-clear:${clear}`, tr('confirmDelete'))) return;
       try {
         const { removed, ...rest } = await api('/api/logs/clear', { method: 'POST', body: clear === 'all' ? { all: true } : { days: cfg.logKeepDays } });
         logs = rest;
-        renderDlg(); // トーストは開いている dialog の中に出すので、描き直してから出す
+        renderDlg(); // Toasts go inside the open dialog, so redraw first, then show it
         toast(tr('logs.cleared', { count: removed.count, size: fmtBytes(removed.bytes) }), true);
       } catch (err) {
         toast(err.message);
       }
       return;
     }
-    // 保存するまでは反映しないので、確認なしで今のペインの入力を既定に戻す
+    // Nothing applies until saved, so reset the current pane's inputs to defaults without confirmation
     const reset = t.dataset.paneReset;
     if (reset) {
       if (reset === 'terms') terms = {};
@@ -2133,7 +2133,7 @@ async function openSettings() {
           }
         }
       }
-      if (reset === 'agent' || reset === 'agent-targets') skills = await fetchSkills(); // 作業ディレクトリが変わるため
+      if (reset === 'agent' || reset === 'agent-targets') skills = await fetchSkills(); // because the working directory changes
       renderDlg();
       return;
     }
@@ -2148,7 +2148,7 @@ async function openSettings() {
       return;
     }
     if (t.matches('[data-save]')) {
-      // 失敗したらダイアログを閉じず、入力を残したまま知らせる
+      // On failure, keep the dialog open with the inputs intact and notify
       try {
         await api('/api/config', { method: 'PUT', body: { ...cfg, uiLang } });
       } catch (err) {
@@ -2166,7 +2166,7 @@ async function openSettings() {
   renderDlg();
 }
 
-// 設定の「画面テーマ」の見本に使う色。CSS の :root[data-theme] と同じ値にする
+// Colors for the Settings "Screen theme" samples. Keep in sync with CSS :root[data-theme]
 const THEME_PREVIEW = {
   light: { bg: '#f6f8fa', panel: '#ffffff', lane: '#eef1f4', border: '#d0d7de', text: '#1f2328', muted: '#656d76', accent: '#0969da', bar: '#ffffff', barText: '#1f2328', font: 'inherit', sample: 'docket-gits' },
   dark: { bg: '#0d1117', panel: '#161b22', lane: '#10151c', border: '#30363d', text: '#e6edf3', muted: '#8d96a0', accent: '#2f81f7', bar: '#161b22', barText: '#e6edf3', font: 'inherit', sample: 'docket-gits' },
@@ -2174,17 +2174,17 @@ const THEME_PREVIEW = {
   g6: { bg: '#e2e2e0', panel: '#f1f1ef', lane: '#e9e9e7', border: '#8a8a88', text: '#1b1b1b', muted: '#4f4f4f', accent: '#1b1b1b', bar: '#1b1b1b', barText: '#f1f1ef', font: "'Fusion Pixel KO', monospace", sample: '[docket-gits]' },
 };
 
-// 日付 (YYYY-MM-DD) の計算と、今日 (ローカル時刻)
+// Date (YYYY-MM-DD) math, and today (local time)
 const spDay = (d, n = 0) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const spToday = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
-// ---------- 計画 (Draft) ----------
-// issue のツリーを md ファイルの計画として作り、まとめて GitHub に適用する。画面で変えた内容はすぐ md に書く
-const PL_DAY = 24; // 1 日の幅
-const PL_TREE = 320; // 左の issue 名の列の幅
-const PL_DEPTH = 6; // md の見出しの深さまで
-const PL_FIELDS = ['labels', 'milestone', 'sprint']; // 詳細の「+」で足せる項目
-const PL_FILTERS = ['repo', 'as', 'st', 'state', ...PL_FIELDS]; // フィルターの「+」で足せる項目
+// ---------- Plan (Draft) ----------
+// Build an issue tree as a plan in an md file and apply it to GitHub in one go. Edits on screen are written to md immediately
+const PL_DAY = 24; // width of one day
+const PL_TREE = 320; // width of the issue name column on the left
+const PL_DEPTH = 6; // up to the md heading depth
+const PL_FIELDS = ['labels', 'milestone', 'sprint']; // fields that can be added with "+" in details
+const PL_FILTERS = ['repo', 'as', 'st', 'state', ...PL_FIELDS]; // fields that can be added with "+" in filters
 const pl = { list: null, dir: '', doc: null, opts: null, titles: {}, ranges: null, live: null, f: { repo: '', as: '', st: '', state: '' }, fx: new Set(), filterMenu: false, addMenu: null, sel: new Set(), anchor: null, collapsed: new Set(), extra: {}, fieldMenu: false, bulk: null, range: null, drag: null, error: null, saveTimer: null, saving: Promise.resolve(), seq: 0 };
 const plGet = (k) => { try { return localStorage.getItem(`docket-plan:${k}`); } catch { return null; } };
 const plSet = (k, v) => { try { localStorage.setItem(`docket-plan:${k}`, v); } catch {} };
@@ -2202,7 +2202,7 @@ const plAll = () => {
   return out;
 };
 const plFind = (id) => plAll().find((x) => x.n.id === id);
-// 表示中の行 (畳んだ親の子孫と、絞り込みに当たらない issue を除く)。dim は当たる子孫がいるので残した祖先
+// Visible rows (excluding descendants of collapsed parents and issues not matching the filter). dim = ancestors kept because a descendant matches
 const plRows = () => {
   const keep = plKeep();
   const out = [];
@@ -2215,7 +2215,7 @@ const plRows = () => {
   return out;
 };
 
-// 「スプリント · 期間」で選んだもの ({ kind: 's' | 'p', title, startDate, endDate })。選んでいなければ null
+// Selection in "Sprint · Period" ({ kind: 's' | 'p', title, startDate, endDate }). null if nothing selected
 const plWindowKey = () => `range:${plProject()}`;
 function plWindow() {
   const v = plGet(plWindowKey()) || '';
@@ -2231,8 +2231,8 @@ const plPeriodLabel = (x) => (pl.ranges.unit === 'month' ? new Date(`${x.startDa
   : tr(pl.ranges.unit === 'week' ? 'period.week' : 'period.2week', { date: new Date(`${x.startDate}T00:00:00Z`).toLocaleDateString(lang, { month: 'numeric', day: 'numeric', timeZone: 'UTC' }) }));
 
 const plVals = (n, k) => [n[k]].flat().filter(Boolean);
-// 絞り込み中なら、当たる issue ('hit') と当たる子孫を持つ祖先 ('dim') の Map。絞り込みが無ければ null
-// Status・開いているかは GitHub にある issue だけで見る (Draft の issue には無いので、issue が 1 つも無い計画では使わない)
+// When filtering, a Map of matching issues ('hit') and ancestors with matching descendants ('dim'). null if no filter
+// Status and open/closed only look at issues that exist on GitHub (Draft issues lack them, so not used for plans with no issues yet)
 function plKeep() {
   const w = plWindow();
   const f = pl.f;
@@ -2263,18 +2263,18 @@ const plNewId = () => `c${Date.now().toString(36)}${++pl.seq}`;
 const plDescendants = (n) => n.children.flatMap((c) => [c, ...plDescendants(c)]);
 const plAvatar = (login) => pl.opts?.assignees.find((a) => a.login === login)?.avatarUrl || `https://github.com/${encodeURIComponent(login)}.png?size=40`;
 const plIssueUrl = (n) => `https://github.com/${n.repo || pl.doc.plan.repo}/issues/${n.issue}`;
-// 計画をまたいで issue を見分けるキーと、サーバーの changed のキー (計画のリポジトリの issue は番号だけ)
+// Key that identifies an issue across plans, and the key of the server's changed (issues in the plan's repo use just the number)
 const plKey = (n) => `${n.repo || pl.doc.plan.repo}#${n.issue}`;
 const plSyncKey = (n) => (n.repo && n.repo !== pl.doc.plan.repo ? `${n.repo}#${n.issue}` : String(n.issue));
 const plChanged = (n) => !!n.issue && pl.doc.changed.includes(plSyncKey(n));
-// 計画と GitHub の両方で変わった項目 (項目 → GitHub の値)
+// Fields changed both in the plan and on GitHub (field -> GitHub value)
 const plConflict = (n) => (n.issue && pl.doc.conflicts?.[plSyncKey(n)]) || null;
 const plFieldLabel = (f) => ({ title: tr('pl.title'), assignees: tr('sp.assignee'), labels: tr('pl.f.labels'), milestone: tr('pl.f.milestone'), sprint: tr('sp.sprint'), start: tr('pl.start'), end: tr('pl.end') })[f];
 const plFieldText = (v) => (Array.isArray(v) ? v.join(', ') : v) || tr('none');
-// GitHub にある issue の今の Status・開いているか・PR
+// Current Status, open state and PRs of issues that exist on GitHub
 const plLive = (n) => (n.issue && pl.live?.issues[plKey(n)]) || null;
 const plHasIssues = () => plAll().some(({ n }) => n.issue);
-// GitHub に作る issue と、反映後に変えた issue
+// Issues to create on GitHub, and issues changed after applying
 const plTargets = () => plAll().filter(({ n }) => !n.issue || plChanged(n));
 
 async function loadPlans() {
@@ -2283,7 +2283,7 @@ async function loadPlans() {
   if (!url) return renderPlan();
   try {
     const res = await api(`/api/plans?${plQuery()}`);
-    // 待つ間に別のプロジェクトに切り替えたら、古い一覧で今のプロジェクトの記憶を書き換えない
+    // If the project was switched while waiting, do not overwrite the current project's memory with the old list
     if (plProject() !== url) return;
     pl.list = res.plans;
     pl.dir = res.dir;
@@ -2299,7 +2299,7 @@ async function loadPlans() {
   renderPlan();
 }
 
-// 続けて計画を選んだとき、最後に選んだものだけを開く
+// When plans are selected in quick succession, open only the last one
 let plOpenSeq = 0;
 async function openPlan(file, render = true) {
   const seq = ++plOpenSeq;
@@ -2322,7 +2322,7 @@ async function openPlan(file, render = true) {
   if (render) renderPlan();
 }
 
-// 「スプリント · 期間」の選択肢 (Project のスプリントと、設定の単位の期間)
+// Options for "Sprint · Period" (Project sprints and periods of the unit set in settings)
 async function loadPlanRanges(url) {
   try {
     const ranges = await api(`/api/plan/ranges?${new URLSearchParams({ project: url })}`);
@@ -2331,8 +2331,8 @@ async function loadPlanRanges(url) {
   } catch {}
 }
 
-// 計画の issue の今の状態。Project のキャッシュと同じく、取り直すのは ↻ を押したとき (とキャッシュが無いとき)
-// 取り直したときはサーバーが GitHub で変わった値を計画に取り込むので、計画を読み直す
+// Current state of plan issues. Like the Project cache, refetched only when ↻ is pressed (or when there is no cache)
+// On refetch the server pulls values changed on GitHub into the plan, so reload the plan
 async function loadPlanLive(refresh = false) {
   const doc = pl.doc;
   if (!doc) return;
@@ -2343,7 +2343,7 @@ async function loadPlanLive(refresh = false) {
     pl.live = live;
     const p = live.pulled;
     if (p && (p.updated || p.added || p.conflicts)) {
-      // 選んでいた issue は番号で選び直す (読み直すとノードの id が変わる)
+      // Reselect the previously selected issue by number (node ids change on reload)
       const keys = new Set([...pl.sel].map((id) => plFind(id)?.n).filter((n) => n?.issue).map(plKey));
       const [next, list] = await Promise.all([api(`/api/plan?${plQuery({ file: doc.file })}`), api(`/api/plans?${plQuery()}`)]);
       if (pl.doc !== doc) return;
@@ -2365,12 +2365,12 @@ async function loadPlanOptions() {
   const repo = pl.doc?.plan.repo || '';
   try {
     const opts = await api(`/api/plan/options?${plQuery({ repo })}`);
-    // サイドバーのプロジェクト名もここで取れる
+    // The sidebar project name is also available here
     if (pl.doc?.plan.repo === repo) { pl.opts = opts; plRefresh(['side', 'detail', 'bulk', 'body']); }
   } catch {}
 }
 
-// 入力が続く間はまとめて書く。書いた順に保存されるよう前の保存を待つ
+// Batch writes while typing continues. Wait for the previous save so saves land in order
 function plSave() {
   clearTimeout(pl.saveTimer);
   pl.saveTimer = setTimeout(plFlush, 400);
@@ -2385,7 +2385,7 @@ function plFlush() {
   pl.saving = pl.saving.then(async () => {
     try {
       const res = await api('/api/plan', { method: 'PUT', body: { project: plProject(), file: doc.file, plan } });
-      // ツリーは画面のものを使い続ける (サーバーが読み直した id にすると選択が外れる)
+      // Keep using the tree on screen (switching to the ids the server reloaded would drop the selection)
       Object.assign(doc, { md: res.md, base: res.base, git: res.git, changed: res.changed, conflicts: res.conflicts, rel: res.rel });
       if (pl.doc === doc) plRefresh(['detail']);
       const item = pl.list?.find((p) => p.file === doc.file);
@@ -2403,7 +2403,7 @@ const plEdited = (parts = ['head', 'body', 'detail', 'side']) => {
   plRefresh(parts);
 };
 
-// 表示する日付の範囲。前後に余白を取り、ドラッグ中は動かさない (動くと棒がカーソルからずれる)
+// Visible date range. Pad both ends, and keep it fixed while dragging (otherwise the bar drifts from the cursor)
 function plRange() {
   if (pl.drag && pl.range) return pl.range;
   const today = spToday();
@@ -2422,7 +2422,7 @@ const plMd = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
 const plFiltering = () => PL_FILTERS.some((k) => pl.f[k]);
 function renderPlan() {
   const el = $('#plan');
-  // ヘッダーとフッターの高さを除いた残りを全部使う
+  // Use all the space left after the header and footer
   el.style.setProperty('--pl-top', `${document.querySelector('header').offsetHeight + $('#banner').offsetHeight}px`);
   el.style.setProperty('--pl-foot', `${document.querySelector('.site-foot').offsetHeight}px`);
   if (!(board.config.projects || []).length) {
@@ -2442,10 +2442,10 @@ function renderPlan() {
   plRefresh(['side', 'head', 'filter', 'bulk', 'body', 'detail']);
 }
 
-// 入力中の欄を含む部分は描き直さない (フォーカスと入力中の値が消えるため)
+// Do not redraw parts containing the focused input (focus and the typed value would be lost)
 const PL_PARTS = { side: () => plSideHtml(), head: () => plHeadHtml(), filter: () => plFilterHtml(), bulk: () => plBulkHtml(), body: () => plBodyHtml(), detail: () => plDetailHtml(), foot: () => esc(pl.doc?.rel || '') };
 function plRefresh(parts) {
-  // フッターは見出しと、絞り込みの候補 (担当者など) は一覧と一緒に描き直す
+  // The footer is redrawn with the headings, and filter candidates (assignees etc.) with the list
   const all = [...parts, ...(parts.includes('head') ? ['foot'] : []), ...(parts.includes('body') && !parts.includes('filter') ? ['filter'] : [])];
   for (const part of all) {
     const box = $(`#plan [data-pl="${part}"]`);
@@ -2457,7 +2457,7 @@ function plRefresh(parts) {
     const from = pl.range?.from;
     box.innerHTML = PL_PARTS[part]();
     const next = box.querySelector('.pl-road, .pl-md');
-    // 表示範囲の始まりが前に広がった分だけスクロールして、棒が画面上で動かないようにする
+    // Scroll by however much the range start grew backward, so bars do not move on screen
     if (pos && from && next?.matches('.pl-road')) pos[0] += ((Date.parse(from) - Date.parse(pl.range.from)) / 86400000) * PL_DAY;
     if (pos && next) [next.scrollLeft, next.scrollTop] = pos;
   }
@@ -2470,7 +2470,7 @@ function plSideHtml() {
   const select = `<select data-pl-project title="${esc(url)}">${projects.map((u) => `<option value="${esc(u)}"${u === url ? ' selected' : ''}>${esc(pl.titles[u] || u.replace(/^.*github\.com\//, ''))}</option>`).join('')}</select>`;
   const item = (p) => `<button class="pl-item${p.file === pl.doc?.file ? ' on' : ''}" data-pl-open="${esc(p.file)}" title="${esc(p.file)}"><span class="t">${esc(p.title)}</span></button>`;
   const group = (label, list) => (list.length ? `<div class="grp">${label}</div>${list.map(item).join('')}` : '');
-  // 選んだスプリント・期間に issue が掛かる計画だけ出す (開いている計画は出したまま)
+  // Show only plans with issues overlapping the selected sprint / period (keep open plans shown)
   const w = plWindow();
   const list = (pl.list || []).filter((p) => p.file === pl.doc?.file || plPlanInWindow(p, w));
   const cur = plGet(plWindowKey()) || '';
@@ -2489,7 +2489,7 @@ function plHeadHtml() {
   const applied = plan.status === 'applied';
   const n = plTargets().length;
   const hasIssue = plAll().some(({ n: x }) => x.issue);
-  // 一度も issue を作っていなければリポジトリを変えられる
+  // The repository can be changed as long as no issue has been created yet
   const repo = hasIssue ? `<span class="chip">${esc(plan.repo)}</span>`
     : `<select class="pl-repo" data-pl-repo>${plRepoOptions(plRepoCandidates(pl.opts?.fields), plan.repo)}</select>`;
   const label = !applied ? tr('pl.apply', { n }) : n ? tr('pl.update', { n }) : tr('pl.applied');
@@ -2511,12 +2511,12 @@ function plFilterHtml() {
   const people = [...new Set(nodes.flatMap((n) => n.assignees))].sort();
   const iss = plHasIssues();
   const f = pl.f;
-  // 今の計画に無い値で絞っているときも選択肢に出す (出さないと「すべて」に見えたまま全部の行が消える)
+  // Also list values not in the current plan when filtering by them (otherwise it looks like "All" while every row disappears)
   const sel = (key, opts0, off) => {
     const opts = f[key] && !opts0.some(([v]) => v === f[key]) ? [[f[key], f[key]], ...opts0] : opts0;
     return `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   };
-  // 最初から全部出すと多いので、「+」で足したものだけ出す
+  // Showing everything at first is too much, so show only ones added with "+"
   const shown = (k) => pl.fx.has(k) || f[k];
   const label = (k) => ({ repo: tr('repo'), as: tr('sp.assignee'), st: 'Status', state: 'Open / Closed' })[k] || plFieldLabel(k);
   const opts = (k) => ({
@@ -2534,7 +2534,7 @@ function plFilterHtml() {
 
 function plBodyHtml() {
   if (plGet('view') === 'md') {
-    // 最後のコミットから変わった行に印を付ける (git で管理していなければ付けない)
+    // Mark lines changed since the last commit (skipped if not under git)
     const base = new Map();
     for (const l of pl.doc.base == null ? [] : pl.doc.base.split('\n')) base.set(l, (base.get(l) || 0) + 1);
     const lines = pl.doc.md.replace(/\n$/, '').split('\n').map((l) => {
@@ -2553,7 +2553,7 @@ function plBodyHtml() {
   const head = dayList.map((d, i) => `<div class="${isWe(d) ? 'we' : ''}${d === today ? ' today' : ''}${out(d) ? ' out' : ''}">${i === 0 || d.endsWith('-01') ? new Date(`${d}T00:00:00Z`).toLocaleDateString(lang, { month: 'short', timeZone: 'UTC' }) : ''}<br>${Number(d.slice(8))}</div>`).join('');
   const bg = dayList.map((d, i) => (isWe(d) ? `<i class="we" style="left:${i * PL_DAY}px"></i>` : '')).join('')
     + (today >= from && plIdx(today) < days ? `<i class="today" style="left:${plIdx(today) * PL_DAY + PL_DAY / 2}px"></i>` : '')
-    // 選んだスプリント・期間の外は薄く塗る
+    // Shade outside the selected sprint / period
     + (w ? `<i class="out" style="left:0;width:${Math.max(0, plIdx(w.startDate)) * PL_DAY}px"></i><i class="out" style="left:${Math.min(days, plIdx(w.endDate) + 1) * PL_DAY}px;width:${Math.max(0, days - plIdx(w.endDate) - 1) * PL_DAY}px"></i>` : '');
   const hide = new Set(cardHiddenOf('plan'));
   const rows = plRows().map(({ n, d, dim }) => {
@@ -2571,12 +2571,12 @@ function plBodyHtml() {
     let bar = '';
     if (span) {
       const len = plIdx(span.end) - plIdx(span.start) + 1;
-      // 左の一覧を見なくても分かるよう棒にタイトルを出す (日付は title 属性と詳細で見る)。棒が短くてもタイトル・PR は棒の外にはみ出させて全部見せる
+      // Show the title on the bar so you need not look at the list (dates via the title attribute and details). Even short bars show the full title / PR, overflowing outside the bar
       bar = `<div class="pl-bar${n.issue ? ' iss' : ''}${changed ? ' changed' : ''}" data-pl-bar="${esc(n.id)}" style="left:${plIdx(span.start) * PL_DAY}px;width:${len * PL_DAY}px" title="${esc(`${span.start} – ${span.end}`)}"><i class="h l" data-pl-h="l"></i><span class="t">${esc(n.title || tr('pl.untitled'))}</span>${g?.status && !hide.has('status') ? `<span class="pl-st st st-${esc(String(g.color || '').toLowerCase())}">${esc(g.status)}</span>` : ''}${n.sprint && !hide.has('sprint') ? `<span class="pl-sp">${esc(n.sprint)}</span>` : ''}${hide.has('prs') ? '' : (g?.prs || []).map((pr) => `<span class="pl-pr ${esc(pr.kind)}">#${pr.number}</span>`).join('')}<i class="h r" data-pl-h="r"></i></div>`;
     }
     return `<div class="pl-row${d ? '' : ' d0'}${pl.sel.has(n.id) ? ' sel' : ''}${dim ? ' dim' : ''}${g?.state === 'CLOSED' ? ' closed' : ''}${menu ? ' menu' : ''}">${tree}<div class="pl-track" data-pl-track="${esc(n.id)}" style="width:${days * PL_DAY}px">${bar}</div></div>`;
   }).join('');
-  // 最上位は畳まない (畳む意味がない)。すべて畳むはその直下の子を畳む
+  // Top level is not collapsible (pointless). "Collapse all" collapses its direct children
   const foldable = plNodes().flatMap((r) => r.children).filter((n) => n.children.length);
   const allFolded = foldable.every((n) => pl.collapsed.has(n.id));
   const foldAll = foldable.length ? `<button class="fold-all" data-pl-fold="${allFolded ? 'open' : 'fold'}">${allFolded ? tr('sp.openAll') : tr('sp.foldAll')}</button>` : '';
@@ -2588,13 +2588,13 @@ function plBodyHtml() {
   </div></div>`;
 }
 
-// 担当者・ラベルは multiSelect で選ぶ。候補に無い値 (md に直接書いたもの) も選べるよう残す
+// Assignees and labels are chosen with multiSelect. Values not in the candidates (written directly in md) are kept selectable
 const plPeople = (extra = []) => [...new Set([...(pl.opts?.assignees || []).map((a) => a.login), ...extra])];
 const plLabels = (extra = []) => [...new Set([...(pl.opts?.labels || []).map((l) => l.name), ...extra])];
 const plAvatars = (list) => list.map((a) => `<img class="avatar" src="${esc(plAvatar(a))}" alt="" title="${esc(a)}">`).join('');
 const plOptions = (values, current, empty) => `<option value="">${empty}</option>${[...new Set([...values, ...(current ? [current] : [])])].map((v) => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}`;
 const plRepoCandidates = (fields) => [...new Set([...(fields?.repos || []), ...Object.keys(board.config.repos || {})])];
-// 未設定なら空の選択肢を先頭に出す (先頭の候補が選ばれて見えるのに保存されていない状態にしない)
+// If unset, put an empty option first (so the first candidate does not look selected while not actually saved)
 const plRepoOptions = (repos, current) => [...new Set([current || '', ...repos])].map((r) => `<option value="${esc(r)}"${r === current ? ' selected' : ''}>${esc(r)}</option>`).join('');
 const plSprints = () => (pl.opts?.fields?.iterations || []).map((i) => i.title);
 
@@ -2626,7 +2626,7 @@ function plDetailHtml() {
     <div style="display:flex"><button data-pl-del style="margin-left:auto;color:var(--danger)" ${n.issue || !hit.p ? `disabled title="${esc(tr(n.issue ? 'pl.cantDelete' : 'pl.cantDeleteRoot'))}"` : ''}>${tr('pl.delete')}</button></div>`;
 }
 
-// 2 件以上選んだときだけ出す一括入力。空欄の項目は変えない
+// Bulk input shown only when 2 or more are selected. Empty fields are left unchanged
 function plBulkHtml() {
   if (pl.sel.size < 2) return '';
   const b = (pl.bulk ||= { start: '', end: '', assignees: null, labels: null, sprint: '' });
@@ -2647,7 +2647,7 @@ function plApplyBulk() {
     if (!n) continue;
     if (b.start) n.start = b.start;
     if (b.end) n.end = b.end;
-    // 片方だけ入れて開始日が終了日より後になったら、もう片方を合わせる
+    // If only one is set and the start date ends up after the end date, adjust the other
     if (n.start && n.end && n.start > n.end) b.start ? (n.end = n.start) : (n.start = n.end);
     if (b.assignees) n.assignees = [...b.assignees];
     if (b.labels) n.labels = [...b.labels];
@@ -2766,7 +2766,7 @@ $('#plan').addEventListener('click', (ev) => {
   }
   if (t.closest('[data-pl-bulk-apply]')) return plApplyBulk();
   if (t.closest('[data-pl-bulk-clear]')) { pl.sel.clear(); pl.bulk = null; return plRefresh(['bulk', 'body', 'detail']); }
-  // 担当者・ラベルの「すべて選択 / すべて解除」
+  // "Select all / Clear all" for assignees and labels
   const bulkMs = t.closest('[data-ms^="pl-"] [data-ms-bulk]');
   if (bulkMs) {
     const key = bulkMs.closest('[data-ms]').dataset.ms;
@@ -2838,7 +2838,7 @@ $('#plan').addEventListener('change', (ev) => {
   }
 });
 
-// 棒のドラッグ: 本体で移動 (Shift で子孫も一緒に)、両端で開始日・終了日、棒の無い行では引いた範囲を期間にする
+// Bar drag: body moves (Shift moves descendants too), ends change start / end date, on rows without a bar the dragged range becomes the period
 $('#plan').addEventListener('pointerdown', (ev) => {
   if (ev.button !== 0) return;
   const track = ev.target.closest('[data-pl-track]');
@@ -2853,14 +2853,14 @@ $('#plan').addEventListener('pointerdown', (ev) => {
   pl.drag = { id, mode, x: ev.clientX, at, moved: false, mods: { ctrlKey: ev.ctrlKey, metaKey: ev.metaKey, shiftKey: ev.shiftKey && mode !== 'move' }, orig: group.map((x) => ({ n: x, start: x.start, end: x.end })), span };
   plRange();
   ev.preventDefault();
-  document.activeElement?.blur(); // 詳細の入力欄にフォーカスが残ると、その欄が描き直されず日付が古いままになる
+  document.activeElement?.blur(); // If focus stays in a details input, that field is not redrawn and shows a stale date
 });
 window.addEventListener('pointermove', (ev) => {
   const d = pl.drag;
   if (!d) return;
   const dd = Math.round((ev.clientX - d.x) / PL_DAY);
   if (!dd && !d.moved) return;
-  // 日付は PL_DAY ごとにしか変わらないので、変わらない間は描き直さない (毎回行 × 日のマスを作り直すと重い)
+  // Dates only change per PL_DAY, so skip redraws until they do (rebuilding rows x days cells every time is heavy)
   if (d.moved && dd === d.lastDd) return;
   d.lastDd = dd;
   if (!d.moved) document.body.classList.add('pl-dragging');
@@ -2880,7 +2880,7 @@ window.addEventListener('pointermove', (ev) => {
     if (d.mode === 'l') [first.n.start, first.n.end] = [spDay(start, dd) > end ? end : spDay(start, dd), end];
     else [first.n.start, first.n.end] = [start, spDay(end, dd) < start ? start : spDay(end, dd)];
   }
-  // 速く動かしたときも 1 フレームに 1 回だけ描く
+  // Draw at most once per frame even when moving fast
   if (!d.frame) d.frame = requestAnimationFrame(() => {
     d.frame = 0;
     if (pl.drag === d) plRefresh(['body', 'detail']);
@@ -2892,17 +2892,17 @@ window.addEventListener('pointerup', (ev) => {
   pl.drag = null;
   document.body.classList.remove('pl-dragging');
   if (d.moved) return plEdited(['head', 'body', 'detail']);
-  // 動かさずに離したら行を選ぶ
+  // Release without moving selects the row
   plSelect(d.id, { ...d.mods, shiftKey: d.mods.shiftKey || (ev.shiftKey && d.mode !== 'move') });
 });
 
-// issue は URL (https://github.com/owner/name/issues/123) で受け取る。中身は取り込む・作るときにだけ GitHub から取る
+// Issues are taken as URLs (https://github.com/owner/name/issues/123). Content is fetched from GitHub only when importing or creating
 const plIssueRef = (v) => {
   const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)\/?(?:[?#].*)?$/.exec(String(v || '').trim());
   return m && { repo: m[1], number: Number(m[2]) };
 };
 const plIssueUrlField = () => `<div class="form-row"><label>${tr('pl.issueUrl')}</label><input type="url" data-pk-url placeholder="https://github.com/owner/name/issues/123"></div>`;
-// URL として読めなければ入力欄で知らせる
+// Report in the input if it cannot be read as a URL
 function plCheckIssueUrl(input) {
   const ref = plIssueRef(input.value);
   input.setCustomValidity(ref ? '' : tr('pl.needIssue'));
@@ -2910,7 +2910,7 @@ function plCheckIssueUrl(input) {
   return ref;
 }
 
-// 既存の issue を sub issue ごと targetId の下に入れる。GitHub での親から付け替えるのは次の「変更を反映」のとき
+// Put an existing issue, with its sub issues, under targetId. Re-parenting on GitHub happens at the next "Apply changes"
 function openImportIssue(targetId) {
   const hit = plFind(targetId);
   if (!hit) return;
@@ -2942,7 +2942,7 @@ function openImportIssue(targetId) {
       pl.sel = new Set([added.id]);
       pl.anchor = added.id;
       pl.bulk = null;
-      // 続けて取り込むときの「どの計画に入っているか」も更新する
+      // Also update "which plan it is in" for subsequent imports
       const item = pl.list?.find((x) => x.file === doc.file);
       const walk = (x) => { item?.issues.push(plKey(x)); x.children.forEach(walk); };
       walk(added);
@@ -2961,7 +2961,7 @@ function openImportIssue(targetId) {
 
 async function openNewPlan() {
   const dlg = $('#plan-dlg');
-  // プロジェクトにリンクしたリポジトリを先に、設定に登録したリポジトリを後に並べる
+  // List repos linked to the project first, then repos registered in settings
   const fields = pl.opts?.fields || (await api(`/api/plan/options?${plQuery()}`).catch(() => ({}))).fields;
   const repos = plRepoCandidates(fields);
   dlg.innerHTML = `<form method="dialog" class="dlg-head"><h3>${tr('pl.new')}</h3><button data-i18n="close">${tr('close')}</button></form>
@@ -2979,7 +2979,7 @@ async function openNewPlan() {
   const file = dlg.querySelector('[data-pl-new-file]');
   const url = dlg.querySelector('[data-pk-url]');
   let kind = 'blank';
-  // ファイル名はタイトル (既存の issue から始めるなら issue 番号) から作る。英数字が無いタイトルは自分で入れる
+  // File name comes from the title (issue number when starting from an existing issue). Titles with no Latin letters or digits must be named by hand
   const fill = (v) => { if (!file.dataset.touched) file.value = v; };
   title.oninput = () => {
     const slug = title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -3015,7 +3015,7 @@ async function openNewPlan() {
       dlg.close();
       plSet(`file:${plProject()}`, doc.file);
       await loadPlans();
-      // 最上位 issue を選んでおく (すぐ sub issue を足せるように)
+      // Select the top-level issue (so sub issues can be added right away)
       const root = plNodes()[0];
       if (root) plSelect(root.id, {});
     } catch (e) {
@@ -3056,7 +3056,7 @@ async function openApplyPlan() {
       toast([tr('pl.done', { created: res.created, updated: res.updated }) + (res.committed ? ` · ${tr('pl.committed')}` : ''), ...warn].join('\n'), !warn.length);
       await loadPlans();
     } catch (e) {
-      // 途中で失敗しても作った issue の番号は md に書いてあるので読み直す
+      // Even if it fails midway, numbers of created issues are written in the md, so reload
       dlg.close();
       toast(e.message);
       await loadPlans();
@@ -3065,7 +3065,7 @@ async function openApplyPlan() {
   dlg.showModal();
 }
 
-// ---------- イベント ----------
+// ---------- Events ----------
 
 async function applyComments(key) {
   await api('/api/mine/apply-comments', { method: 'POST', body: { key } });
@@ -3075,14 +3075,14 @@ async function applyComments(key) {
 async function runMine(key, mode, decisions, provider) {
   try {
     await api('/api/mine/run', { method: 'POST', body: { key, mode, decisions, provider } });
-    saveDraft(key, {}); // 前回の判断が新しい結果の同じ番号に付かないようにする
+    saveDraft(key, {}); // Keep the previous judgments from attaching to the same numbers in the new result
   } catch (e) {
     toast(e.message);
   }
   load();
 }
 
-// 開いている間だけ取り直す。末尾を見ているときだけ自動で末尾へ追従する
+// Refetch only while open. Auto-follow the end only when already viewing the end
 async function openLog(key) {
   const dlg = $('#log-dlg');
   const pre = dlg.querySelector('pre');
@@ -3106,7 +3106,7 @@ async function openLog(key) {
 async function review(key, provider) {
   try {
     await api('/api/review', { method: 'POST', body: { key, provider } });
-    saveDraft(key, {}); // 前回の判断が新しい指摘の同じ番号に付かないようにする
+    saveDraft(key, {}); // Keep the previous judgments from attaching to the same numbers in the new comments
   } catch (e) {
     toast(e.message);
   }
@@ -3118,7 +3118,7 @@ $('#board').addEventListener('click', async (ev) => {
   if (t.closest('[data-archive-back]')) { archiveView = false; return render(); }
   const arch = t.closest('[data-archive]')?.dataset.archive;
   if (arch) {
-    // 押すたびに 入れる ⇄ 戻す
+    // Each press toggles archive in ⇄ out
     const list = archivedOf(view());
     try { localStorage.setItem(`docket-archived:${view()}`, JSON.stringify(list.includes(arch) ? list.filter((x) => x !== arch) : [...list, arch])); } catch {}
     return render();
@@ -3127,7 +3127,7 @@ $('#board').addEventListener('click', async (ev) => {
   if (jump && $(`#board [data-pr="${CSS.escape(jump.dataset.jump)}"]`)) { ev.preventDefault(); return jumpTo(jump.dataset.jump); }
   if (t.closest('a[target]')) {
     viewing = jump?.dataset.jump ?? t.closest('[data-pr]')?.dataset.pr ?? viewing;
-    // リンクの既定動作を妨げないよう、再描画せずクラスだけ付け替える
+    // Swap the class without redrawing so the link's default action is not blocked
     document.querySelectorAll('#board .card.viewing').forEach((c) => c.classList.remove('viewing'));
     if (viewing) $(`#board [data-pr="${CSS.escape(viewing)}"]`)?.classList.add('viewing');
     return;
@@ -3178,7 +3178,7 @@ const dropLane = (ev) => {
   const lane = ev.target.closest('[data-lane]');
   if (laneEdit) return laneDrag && lane?.dataset.lane !== laneDrag ? lane : null;
   if (!dragging || !lane || lane.dataset.lane === dragging.from) return null;
-  // 実行中のレビューはキャンセル (Requested へ) だけ
+  // A running review can only be canceled (back to Requested)
   return ['queued', 'reviewing'].includes(dragging.entry.status) && lane.dataset.lane !== 'requested' ? null : lane;
 };
 $('#board').addEventListener('dragstart', (ev) => {
@@ -3216,8 +3216,8 @@ $('#board').addEventListener('drop', async (ev) => {
     laneDrag = null;
     return render();
   }
-  // 動きが付いたレーンへの移動は今までどおり実行し、それ以外は表示するレーンだけ変える
-  // Reviewing へ: レビューする、Requested・Reviewed → Done: 投稿せずに終える、実行中 → Requested: キャンセル、判断待ち → 実行中: PR 上のコメントどおりに対応する
+  // Moves to lanes with an action run as before; any other move only changes the displayed lane
+  // To Reviewing: review. Requested / Reviewed -> Done: finish without posting. Running -> Requested: cancel. Needs decision -> Running: address as per the PR comments
   const { key, entry } = dragging;
   const to = lane.dataset.lane;
   dragging = null;
@@ -3226,7 +3226,7 @@ $('#board').addEventListener('drop', async (ev) => {
     if (to === 'commented' && ['requested', 'reviewed'].includes(entry.status)) await api('/api/skip', { method: 'POST', body: { key } });
     else if (['queued', 'reviewing'].includes(entry.status)) await api('/api/cancel', { method: 'POST', body: { key } });
     else if (to === 'running' && entry.status === 'planned' && entry.sessionId) {
-      // confirm() は内蔵ブラウザで使えないので、ボタンの confirmTwice と同じく 2 回目のドラッグで実行する
+      // confirm() does not work in embedded browsers, so a second drag executes, like confirmTwice on buttons
       const id = `apply-comments:${key}`;
       if (armed?.id !== id || Date.now() >= armed.until) {
         armed = { id, until: Date.now() + CONFIRM_MS };
@@ -3263,14 +3263,14 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
   const del = ev.type === 'click' && ev.target.closest('[data-filter-del]')?.dataset.filterDel;
   if (del) {
     boardFx[view()].delete(del);
-    // マージ済みは保存が無いと除外に戻るので、消すときは「すべて」を保存する
+    // Merged falls back to exclude when nothing is saved, so save "All" when clearing
     try { del === 'merged' ? localStorage.setItem('docket-merged:review', '') : localStorage.removeItem(del === 'approved' ? `docket-approved:${view()}` : hiddenKey(del, view())); } catch {}
     return render();
   }
   const seg = ev.type === 'click' && ev.target.closest('[data-approved], [data-merged]');
   if (seg) {
     const isM = 'merged' in seg.dataset;
-    if (isM) boardFx.review.add('merged'); // 最初から出ている行なので、「すべて」にしても消えないよう足した扱いにする
+    if (isM) boardFx.review.add('merged'); // This row is shown from the start, so treat it as added so it does not vanish when set to "All"
     const next = { '': 'only', only: 'exclude', exclude: '' }[isM ? seg.dataset.merged : seg.dataset.approved];
     try { localStorage.setItem(isM ? 'docket-merged:review' : `docket-approved:${view()}`, next); } catch {}
     return render();
@@ -3288,13 +3288,13 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
 };
 window.addEventListener('hashchange', () => {
   if (OLD_ROADMAP.includes(location.hash)) return location.replace('#plan');
-  laneEdit = null; // タブ切替で編集は破棄
+  laneEdit = null; // Switching tabs discards edits
   archiveView = false;
   applyCardHidden();
   render();
   enterView();
 });
-// 画面に入ったときだけ描く (render のたびに描くと設定の入力中の値が消える)
+// Draw only when entering the screen (drawing on every render would lose values being typed in settings)
 function enterView() {
   if (view() === 'plan') loadPlans();
   if (view() === 'settings') openSettings().catch((e) => toast(e.message));
@@ -3319,18 +3319,18 @@ $('#lane-cancel').onclick = () => {
   laneEdit = null;
   render();
 };
-// 「はじめる前に」。同意前は閉じられない (claude を起動する API もサーバー側で止めている)
+// "Before you start". Cannot be closed before agreeing (the server also blocks the API that starts claude)
 function openConsent(required) {
   const dlg = $('#consent-dlg');
   dlg.querySelector('[data-close]').hidden = required;
   dlg.querySelector('[data-agree]').hidden = !required;
-  dlg.oncancel = (ev) => required && ev.preventDefault(); // Esc で閉じさせない
-  if (dlg.open) return; // 再読み込みのたびに呼ばれるので、開いている間はチェックを消さない
+  dlg.oncancel = (ev) => required && ev.preventDefault(); // Do not allow closing with Esc
+  if (dlg.open) return; // Called on every reload, so do not clear the checks while it is open
   dlg.querySelectorAll('.got input').forEach((cb) => (cb.checked = false));
   dlg.querySelector('[data-agree]').disabled = true;
   dlg.showModal();
 }
-// 全項目に「理解しました」を付けるまで同意ボタンを押せない
+// The agree button stays disabled until every item is marked "I understand"
 $('#consent-dlg').onchange = () => ($('#consent-dlg [data-agree]').disabled = [...$('#consent-dlg').querySelectorAll('.got input')].some((cb) => !cb.checked));
 $('#consent-dlg').onclick = async (ev) => {
   if (ev.target.matches('[data-close]')) return $('#consent-dlg').close();
@@ -3344,8 +3344,8 @@ $('#consent-dlg').onclick = async (ev) => {
   }
 };
 $('#tips').addEventListener('click', (ev) => ev.target.matches('[data-open-consent]') && openConsent(false));
-// ---------- Tip の説明図 ----------
-// 実際のカード・レーン・ロードマップの描画関数に架空のデータを渡して描く。名前や画像はすべて作りもの
+// ---------- Tip illustrations ----------
+// Draws by passing fake data to the real card, lane and roadmap render functions. All names and images are made up
 const TIP_TEXT = {
   ja: { t: ['ログイン画面のエラー表示を改善', '注文一覧に CSV 出力を追加', '商品検索の並び替えを修正', '決済 API のタイムアウト設定', 'カートの数量変更を即時反映', 'お知らせ機能の下書き', 'README の手順を更新', '配送先住所の入力チェック', '会員ランク機能', 'ランク判定バッチ', 'ランク表示画面'],
     f: ['null のときに例外になります', 'items が空だと items[0] で TypeError になります。先に空配列をチェックしてください。', 'テストが足りません', '境界値 (0 件) のテストを追加してください。'], r: '別 PR で対応予定です',
@@ -3404,7 +3404,7 @@ const TIP_SHOTS = {
       <div class="dlg-foot"><span style="flex:1"></span><span class="muted">${tr('decided', { n: 2, total: 2 })}</span>
       <label><input type="checkbox" checked> ${tr('humanRead')}</label><label><input type="checkbox"> ${tr('approve')}</label><button class="primary">${tr('submit')}</button></div>`, 0.8];
   },
-  // 指摘に対応を押したときの事前判断 (AI 実行前)
+  // Pre-judgment when "Address comments" is pressed (before running AI)
   triage: () => {
     const g = (TIP_TEXT[lang] || TIP_TEXT.ja).g;
     const items = [
@@ -3426,8 +3426,8 @@ const TIP_SHOTS = {
     return [`<div class="cards">${[{ ...running, usage: tipUsage }, applied].map((e, i) => mineCardHtml({ key: `tip:c${i}`, ...e })).join('')}</div>`, 0.8];
   },
 };
-// 開くたびに描き直す (言語・設定・レーン名の変更を反映するため)。
-// カードはリポジトリとスキルの対応を見てボタンを出すので、架空のリポジトリにも一時的にスキルを割り当てる
+// Redraw on every open (to reflect language, settings and lane name changes).
+// Cards show buttons based on repo-to-skill mapping, so temporarily assign skills to the fake repos too
 function withTipRepo(fn) {
   const repos = board.config.repos;
   board.config.repos = { ...repos, [TIP_REPO]: { skill: 'review', selfSkill: 'self-review', fixSkill: 'review-fix' } };
@@ -3450,14 +3450,14 @@ function renderTipShots() {
     }
   });
 }
-// About の本文は翻訳文に入れ、<div data-shot="..."> の位置に Tip と同じ説明図を描く
+// About body text lives in the translations; Tip illustrations are drawn at each <div data-shot="..."> position
 function renderAbout() {
   const el = $('#about');
   el.innerHTML = tr('about.html');
   withTipRepo(() => el.querySelectorAll('[data-shot]').forEach((d) => d.replaceWith(tipShotEl(d.dataset.shot))));
 }
-// モーダルの外側 (backdrop) を押したら、そのモーダルの閉じるボタンを押したのと同じにする
-// 中で押し始めて外で離した (テキスト選択など) ときは閉じない。閉じるボタンが隠れている (同意前など) なら閉じない
+// Clicking outside a modal (backdrop) acts like pressing that modal's close button
+// Do not close when the press started inside and ended outside (text selection etc.), or when the close button is hidden (e.g. before agreeing)
 const onBackdrop = (ev) => {
   if (ev.target.tagName !== 'DIALOG') return false;
   const r = ev.target.getBoundingClientRect();
@@ -3468,9 +3468,9 @@ document.addEventListener('mousedown', (ev) => (downOnBackdrop = onBackdrop(ev))
 document.addEventListener('click', (ev) => {
   if (downOnBackdrop && onBackdrop(ev)) ev.target.querySelector('.dlg-head [data-close]:not([hidden]), form.dlg-head button')?.click();
 });
-// カードに出す項目のうち隠すもの。タブごとにブラウザへ保存し、body のクラスで CSS から隠す
+// Card fields to hide. Saved per tab in the browser, hidden by CSS via body classes
 const CARD_PARTS = ['branch', 'issue', 'stack', 'updated', 'applied', 'usage', 'reviewers', 'author', 'draft', 'provider', 'labels', 'removed'];
-// ロードマップは描画時に読む。Status・スプリントは棒が込み合うので最初は出さない
+// The roadmap reads this at render time. Status and sprint start hidden since bars get crowded
 const PLAN_PARTS = ['assignees', 'number', 'prs', 'status', 'sprint'];
 const PLAN_HIDDEN_DEFAULT = ['status', 'sprint'];
 const partsOf = (v) => (v === 'plan' ? PLAN_PARTS : CARD_PARTS);
@@ -3481,9 +3481,9 @@ const applyCardHidden = () => { const h = cardHiddenOf(view()); CARD_PARTS.forEa
 applyCardHidden();
 const otherBoard = () => (view() === 'review' ? 'receive' : 'review');
 let cardDisplayChanged = false;
-// 表示設定の各項目がカードのどこか (body.hide-* の CSS と同じ場所)
+// Where each display setting appears on the card (same places as the body.hide-* CSS)
 const PART_SEL = { branch: '.branch', issue: '.issue', stack: '.stack', updated: '.top .time', applied: '.foot .time', usage: '.usage', reviewers: '.reviewers', author: '.top .avatar', draft: '.chip.draft', provider: '.chip.provider', labels: '.chip.label', removed: '.chip.off' };
-// すべての項目が出る見本カード。表示設定は body のクラスで効くので、切り替えるとこのカードもそのまま変わる
+// Sample card with every field. Display settings work via body classes, so toggling them changes this card too
 function cardDisplayPreview() {
   const t = TIP_TEXT[lang] || TIP_TEXT.ja;
   const pr = tipPr(1, { isDraft: true, labels: [{ name: 'no-pr-activity', color: 'd4c5f9' }], issues: [{ repo: TIP_REPO, number: 98, title: t.t[4], url: '#' }] });
@@ -3492,7 +3492,7 @@ function cardDisplayPreview() {
   el.className = 'cd-preview';
   el.inert = true;
   el.innerHTML = withTipRepo(() => (view() === 'receive' ? mineCardHtml : cardHtml)(e));
-  // スタックは実際のボードの PR から作るので、見本では手で足す
+  // Stacks are built from PRs on the real board, so the sample adds them by hand
   el.querySelector('.branch')?.insertAdjacentHTML('afterend', `<div class="stack">${tr('stack')}<a>#120</a> → <b>#121</b></div>`);
   return el;
 }
@@ -3524,7 +3524,7 @@ $('#display-dlg').onchange = (ev) => {
   if (view() === 'plan') return plRefresh(['body']);
   applyCardHidden();
 };
-// 閉じるとき、変更があってもう一方のボードと設定が違えば、同じ設定にするか聞く
+// On close, if something changed and the other board's settings differ, ask whether to make them the same
 function closeCardDisplay() {
   const dlg = $('#display-dlg');
   const same = (a, b) => [...a].sort().join() === [...b].sort().join();
@@ -3541,10 +3541,10 @@ $('#display-dlg').onclick = (ev) => {
 };
 
 load().then(enterView);
-// ローカル状態は設定した間隔で、GitHub はサーバー側の定期取得に任せる
-// 設定変更を即反映するため毎回間隔を読み直す
+// Local state uses the configured interval; GitHub is left to the server's periodic fetch
+// Re-read the interval every time so settings changes apply immediately
 (function poll() {
-  // setTimeout は約 24.8 日を超えると 1 ms になるので 1 日で頭打ちにする
+  // setTimeout becomes 1 ms beyond about 24.8 days, so cap at 1 day
   setTimeout(() => load(false, true).finally(poll), Math.min(Math.max(1, Number(board.config.refreshSeconds) || 5), 86400) * 1000);
 })();
 </script>

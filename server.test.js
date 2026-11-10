@@ -24,7 +24,7 @@ const node = (number, repo = 'acme/api') => ({
   reviewRequests: { nodes: [{ requestedReviewer: { login: 'me', avatarUrl: '' } }, { requestedReviewer: { name: 'team' } }] },
 });
 
-test('mergeBoard: 新規 PR は requested になり、関連 issue・レビュー状況を正規化する', () => {
+test('mergeBoard: a new PR becomes requested, with linked issues and review state normalized', () => {
   const prs = mergeBoard({}, [node(1)], 0);
   const e = prs['acme/api#1'];
   assert.equal(e.status, 'requested');
@@ -35,7 +35,7 @@ test('mergeBoard: 新規 PR は requested になり、関連 issue・レビュ�
   assert.deepEqual(e.pr.requested.map((r) => r.login), ['me']);
 });
 
-test('mergeBoard: 依頼が外れた PR は未着手なら消し、作業中・完了済みは残す', () => {
+test('mergeBoard: a PR no longer requested is removed if not started, kept if in progress or done', () => {
   const prev = {
     'acme/api#1': { status: 'requested' },
     'acme/api#2': { status: 'reviewed', findings: [] },
@@ -47,7 +47,7 @@ test('mergeBoard: 依頼が外れた PR は未着手なら消し、作業中・�
   assert.equal(prs['acme/api#3'].status, 'commented');
 });
 
-test('mergeBoard: Done を残す日数は設定で変えられる (既定 7 日、1 未満は既定値)', () => {
+test('mergeBoard: days to keep Done are configurable (default 7, below 1 falls back to default)', () => {
   const day = 24 * 60 * 60 * 1000;
   assert.equal(DONE_KEEP_MS, 7 * day);
   assert.equal(doneKeepMs(0), 7 * day);
@@ -56,7 +56,7 @@ test('mergeBoard: Done を残す日数は設定で変えられる (既定 7 日�
   assert.equal(mergeBoard(prev, [], 3 * day + 1, [], null, doneKeepMs(3))['acme/api#1'], undefined);
 });
 
-test('mergeBoard: 依頼が外れた Done は DONE_KEEP_MS を過ぎたら消す (作業途中は残す)', () => {
+test('mergeBoard: a Done PR no longer requested is removed after DONE_KEEP_MS (in-progress ones stay)', () => {
   const prev = {
     'acme/api#1': { status: 'commented', commentedAt: 0 },
     'acme/api#2': { status: 'reviewed', findings: [] },
@@ -70,7 +70,7 @@ test('mergeBoard: 依頼が外れた Done は DONE_KEEP_MS を過ぎたら消す
 const myThread = (root, last, isResolved = false) => ({ isResolved, root: { nodes: [{ author: { login: root } }] }, comments: { nodes: [{ author: { login: last } }] } });
 const reviewed = (number, threads) => ({ ...node(number), reviewThreads: { nodes: threads } });
 
-test('mergeBoard: 自分の指摘に作成者が全部対応したら Done から requested に戻す', () => {
+test('mergeBoard: moves Done back to requested once the author has addressed all my comments', () => {
   let prs = { 'acme/api#1': { status: 'commented', commentedAt: 0, usage: { tokens: 5 } } };
   prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'me'), myThread('me', 'me')])], 'me');
   assert.equal(prs['acme/api#1'].status, 'commented');
@@ -80,34 +80,34 @@ test('mergeBoard: 自分の指摘に作成者が全部対応したら Done か�
   assert.equal(prs['acme/api#1'].status, 'requested');
   assert.equal(prs['acme/api#1'].active, false);
   assert.deepEqual(prs['acme/api#1'].usage, { tokens: 5 });
-  // 依頼が外れたままでも、PR が開いている間は消さない
+  // Even while no longer requested, keep it as long as the PR is open
   prs = mergeBoard(prs, [], 0, [reviewed(1, [])], 'me');
   assert.equal(prs['acme/api#1'].status, 'requested');
   assert.equal(mergeBoard(prs, [], 0, [], 'me')['acme/api#1'], undefined);
 });
 
-test('mergeBoard: 自分の指摘が無い Done (Approve のみ・他人のスレッドだけ)・スキップは戻さない', () => {
+test('mergeBoard: does not move back Done without my comments (Approve only, threads by others only) or skipped', () => {
   const prs = { 'acme/api#1': { status: 'commented', commentedAt: 0 }, 'acme/api#2': { status: 'commented', commentedAt: 0, skipped: true } };
   const next = mergeBoard(prs, [], 0, [reviewed(1, [myThread('bob', 'alice')]), reviewed(2, [myThread('me', 'alice')])], 'me');
   assert.equal(next['acme/api#1'].status, 'commented');
   assert.equal(next['acme/api#2'].status, 'commented');
 });
 
-test('mergeBoard: 戻した PR を再レビューして Done にしたら、新しい指摘が対応されるまで戻さない', () => {
+test('mergeBoard: after re-reviewing a moved-back PR to Done, waits until new comments are addressed', () => {
   const answered = [reviewed(1, [myThread('me', 'alice', true)])];
   let prs = mergeBoard({ 'acme/api#1': { status: 'commented', commentedAt: 0 } }, [], 0, answered, 'me');
   assert.equal(prs['acme/api#1'].status, 'requested');
-  // 再レビューで指摘なし (Approve) → 古いスレッドだけでは戻らない
+  // Re-review with no comments (Approve) -> old threads alone do not move it back
   prs['acme/api#1'] = { ...prs['acme/api#1'], status: 'commented', commentedAt: 0 };
   assert.equal(mergeBoard(prs, [], 0, answered, 'me')['acme/api#1'].status, 'commented');
-  // 再レビューで新しい指摘 → 対応待ち → 対応されたら戻る
+  // Re-review with new comments -> waiting for fixes -> moves back once addressed
   prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice', true), myThread('me', 'me')])], 'me');
   assert.equal(prs['acme/api#1'].status, 'commented');
   prs = mergeBoard(prs, [], 0, [reviewed(1, [myThread('me', 'alice', true), myThread('me', 'alice')])], 'me');
   assert.equal(prs['acme/api#1'].status, 'requested');
 });
 
-test('manualLane: 手で移したレーンは、状態・未対応数・Draft・PR の更新が変わるまで使う', () => {
+test('manualLane: a manually moved lane sticks until state, pending count, Draft or PR update changes', () => {
   const e = { status: 'idle', pending: 0, pr: { isDraft: false, updatedAt: 't1' } };
   const moved = { ...e, manual: { lane: 'planned', ...laneSnapshot(e) } };
   assert.equal(manualLane(moved), 'planned');
@@ -118,15 +118,15 @@ test('manualLane: 手で移したレーンは、状態・未対応数・Draft・
   assert.equal(manualLane({ ...moved, pr: { isDraft: true, updatedAt: 't1' } }), null);
   assert.equal(manualLane({ ...moved, pr: { isDraft: false, updatedAt: 't2' } }), null);
   assert.equal(boardEntry('k', { ...moved, pending: 1 }).manualLane, undefined);
-  // pending を持たない (レビューする側の) カードでも、保存した JSON を読み戻しても一致する
+  // Matches for cards without pending (reviewer side) and after a JSON round trip
   const pr = { status: 'requested', pr: { updatedAt: 't1' } };
   assert.equal(manualLane(JSON.parse(JSON.stringify({ ...pr, manual: { lane: 'reviewed', ...laneSnapshot(pr) } }))), 'reviewed');
 
-  // 無くなったレーン (下書き) に移したカードは自動のレーンに戻す
+  // A card moved to a lane that no longer exists (draft) goes back to its automatic lane
   assert.equal(manualLane({ ...e, manual: { lane: 'draft', ...laneSnapshot(e) } }), null);
 });
 
-test('boardEntry: 判断ダイアログを開けない状態では Claude の出力を送らない', () => {
+test('boardEntry: does not send Claude output when the decision dialog cannot be opened', () => {
   const heavy = { raw: 'r', applyRaw: 'a', findings: [{ no: 1 }], summary: 's', postRaw: 'p', decisions: { 1: {} }, sessionId: 'x' };
   const done = boardEntry('k', { status: 'commented', ...heavy });
   assert.deepEqual(Object.keys(done).sort(), ['key', 'sessionId', 'status']);
@@ -137,62 +137,62 @@ test('boardEntry: 判断ダイアログを開けない状態では Claude の出
   assert.equal(boardEntry('k', { status: 'planned', ...heavy }).raw, 'r');
 });
 
-test('mergeBoard: commented 後に再度依頼されたら requested に戻す (投稿直後は戻さない)', () => {
+test('mergeBoard: moves back to requested when re-requested after commented (not right after posting)', () => {
   const prev = { 'acme/api#1': { status: 'commented', commentedAt: 1000 } };
   assert.equal(mergeBoard(prev, [node(1)], 1000 + 1)['acme/api#1'].status, 'commented');
   assert.equal(mergeBoard(prev, [node(1)], 1000 + RE_REQUEST_GRACE_MS + 1)['acme/api#1'].status, 'requested');
 });
 
-test('mergeBoard: スキップした PR は依頼が残っていても requested に戻さない', () => {
+test('mergeBoard: a skipped PR stays out of requested even if the request remains', () => {
   const prev = { 'acme/api#1': { status: 'commented', commentedAt: 1000, skipped: true } };
   assert.equal(mergeBoard(prev, [node(1)], 1000 + RE_REQUEST_GRACE_MS + 1)['acme/api#1'].status, 'commented');
 });
 
-test('mergeBoard: レビュー中の PR は状態を保持する', () => {
+test('mergeBoard: keeps the state of a PR under review', () => {
   const prev = { 'acme/api#1': { status: 'reviewing', startedAt: 5 } };
   assert.equal(mergeBoard(prev, [node(1)], 0)['acme/api#1'].status, 'reviewing');
 });
 
-test('fillTemplate: プレースホルダーを置換する', () => {
+test('fillTemplate: replaces placeholders', () => {
   const pr = { repo: 'acme/api', number: 12, url: 'https://x/12' };
   assert.equal(fillTemplate('{pr-number} --repo {repo-name}', pr), '12 --repo api');
   assert.equal(fillTemplate('', pr), '12');
   assert.equal(fillTemplate('{full-repo-name} {owner-name} {pr-url}', pr), 'acme/api acme https://x/12');
 });
 
-test('extractTagJson: 最後のタグの JSON を取り出し、コードフェンスも許容する', () => {
+test('extractTagJson: takes JSON from the last tag, allowing code fences', () => {
   const text = 'example <x>{"a":0}</x>\n本番:\n<x>\n```json\n{"a":1}\n```\n</x>';
   assert.deepEqual(extractTagJson(text, 'x'), { a: 1 });
   assert.equal(extractTagJson('なし', 'x'), null);
   assert.equal(extractTagJson('<x>壊れた</x>', 'x'), null);
 });
 
-test('splitArgs: 引用符付きの引数を扱う', () => {
+test('splitArgs: handles quoted arguments', () => {
   assert.deepEqual(splitArgs('--a b,c "d e" \'f\''), ['--a', 'b,c', 'd e', 'f']);
   assert.deepEqual(splitArgs(''), []);
 });
 
-test('canDecideAll: 全指摘に同意/非同意がないと false', () => {
+test('canDecideAll: false unless every comment is agree/disagree', () => {
   const findings = [{ no: 1 }, { no: 2 }];
   assert.equal(canDecideAll(findings, { 1: { verdict: 'agree' } }), false);
   assert.equal(canDecideAll(findings, { 1: { verdict: 'agree' }, 2: { verdict: 'disagree', reason: '' } }), true);
   assert.equal(canDecideAll([], {}), true);
 });
 
-test('canDecideAll: 対象外は許可したときだけ判断済みになる', () => {
+test('canDecideAll: out-of-scope counts as decided only when allowed', () => {
   const findings = [{ no: 1 }, { no: 2 }];
   const decisions = { 1: { verdict: 'agree' }, 2: { verdict: 'skip' } };
   assert.equal(canDecideAll(findings, decisions), false);
   assert.equal(canDecideAll(findings, decisions, true), true);
 });
 
-test('buildPostPrompt: 対象外の指摘は投稿しない', () => {
+test('buildPostPrompt: does not post out-of-scope comments', () => {
   const prompt = buildPostPrompt({ url: 'https://x/1' }, [{ no: 1 }], { 1: { verdict: 'skip' } }, false, false);
   assert.match(prompt, /- #1 対象外 \/ 理由なし/);
   assert.match(prompt, /- 対象外: 投稿しない。/);
 });
 
-test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
+test('buildPostPrompt: reflects verdicts, reasons and Approve', () => {
   const prompt = buildPostPrompt(
     { url: 'https://x/1' },
     [{ no: 1 }, { no: 2 }, { no: 3 }],
@@ -211,28 +211,28 @@ test('buildPostPrompt: 判断・理由・Approve を反映する', () => {
   assert.match(prompt, /---/);
 });
 
-test('buildPostPrompt: 非同意の意見のアイコンを指定できる', () => {
+test('buildPostPrompt: icon for disagree opinions is configurable', () => {
   const prompt = buildPostPrompt({ url: 'https://x/1' }, [{ no: 1 }], { 1: { verdict: 'disagree', reason: 'r' } }, false, false, '🙋');
   assert.match(prompt, /「🙋 」で始め/);
   assert.doesNotMatch(prompt, /🙅💭/);
 });
 
-test('modelOptions: 指定したモデル・effort を渡し、サブエージェントも同じモデルにする。未指定なら何も足さない', () => {
+test('modelOptions: passes the given model/effort and uses the same model for subagents; adds nothing when unset', () => {
   assert.deepEqual(modelOptions({ model: 'opus', effort: 'medium' }), { args: ['--model', 'opus', '--effort', 'medium'], env: { CLAUDE_CODE_SUBAGENT_MODEL: 'opus' } });
   assert.deepEqual(modelOptions({ model: '', effort: '' }), { args: [], env: {} });
 });
 
-test('pathSettings: ユーザー設定の env.PATH に上書きされないよう、サーバーの PATH を --settings で渡す', () => {
+test('pathSettings: passes the server PATH via --settings so env.PATH in user settings does not override it', () => {
   assert.deepEqual(pathSettings({ PATH: '/pnpm/bin:/bin' }), ['--settings', '{"env":{"PATH":"/pnpm/bin:/bin"}}']);
   assert.deepEqual(pathSettings({}), []);
 });
 
-test('childEnv: 親 Claude Code セッションの環境変数を除き、それ以外は残す', () => {
+test('childEnv: drops env vars of the parent Claude Code session, keeps the rest', () => {
   const env = childEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_PID: '1', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
   assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
 });
 
-test('searchQueries: マージ済みは指定日数以内に絞り、0 日なら取得しない', () => {
+test('searchQueries: limits merged PRs to the given days, skips them at 0 days', () => {
   const now = Date.parse('2026-10-16T12:00:00Z');
   const q = searchQueries(7, now);
   assert.equal(q.open, 'is:pr archived:false user-review-requested:@me is:open');
@@ -241,13 +241,13 @@ test('searchQueries: マージ済みは指定日数以内に絞り、0 日なら
   assert.equal(searchQueries(0, now).withMerged, false);
 });
 
-test('buildPostPrompt: コード確認なしならその旨を書かせない', () => {
+test('buildPostPrompt: without code check, does not say the code was read', () => {
   const prompt = buildPostPrompt({ url: 'https://x/1' }, [], {}, false, false);
   assert.match(prompt, /なし — コードを読んだ旨は書かない/);
   assert.doesNotMatch(prompt, /「人間のレビュアーもコードを読みました ✅」/);
 });
 
-test('usageOf / addUsage: 全モデルのトークン (キャッシュ込み) と費用を PR ごとに累計する', () => {
+test('usageOf / addUsage: totals tokens (incl. cache) and cost across all models per PR', () => {
   const parsed = {
     total_cost_usd: 1.5,
     modelUsage: {
@@ -262,14 +262,14 @@ test('usageOf / addUsage: 全モデルのトークン (キャッシュ込み) �
   assert.deepEqual(addUsage(u, null), u);
 });
 
-test('mergeBoard: 再依頼でリセットしても使用量の累計は残す', () => {
+test('mergeBoard: keeps the usage total when reset by a re-request', () => {
   const prev = { 'acme/api#1': { status: 'commented', commentedAt: 0, usage: { tokens: 1, costUsd: 0.1 } } };
   const prs = mergeBoard(prev, [node(1)], RE_REQUEST_GRACE_MS + 1);
   assert.equal(prs['acme/api#1'].status, 'requested');
   assert.deepEqual(prs['acme/api#1'].usage, { tokens: 1, costUsd: 0.1 });
 });
 
-test('filterByAuthors: 指定した作成者だけ残し、[bot] 表記と大文字小文字の差を吸収する。空なら全件', () => {
+test('filterByAuthors: keeps only given authors, ignoring [bot] suffix and case; all when empty', () => {
   const by = (login) => ({ ...node(1), author: { login } });
   const nodes = [by('alice'), by('dependabot'), by('github-actions'), { ...node(2), author: null }];
   assert.deepEqual(filterByAuthors(nodes, ['Alice', ' dependabot[bot] ', '']).map((n) => n.author.login), ['alice', 'dependabot']);
@@ -277,7 +277,7 @@ test('filterByAuthors: 指定した作成者だけ残し、[bot] 表記と大文
   assert.equal(filterByAuthors(nodes, undefined).length, 4);
 });
 
-test('readRun: ファイルに書かれた claude の JSON を解析し、.log にまとめて元ファイルを消す', () => {
+test('readRun: parses the claude JSON written to a file, collects it into .log and removes the original', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'a.out'), [{ type: 'system' }, { type: 'result', result: 'done', session_id: 's1', is_error: false }].map((e) => JSON.stringify(e)).join('\n'));
   fs.writeFileSync(path.join(dir, 'a.err'), '');
@@ -288,7 +288,7 @@ test('readRun: ファイルに書かれた claude の JSON を解析し、.log �
   assert.deepEqual(fs.readdirSync(dir), ['a.log']);
 });
 
-test('logLines: 発言とツール呼び出しだけを 1 行ずつにし、サブエージェント分は字下げする', () => {
+test('logLines: one line per message and tool call, subagent lines indented', () => {
   const text = [
     { type: 'system' },
     { type: 'assistant', message: { content: [{ type: 'text', text: ' 読みます ' }, { type: 'tool_use', name: 'Read', input: { file_path: 'a.rb' } }] } },
@@ -299,7 +299,7 @@ test('logLines: 発言とツール呼び出しだけを 1 行ずつにし、サ�
   assert.deepEqual(logLines(text, 1), ['  ↳ 💬 sub']);
 });
 
-test('readRun: 途中で止まった出力や出力ファイルが無い場合は失敗にする', () => {
+test('readRun: fails when output was cut off or the output file is missing', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'b.out'), '');
   fs.writeFileSync(path.join(dir, 'b.err'), 'killed');
@@ -307,7 +307,7 @@ test('readRun: 途中で止まった出力や出力ファイルが無い場合�
   assert.equal(readRun(dir, 'missing', 0).ok, false);
 });
 
-test('readRun: .log を書けなくても例外を投げず失敗にする (投げると close ハンドラ内でサーバーが落ちる)', () => {
+test('readRun: fails without throwing when .log cannot be written (throwing would crash the server in the close handler)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.writeFileSync(path.join(dir, 'c.out'), '{"type":"result","result":"x"}\n');
   fs.writeFileSync(path.join(dir, 'c.err'), '');
@@ -317,7 +317,7 @@ test('readRun: .log を書けなくても例外を投げず失敗にする (投�
   assert.equal(res.error.code, 'claudeReadFailed');
 });
 
-test('isAlive: 自プロセスは生存、終了済みプロセスは非生存', () => {
+test('isAlive: own process is alive, exited process is not', () => {
   assert.equal(isAlive(process.pid), true);
   const { pid } = require('node:child_process').spawnSync('true');
   assert.equal(isAlive(pid), false);
@@ -325,13 +325,13 @@ test('isAlive: 自プロセスは生存、終了済みプロセスは非生存',
 
 const thread = (isResolved, login) => ({ isResolved, comments: { nodes: [{ author: { login } }] } });
 
-test('pendingThreads: 未解決かつ最後の発言が自分以外のスレッドだけ数える', () => {
+test('pendingThreads: counts only unresolved threads whose last comment is not mine', () => {
   const n = { reviewThreads: { nodes: [thread(false, 'bob'), thread(false, 'me'), thread(true, 'bob'), { isResolved: false, comments: { nodes: [] } }] } };
   assert.equal(pendingThreads(n, 'me').length, 2);
   assert.equal(pendingThreads({}, 'me').length, 0);
 });
 
-test('pendingThreads: 返信の無い自分だけのスレッド (セルフ指摘) は数え、自分が返信したものは数えない', () => {
+test('pendingThreads: counts my own threads with no reply (self comments), not ones I replied to', () => {
   const c = (login, url) => ({ author: { login }, body: '', url });
   const n = { reviewThreads: { nodes: [
     { isResolved: false, root: { nodes: [c('me', 'u1')] }, comments: { nodes: [c('me', 'u1')] } },
@@ -341,7 +341,7 @@ test('pendingThreads: 返信の無い自分だけのスレッド (セルフ指�
   assert.deepEqual(pendingThreads(n, 'me').map((t) => t.url), ['u1']);
 });
 
-test('pendingThreads: セルフ指摘に AI の対応後に自分が書き足した発言は、再指摘として数える', () => {
+test('pendingThreads: a comment I add to a self comment after the AI handled it counts as a new comment', () => {
   const c = (login, url, createdAt) => ({ author: { login }, body: '', url, createdAt });
   const appliedAt = Date.parse('2026-11-05T10:00:00Z');
   const n = { reviewThreads: { nodes: [
@@ -353,7 +353,7 @@ test('pendingThreads: セルフ指摘に AI の対応後に自分が書き足し
   assert.deepEqual(pendingThreads(n, 'me').map((t) => t.url), []);
 });
 
-test('pendingThreads: 人が判断できるよう最初の指摘と、返信が続いていれば最新の発言を持つ', () => {
+test('pendingThreads: keeps the first comment and, if replies follow, the latest one, so a human can decide', () => {
   const c = (login, body, url) => ({ author: { login }, body, url });
   const n = { reviewThreads: { nodes: [
     { isResolved: false, path: 'a.rb', line: 3, root: { nodes: [c('bob', '直して', 'u1')] }, comments: { nodes: [c('bob', '直して', 'u1')] } },
@@ -365,7 +365,7 @@ test('pendingThreads: 人が判断できるよう最初の指摘と、返信が�
   assert.deepEqual(b.latest, { author: 'amy', body: '再度確認を' });
 });
 
-test('mergeMine: 状態を保持して未対応数を更新し、クローズされた PR は実行中のものだけ残す', () => {
+test('mergeMine: keeps state, updates pending count, keeps closed PRs only while running', () => {
   const prev = {
     'mine:acme/api#1': { status: 'planned', findings: [] },
     'mine:acme/api#2': { status: 'idle' },
@@ -389,7 +389,7 @@ const triage = [
   { no: 4, kind: 'comment', author: 'amy', url: 'u4', path: null, line: null, comment: '全体的に命名を見直して', verdict: 'agree', reason: '' },
 ];
 
-test('triageFrom: 全指摘に同意/非同意/対象外が付いたときだけ URL で判断を結び付ける', () => {
+test('triageFrom: links decisions by URL only when every comment is agree/disagree/out of scope', () => {
   const threads = [{ no: 1, url: 'u1' }, { no: 2, url: 'u2' }, { no: 3, url: 'u3' }];
   assert.equal(triageFrom(threads, { u1: { verdict: 'agree' }, u2: { verdict: 'skip' } }), null);
   assert.deepEqual(triageFrom(threads, { u1: { verdict: 'agree' }, u2: { verdict: 'disagree', reason: ' 不要 ' }, u3: { verdict: 'skip' } }), [
@@ -399,12 +399,12 @@ test('triageFrom: 全指摘に同意/非同意/対象外が付いたときだけ
   ]);
 });
 
-test('triageTargets: 対象外以外 (同意・非同意) を AI の対象にする', () => {
+test('triageTargets: AI handles everything except out of scope (agree and disagree)', () => {
   assert.deepEqual(triageTargets(triage).map((t) => t.no), [1, 2, 4]);
   assert.equal(triageTargets([triage[2]]).length, 0);
 });
 
-test('pendingComments: 自分が最後に PR 全体へ発言した後の、他の人の空でないコメントとレビュー本文を古い順に返す', () => {
+test('pendingComments: returns non-empty comments by others and review bodies after my last PR-level comment, oldest first', () => {
   const c = (login, body, url, createdAt) => ({ author: { login }, body, url, createdAt });
   const r = (login, body, url, submittedAt) => ({ author: { login }, body, url, submittedAt });
   const n = {
@@ -418,7 +418,7 @@ test('pendingComments: 自分が最後に PR 全体へ発言した後の、他�
   assert.deepEqual(pendingComments({}, 'me'), []);
 });
 
-test('mergeMine: 対象外にした指摘は一覧と件数から外し、新しい発言が付いたらまた出す', () => {
+test('mergeMine: out-of-scope comments leave the list and count, and come back on a new reply', () => {
   const c = (login, url) => ({ author: { login }, body: 'x', url });
   const t = (...cs) => ({ isResolved: false, root: { nodes: [cs[0]] }, comments: { nodes: [cs.at(-1)] } });
   const prev = { 'mine:acme/api#1': { status: 'idle', skipped: ['u1 u1', 'u2 u2', 'gone gone'] } };
@@ -431,14 +431,14 @@ test('mergeMine: 対象外にした指摘は一覧と件数から外し、新し
   assert.equal(only.pending, 0);
 });
 
-test('mergeMine: PR 全体へのコメントは判断対象に足すが、指摘ありの件数はスレッドだけで数える', () => {
+test('mergeMine: PR-level comments are added to triage, but the comment count only counts threads', () => {
   const n = { ...node(1), reviewThreads: { nodes: [thread(false, 'bob')] }, comments: { nodes: [{ author: { login: 'ci' }, body: 'Coverage', url: 'c1', createdAt: '2026-01-01T00:00:00Z' }] } };
   const m = mergeMine({}, [n], 'me')['mine:acme/api#1'];
   assert.equal(m.pending, 1);
   assert.deepEqual(m.threads.map((t) => [t.no, t.kind || 'thread']), [[1, 'thread'], [2, 'comment']]);
 });
 
-test('buildFixPlanPrompt: 事前判断した指摘だけを対象にし、理由ありの非同意には反論か返信案を返させる', () => {
+test('buildFixPlanPrompt: targets only pre-triaged comments; disagree with a reason asks for a rebuttal or reply draft', () => {
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix' }, triage);
   assert.match(prompt, /- #1 @bob a\.rb:3 u1\n  指摘: 直して\n  同意 \/ 理由なし/);
   assert.match(prompt, /- #2 @amy u2\n  指摘: なぜ\?\n  非同意 \/ 理由: 仕様どおり/);
@@ -450,7 +450,7 @@ test('buildFixPlanPrompt: 事前判断した指摘だけを対象にし、理由
   assert.match(prompt, /"rebuttal"/);
 });
 
-test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信をさせず計画だけ返させる', () => {
+test('buildFixPlanPrompt: starts with the given skill and returns only a plan, without fix, push or reply', () => {
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: 'review-fix', fixArgs: '{pr-number} --repo {repo-name}' }, triage);
   assert.match(prompt, /^\/review-fix 3 --repo api\n/);
   assert.match(prompt, /コミット・push・返信はまだ行わない/);
@@ -459,7 +459,7 @@ test('buildFixPlanPrompt: 指定スキルで起動し、修正・push・返信�
   assert.match(prompt, /category を followup にし/);
 });
 
-test('buildFixApplyPrompt / buildSelfApplyPrompt: 同意 + 理由は返信にアイコン付きの本人の意見として添えさせる', () => {
+test('buildFixApplyPrompt / buildSelfApplyPrompt: agree + reason is added to the reply as a personal opinion with an icon', () => {
   const decisions = { 1: { verdict: 'agree', reason: '空でも登録できるように' } };
   assert.match(buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions), /「🙆💭 」で始め/);
   assert.match(buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions), /「🙆💭 」で始め/);
@@ -467,7 +467,7 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 同意 + 理由は返信にア
   assert.match(buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions, '', '🙋'), /「🙋 」で始め/);
 });
 
-test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済みとして push・返信させる', () => {
+test('buildFixApplyPrompt / buildSelfApplyPrompt: passes decisions and pushes/replies as already approved', () => {
   const decisions = { 1: { verdict: 'agree' }, 2: { verdict: 'disagree', reason: '仕様どおり' } };
   const fix = buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }, { no: 2 }], decisions);
   assert.match(fix, /- #1 同意 \/ 理由なし/);
@@ -482,14 +482,14 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: 判断を渡し、承認済み
   assert.match(self, /event: COMMENT/);
   assert.match(self, /コミット SHA を含む返信/);
   assert.match(self, /<docket-applied>/);
-  // 指摘 0 件でも所感をレビュー本文として投稿させる
+  // Even with 0 comments, post the impressions as the review body
   const empty = buildSelfApplyPrompt({ url: 'https://x/3' }, [], {}, '問題は見つかりませんでした');
   assert.match(empty, /問題は見つかりませんでした/);
   assert.match(empty, /同意が 0 件でも所感だけのレビューを投稿する/);
   assert.doesNotMatch(empty, /同意が 0 件なら何もしない/);
 });
 
-test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として、承認済みで修正・push・返信させる', () => {
+test('buildCommentApplyPrompt: treats my own PR comments as instructions; fixes, pushes and replies as approved', () => {
   const prompt = buildCommentApplyPrompt({ url: 'https://x/3' });
   assert.match(prompt, /https:\/\/x\/3/);
   assert.match(prompt, /PR 作成者.*コメント/);
@@ -498,7 +498,7 @@ test('buildCommentApplyPrompt: PR 上の自分のコメントを指示として�
   assert.match(prompt, /<docket-applied>/);
 });
 
-test('runForTag: 最後のメッセージにタグが無ければ同じセッションを 1 回だけ再開して再出力させる', async () => {
+test('runForTag: if the last message has no tag, resumes the same session once to output it again', async () => {
   const usage = { tokens: 1, costUsd: 0.1 };
   const calls = [];
   const fake = (results) => async (prompt, opts) => (calls.push(opts), results.shift());
@@ -521,21 +521,21 @@ test('runForTag: 最後のメッセージにタグが無ければ同じセッシ
   assert.equal(res.result, 'x');
   assert.deepEqual(res.usage, { tokens: 2, costUsd: 0.2 });
 
-  // キャンセル済みなら再開しない
+  // Do not resume when already cancelled
   calls.length = 0;
   res = await runForTag('docket-findings', 'p', { logName: 'a', cancelled: () => true }, fake([{ ok: true, sessionId: 's', result: 'x', usage }]));
   assert.equal(calls.length, 1);
   assert.equal(res.result, 'x');
 });
 
-test('pollIntervalMs: 分をミリ秒にし、1 分未満や不正値は既定の 5 分に戻す', () => {
+test('pollIntervalMs: converts minutes to ms; under 1 minute or invalid falls back to 5 minutes', () => {
   assert.equal(pollIntervalMs(10), 10 * 60 * 1000);
   assert.equal(pollIntervalMs('2'), 2 * 60 * 1000);
   for (const v of [0, -1, '', undefined, 'abc']) assert.equal(pollIntervalMs(v), 5 * 60 * 1000);
   assert.equal(pollIntervalMs(100000), 24 * 60 * 60 * 1000);
 });
 
-test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎと終日も扱う', () => {
+test('inPollHours: fetches only when start <= hour < end, handles overnight and all-day', () => {
   const at = (h) => new Date(2026, 9, 16, h, 30);
   assert.equal(inPollHours(at(8), 9, 19), false);
   assert.equal(inPollHours(at(9), 9, 19), true);
@@ -550,13 +550,13 @@ test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎ�
 
 const { parseProjectUrl, detectFields } = require('./server');
 
-test('parseProjectUrl: org / user のプロジェクト URL を解析し、それ以外は null', () => {
+test('parseProjectUrl: parses org / user project URLs, null otherwise', () => {
   assert.deepEqual(parseProjectUrl('https://github.com/orgs/acme/projects/1/views/1'), { owner: 'organization', login: 'acme', number: 1 });
   assert.deepEqual(parseProjectUrl('https://github.com/users/alice/projects/3'), { owner: 'user', login: 'alice', number: 3 });
   assert.equal(parseProjectUrl('https://github.com/docket/repo'), null);
 });
 
-test('detectFields: 最初の Iteration と、名前から開始日・終了日の Date フィールドを選ぶ', () => {
+test('detectFields: picks the first Iteration and start/end Date fields by name', () => {
   const fields = [
     { name: 'Status', dataType: 'SINGLE_SELECT', options: [{ name: 'Todo' }, { name: 'Done' }] },
     { name: '[必須]Sprint', dataType: 'ITERATION', configuration: { iterations: [{ id: 'b', title: 'S2', startDate: '2026-10-24', duration: 14 }], completedIterations: [{ id: 'a', title: 'S1', startDate: '2026-10-10', duration: 14 }] } },
@@ -574,7 +574,7 @@ test('detectFields: 最初の Iteration と、名前から開始日・終了日�
 
 const { pickIterations } = require('./server');
 
-test('pickIterations: 現在と前後 N 個に絞り、未来は issue があるものだけ、新しい順に並べる', () => {
+test('pickIterations: current plus N before/after, future only with issues, newest first', () => {
   const it = (id, startDate, endDate, count) => ({ id, startDate, endDate, count });
   const all = [
     it('p2', '2026-09-12', '2026-09-25', 5), it('p1', '2026-09-26', '2026-10-09', 3), it('now', '2026-10-10', '2026-10-23', 27),
@@ -582,31 +582,31 @@ test('pickIterations: 現在と前後 N 個に絞り、未来は issue がある
   ];
   assert.deepEqual(pickIterations(all, '2026-10-16', { past: 1, future: 1 }).map((i) => i.id), ['f2', 'now', 'p1']);
   assert.deepEqual(pickIterations(all, '2026-10-16', { past: 0, future: 2 }).map((i) => i.id), ['f3', 'f2', 'now']);
-  // 件数を数える前は未来をすべて候補にする
+  // Before counts are known, all future iterations are candidates
   assert.deepEqual(pickIterations(all.map((i) => ({ ...i, count: undefined })), '2026-10-16', { past: 2, future: Infinity }).map((i) => i.id), ['f3', 'f2', 'f1', 'now', 'p1', 'p2']);
 });
 
 const { periodAt, periodWindows } = require('./server');
 
-test('periodAt: 週は月曜始まり、2 週は 2024-01-01 起点、月はカレンダーどおり', () => {
+test('periodAt: weeks start on Monday, 2 weeks counted from 2024-01-01, months follow the calendar', () => {
   assert.deepEqual(periodAt('2026-10-16', 'week'), { id: '2026-10-12', startDate: '2026-10-12', endDate: '2026-10-18' });
   assert.equal(periodAt('2026-10-12', 'week').startDate, '2026-10-12');
   assert.equal(periodAt('2026-10-18', 'week').startDate, '2026-10-12');
-  // 2026-10-12 は 2024-01-01 から 1015 日 (= 14 × 72 + 7) なので、2 週の区切りは 10/5 – 10/18
+  // 2026-10-12 is 1015 days after 2024-01-01 (= 14 x 72 + 7), so the 2-week period is 10/5 - 10/18
   assert.deepEqual([periodAt('2026-10-16', '2week').startDate, periodAt('2026-10-16', '2week').endDate], ['2026-10-05', '2026-10-18']);
   assert.equal(periodAt('2023-12-31', '2week').startDate, '2023-12-18');
   assert.deepEqual(periodAt('2026-02-10', 'month'), { id: '2026-02-01', startDate: '2026-02-01', endDate: '2026-02-28' });
   assert.equal(periodAt('2026-12-31', 'month').endDate, '2026-12-31');
 });
 
-test('periodWindows: 未来 → 今 → 過去 の順に並べる', () => {
+test('periodWindows: orders future -> now -> past', () => {
   assert.deepEqual(periodWindows('2026-01-15', 'month', { past: 2, future: 1 }).map((p) => p.id), ['2026-02-01', '2026-01-01', '2025-12-01', '2025-11-01']);
   assert.deepEqual(periodWindows('2026-10-16', 'week', { past: 1, future: 0 }).map((p) => p.id), ['2026-10-12', '2026-10-05']);
 });
 
 const { withOutputLang } = require('./server');
 
-test('withOutputLang: 書かせる文章の言語を指示し、未知の言語は日本語にする', () => {
+test('withOutputLang: sets the language of generated text, unknown languages fall back to Japanese', () => {
   assert.match(withOutputLang('p', 'ko'), /^p\n[\s\S]*すべて韓国語で書く/);
   assert.match(withOutputLang('p', 'en'), /すべて英語で書く/);
   assert.match(withOutputLang('p', undefined), /すべて日本語で書く/);
@@ -614,7 +614,7 @@ test('withOutputLang: 書かせる文章の言語を指示し、未知の言語�
 
 const { postLang } = require('./server');
 
-test('postLang: 作成者ごとの言語を使い、未設定・未知の言語は出力言語にする', () => {
+test('postLang: uses per-author language; unset or unknown falls back to the output language', () => {
   const cfg = { outputLang: 'ko', authorLangs: { Tanaka: 'ja', 'nguyen[bot]': 'en', kim: 'fr' } };
   assert.equal(postLang('tanaka', cfg), 'ja');
   assert.equal(postLang('nguyen', cfg), 'en');
@@ -623,7 +623,7 @@ test('postLang: 作成者ごとの言語を使い、未設定・未知の言語�
   assert.equal(postLang(undefined, { outputLang: 'en' }), 'en');
 });
 
-test('i18n: 各言語のキーがそろい、サーバーのエラーコードがすべて翻訳されている', () => {
+test('i18n: every language has the same keys and all server error codes are translated', () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const I18N = new Function(`return ${/const I18N = (\{[\s\S]*?\n\});/.exec(html)[1]}`)();
   const keys = Object.keys(I18N.ja).sort();
@@ -635,7 +635,7 @@ test('i18n: 各言語のキーがそろい、サーバーのエラーコード�
   for (const k of used) assert.ok(keys.includes(k), k);
 });
 
-test('concurrencyLimit: 空・0・不正値は既定値、負数は 1 にする', () => {
+test('concurrencyLimit: empty, 0 or invalid gives the default, negative gives 1', () => {
   assert.equal(concurrencyLimit(3), 3);
   assert.equal(concurrencyLimit('3'), 3);
   assert.equal(concurrencyLimit(''), 2);
@@ -644,7 +644,7 @@ test('concurrencyLimit: 空・0・不正値は既定値、負数は 1 にする'
   assert.equal(concurrencyLimit(-1), 1);
 });
 
-test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err は残す', () => {
+test('pruneLogs: removes only .log older than 30 days, keeps running .out / .err', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-prune-'));
   const old = (Date.now() - 31 * 24 * 60 * 60 * 1000) / 1000;
   for (const name of ['old.log', 'new.log', 'run.out', 'run.err']) fs.writeFileSync(path.join(dir, name), '');
@@ -652,10 +652,10 @@ test('pruneLogs: 30 日より古い .log だけ消し、実行中の .out / .err
   pruneLogs(dir, Date.now(), logKeepMs(30));
   assert.deepEqual(fs.readdirSync(dir).sort(), ['new.log', 'run.err', 'run.out']);
   fs.rmSync(dir, { recursive: true });
-  pruneLogs(path.join(dir, 'missing'), Date.now(), 0); // ディレクトリが無くても落ちない
+  pruneLogs(path.join(dir, 'missing'), Date.now(), 0); // does not crash when the directory is missing
 });
 
-test('pruneLogs: 指定した期間より古い .log を消して件数・容量を返す。0 なら終わった .log をすべて消す', () => {
+test('pruneLogs: removes .log older than the given period and returns count/size; 0 removes all finished .log', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-prune-'));
   const day = 24 * 60 * 60 * 1000;
   const old = (Date.now() - 3 * day) / 1000;
@@ -670,14 +670,14 @@ test('pruneLogs: 指定した期間より古い .log を消して件数・容量
   fs.rmSync(dir, { recursive: true });
 });
 
-test('logKeepMs: 1 日未満・不正な値は既定の 30 日にする (自動削除で全部消さないように)', () => {
+test('logKeepMs: under 1 day or invalid gives the default 30 days (so auto-cleanup does not delete everything)', () => {
   const day = 24 * 60 * 60 * 1000;
   assert.equal(logKeepMs(7), 7 * day);
   assert.equal(logKeepMs(0), 30 * day);
   assert.equal(logKeepMs(''), 30 * day);
 });
 
-test('isAgentRun: 生きていても claude 以外のプロセスなら false', () => {
+test('isAgentRun: false for a live process that is not claude', () => {
   const sleep = require('node:child_process').spawn('sleep', ['5']);
   try {
     assert.equal(isAlive(sleep.pid), true);
@@ -688,7 +688,7 @@ test('isAgentRun: 生きていても claude 以外のプロセスなら false', 
   assert.equal(isAgentRun(2 ** 22 + 12345), false);
 });
 
-test('isAgentRun: レビューボードが起動した claude (stream-json) だけを true にし、ユーザーの他の claude は止めない', () => {
+test('isAgentRun: true only for claude (stream-json) started by the review board; other claude runs by the user are not stopped', () => {
   const { spawn } = require('node:child_process');
   const run = (...args) => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'claude', ...args]);
   const ours = run('-p', 'x', '--output-format', 'stream-json');
@@ -709,7 +709,7 @@ test('isAgentRun: レビューボードが起動した claude (stream-json) だ�
   }
 });
 
-test('normalizeNos: 番号が重複・欠落していれば 1 から振り直し、正しければそのまま返す', () => {
+test('normalizeNos: renumbers from 1 on duplicates or gaps, returns as is when correct', () => {
   const ok = [{ no: 3 }, { no: 5 }];
   assert.equal(normalizeNos(ok), ok);
   assert.deepEqual(normalizeNos([{ no: 1, t: 'a' }, { no: 1, t: 'b' }, { t: 'c' }]).map((f) => [f.no, f.t]), [[1, 'a'], [2, 'b'], [3, 'c']]);
@@ -717,35 +717,35 @@ test('normalizeNos: 番号が重複・欠落していれば 1 から振り直し
   assert.deepEqual(normalizeNos([null, { no: 1 }, 'x']), [{ no: 1 }]);
 });
 
-test('decisionLines: 要約があれば番号の後に添える', () => {
+test('decisionLines: adds the summary after the number when present', () => {
   const prompt = buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1, comment: 'null を返す' }], { 1: { verdict: 'agree' } });
   assert.match(prompt, /- #1「null を返す」 同意 \/ 理由なし/);
 });
 
-test('sanitizeConfig: 未知の項目と型が違う値を捨てる', () => {
+test('sanitizeConfig: drops unknown keys and values of the wrong type', () => {
   assert.deepEqual(
     sanitizeConfig({ maxConcurrent: 3, model: 'opus', authors: ['a'], repos: { 'o/r': {} }, unknown: 1, pollMinutes: 'x', projects: 'url', repos2: {}, refreshSeconds: NaN }),
     { maxConcurrent: 3, model: 'opus', authors: ['a'], repos: { 'o/r': {} } },
   );
   assert.deepEqual(sanitizeConfig(null), {});
-  assert.deepEqual(sanitizeConfig({ consentVersion: 1 }), {}); // 同意は設定画面からは変えられない
+  assert.deepEqual(sanitizeConfig({ consentVersion: 1 }), {}); // consent cannot be changed from the settings screen
 });
 
-test('readTail: 末尾だけ読み、途中で切れた先頭行は捨てる', () => {
+test('readTail: reads only the tail and drops the cut-off first line', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-tail-')), 'a.out');
   fs.writeFileSync(file, 'line1\nline2\nline3\n');
   assert.equal(readTail(file), 'line1\nline2\nline3\n');
-  assert.equal(readTail(file, 9), 'line3\n'); // "e2\nline3\n" の切れた 1 行目を捨てる
+  assert.equal(readTail(file, 9), 'line3\n'); // drops the cut-off first line of "e2\nline3\n"
   fs.rmSync(path.dirname(file), { recursive: true });
 });
 
-test('buildReviewPrompt: スキル指定なら /skill で始める', () => {
+test('buildReviewPrompt: starts with /skill when a skill is set', () => {
   const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: 'be-review', args: '{pr-number}' });
   assert.match(prompt, /^\/be-review 1\n/);
   assert.match(prompt, /<docket-findings>/);
 });
 
-test('buildReviewPrompt: (prompt) なら設定のプロンプトをテンプレート展開して使う', () => {
+test('buildReviewPrompt: (prompt) expands the configured prompt template', () => {
   const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, '{pr-url} を見て');
   assert.match(prompt, /^https:\/\/x\/1 を見て\n/);
   assert.doesNotMatch(prompt, /^\//);
@@ -753,17 +753,17 @@ test('buildReviewPrompt: (prompt) なら設定のプロンプトをテンプレ�
   assert.match(prompt, /<docket-findings>/);
 });
 
-test('buildReviewPrompt: 設定のプロンプトが空なら既定のプロンプトを使う', () => {
+test('buildReviewPrompt: uses the default prompt when the configured one is empty', () => {
   const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, '  ');
   assert.match(prompt, /gh pr diff https:\/\/x\/1/);
 });
 
-test('投稿プロンプト: スキルに投稿手順がなくても gh api で投稿できる', () => {
+test('post prompt: can post with gh api even if the skill has no posting steps', () => {
   assert.match(buildPostPrompt({ url: 'https://x/1' }, [], {}, false, false), /gh api/);
   assert.match(buildSelfApplyPrompt({ url: 'https://x/1' }, [], {}), /gh api/);
 });
 
-test('buildFixPlanPrompt: (prompt) なら設定の対応プロンプトをテンプレート展開して使う', () => {
+test('buildFixPlanPrompt: (prompt) expands the configured fix prompt template', () => {
   const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, '{pr-url} に対応');
   assert.match(prompt, /^https:\/\/x\/3 に対応\n/);
@@ -771,18 +771,18 @@ test('buildFixPlanPrompt: (prompt) なら設定の対応プロンプトをテン
   assert.match(buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, ''), /gh pr checkout https:\/\/x\/3/);
 });
 
-test('対応の実行プロンプト: スキルがなくても最初の指示の手順で動かす', () => {
+test('apply prompts: follow the steps of the first instruction even without a skill', () => {
   assert.match(buildFixApplyPrompt({ url: 'https://x/1' }, [], {}), /最初の指示/);
   assert.match(buildCommentApplyPrompt({ url: 'https://x/1' }), /最初の指示/);
 });
 
-test('起動: 待機中の指摘への対応 (fix) が残っていても、事前判断を引き継いで積み直し、起動に失敗しない', async () => {
+test('startup: with a queued fix left over, re-queues it keeping triage and does not fail to start', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
   const pr = { repo: 'acme/api', number: 3, url: 'https://x/3' };
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ repos: { 'acme/api': { fixSkill: 'review-fix' } }, consentVersion: 2 }));
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ prs: {}, mine: { 'mine:acme/api#3': { status: 'queued', mode: 'fix', triage, pr } } }));
-  // PATH を空にして gh / claude を実際には起動しない
+  // Empty PATH so gh / claude are not actually started
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: dir, PORT: '0', PATH: '' } });
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
@@ -794,7 +794,7 @@ test('起動: 待機中の指摘への対応 (fix) が残っていても、事�
   assert.ok(started, stderr);
 });
 
-test('logStats / pruneLogs: 読めない .log (リンク切れなど) があっても投げない (日次の削除でサーバーが落ちないように)', () => {
+test('logStats / pruneLogs: unreadable .log (broken links etc.) does not throw (so daily cleanup does not crash the server)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   fs.symlinkSync(path.join(dir, 'missing'), path.join(dir, 'broken.log'));
   fs.writeFileSync(path.join(dir, 'a.log'), 'x');
@@ -802,17 +802,17 @@ test('logStats / pruneLogs: 読めない .log (リンク切れなど) があっ�
   assert.equal(pruneLogs(dir, Date.now(), 0).count, 1);
 });
 
-test('filterByAuthors: 設定に文字列以外が混ざっても投げない', () => {
+test('filterByAuthors: does not throw when config has non-string values', () => {
   assert.deepEqual(filterByAuthors([{ author: { login: 'a' } }, { author: { login: '1' } }], [1, null]), [{ author: { login: '1' } }]);
 });
 
-test('GET /: index.html を読めなくても 500 を返し、サーバーは落ちない', async () => {
+test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   for (const f of ['server.js', 'plans.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
-    // 起動前に落ちたら待ち続けずに失敗させる
+    // Fail instead of waiting forever if it crashes before startup
     await new Promise((resolve, reject) => {
       child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve());
       child.on('exit', (code) => reject(new Error(`server exited: ${code}`)));
@@ -825,7 +825,7 @@ test('GET /: index.html を読めなくても 500 を返し、サーバーは落
   }
 });
 
-test('GET /fonts/pixel.ttf: テーマのフォントを返し、決めたファイル以外は 404', async () => {
+test('GET /fonts/pixel.ttf: serves the theme font, 404 for any other file', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
@@ -841,17 +841,17 @@ test('GET /fonts/pixel.ttf: テーマのフォントを返し、決めたファ�
   }
 });
 
-test('killRun: 既に終わったプロセスでも投げない (キャンセルが状態を戻せるように)', () => {
+test('killRun: does not throw for an already exited process (so cancel can restore state)', () => {
   const { pid } = require('node:child_process').spawnSync('true');
   assert.doesNotThrow(() => killRun(pid));
 });
 
-test('GitHub 取得: 一部のノードだけ権限エラー (gh は失敗で終わる) でも、取れた PR は反映してエラーも出す', async () => {
+test('GitHub fetch: on a permission error for some nodes (gh exits with failure), applies the PRs it got and reports the error', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const data = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [node(1), null] }, mine: { issueCount: 0, nodes: [] } };
   const errors = [{ message: 'Resource protected by organization SAML enforcement.' }];
   fs.writeFileSync(path.join(dir, 'out.json'), `${JSON.stringify({ data, errors })}\n`);
-  // gh の代わりに、部分的なデータを出して失敗で終わるスクリプトを置く
+  // Replace gh with a script that outputs partial data and exits with failure
   fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\nwhile IFS= read -r l; do echo "$l"; done < ${path.join(dir, 'out.json')}\necho "gh: SAML" >&2\nexit 1\n`, { mode: 0o755 });
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
@@ -865,26 +865,26 @@ test('GitHub 取得: 一部のノードだけ権限エラー (gh は失敗で終
   }
 });
 
-test('isTruncated: ページが上限まで埋まり、まだ続きがあるときだけ true', () => {
+test('isTruncated: true only when a page is full and more results remain', () => {
   const page = (n, total) => ({ issueCount: total, nodes: Array(n).fill({}) });
-  // GitHub の検索がたまに issueCount より少ない nodes を返しても、上限未満なら出さない
+  // Even if GitHub search sometimes returns fewer nodes than issueCount, do not flag it below the limit
   assert.equal(isTruncated({ open: page(4, 5), merged: page(3, 3), mine: page(20, 21) }), false);
   assert.equal(isTruncated({ open: page(100, 101), mine: page(20, 20) }), true);
   assert.equal(isTruncated({ open: page(4, 4), mine: page(50, 51) }), true);
   assert.equal(isTruncated({ open: page(100, 100), mine: page(50, 50) }), false);
 });
 
-test('sharedPrompt: 空か、どれかの言語の既定値のままなら画面の言語の既定値を使い、書き換えたものはそのまま使う', () => {
+test('sharedPrompt: empty or a default of any language uses the UI language default; edited prompts are used as is', () => {
   assert.equal(sharedPrompt({ reviewPrompt: '', uiLang: 'ko' }, 'reviewPrompt'), DEFAULT_PROMPTS.ko.reviewPrompt);
-  // 以前の config.json に保存された日本語の既定値
+  // Japanese default saved in an older config.json
   assert.equal(sharedPrompt({ fixPrompt: DEFAULT_PROMPTS.ja.fixPrompt, uiLang: 'en' }, 'fixPrompt'), DEFAULT_PROMPTS.en.fixPrompt);
-  // 言語が未設定・不明なら日本語
+  // Japanese when the language is unset or unknown
   assert.equal(sharedPrompt({ reviewPrompt: '  ', uiLang: 'fr' }, 'reviewPrompt'), DEFAULT_PROMPTS.ja.reviewPrompt);
   assert.equal(sharedPrompt({ reviewPrompt: 'Review {pr-url}', uiLang: 'ko' }, 'reviewPrompt'), 'Review {pr-url}');
   for (const l of ['ko', 'en']) for (const k of ['reviewPrompt', 'fixPrompt']) assert.match(DEFAULT_PROMPTS[l][k], /\{pr-url\}/);
 });
 
-test('withPlanLock: 同じ計画の処理は順に、失敗しても次を止めない', async () => {
+test('withPlanLock: runs work on the same plan in order; a failure does not block the next', async () => {
   const { withPlanLock } = require('./server');
   const url = 'https://github.com/users/acme/projects/2';
   const order = [];
@@ -898,19 +898,19 @@ test('withPlanLock: 同じ計画の処理は順に、失敗しても次を止め
   assert.deepEqual(order, ['b1', 'a1', 'a2']);
 });
 
-test('permission-mcp: .claude/skills 配下の Edit / Write だけ承認する', () => {
+test('permission-mcp: approves only Edit / Write under .claude/skills', () => {
   const { approves } = require('./permission-mcp');
   assert.equal(approves('Edit', { file_path: '/r/.claude/skills/a/SKILL.md' }), true);
   assert.equal(approves('Write', { file_path: '/r/.claude/worktrees/w/.claude/skills/a/scripts/x.js' }), true);
   assert.equal(approves('Edit', { file_path: '/r/.claude/settings.json' }), false);
-  // .. で skills の外へ出るパスは承認しない
+  // Do not approve paths that escape skills via ..
   assert.equal(approves('Edit', { file_path: '/r/.claude/skills/../settings.json' }), false);
   assert.equal(approves('Bash', { command: 'echo x > /r/.claude/skills/a' }), false);
   assert.equal(approves('Edit', {}), false);
   assert.equal(approves('Edit', undefined), false);
 });
 
-test('permissionArgs: 権限確認ツールとして permission-mcp.js を claude に渡す', () => {
+test('permissionArgs: passes permission-mcp.js to claude as the permission prompt tool', () => {
   const args = permissionArgs();
   assert.equal(args[0], '--mcp-config');
   const { command, args: [script] } = JSON.parse(args[1]).mcpServers.docket;

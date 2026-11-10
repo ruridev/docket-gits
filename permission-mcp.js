@@ -1,13 +1,13 @@
 'use strict';
 
-// claude の --permission-prompt-tool 用の最小 MCP サーバー (stdio)。
-// claude は .claude/ 配下を保護パスとして扱い、-p 実行では許可ルールや hook があっても編集を拒否する。
-// skill を直す PR に対応できるよう、.claude/skills 配下の Edit / Write だけ承認し、それ以外は今までどおり拒否する。
+// Minimal MCP server (stdio) for claude's --permission-prompt-tool.
+// claude treats .claude/ as a protected path and refuses edits under -p even with allow rules or hooks.
+// To support PRs that fix skills, approve only Edit / Write under .claude/skills and deny everything else as before.
 const path = require('node:path');
 
 function approves(toolName, input) {
   if (!['Edit', 'Write'].includes(toolName) || typeof input?.file_path !== 'string') return false;
-  // .. で skills の外へ出るパスを通さないよう、正規化してから見る
+  // Normalize first so paths escaping skills via .. are rejected
   return /\/\.claude\/skills\/./.test(path.resolve(input.file_path));
 }
 

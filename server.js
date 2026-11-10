@@ -21,54 +21,54 @@ const DEFAULT_CONFIG = {
   codexEffort: '',
   codexArgs: '--approve-for-me -c sandbox_workspace_write.network_access=true',
   claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(cat:*),Bash(ls:*)',
-  // 空なら claude の既定。model はサブエージェントにも使わせる
+  // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',
   pollMinutes: 5,
-  // GitHub の自動取得はこの時間帯 (開始時 <= 時 < 終了時) だけ行う。同じ値なら終日
+  // Fetch from GitHub automatically only during these hours (start <= hour < end). Same value = all day
   pollStartHour: 9,
   pollEndHour: 19,
-  // ブラウザが /api/board を取り直す間隔
+  // How often the browser refetches /api/board
   refreshSeconds: 5,
-  // マージ済みでも自分のレビュー依頼が残っている PR を何日前まで表示するか (0 で非表示)
+  // How many days to keep showing merged PRs that still have my review request (0 hides them)
   mergedDays: 7,
   maxConcurrent: 2,
-  // 空なら全員。指定するとこの作成者の PR だけ表示する (例: ["alice", "dependabot[bot]"])
+  // Empty = everyone. If set, only PRs by these authors are shown (e.g. ["alice", "dependabot[bot]"])
   authors: [],
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
-  // selfSkill: 自分の PR のセルフレビュー、fixSkill: 自分の PR に付いた指摘への対応 (空ならボタンを出さない)
+  // selfSkill: self-review of my PRs, fixSkill: handle review comments on my PRs (empty hides the button)
   repos: {},
-  // スキルの代わりに「設定のプロンプト」(PROMPT_SKILL) を選んだリポジトリで使うレビュー指示。空なら画面の言語の既定値 (DEFAULT_PROMPTS) を使う
+  // Review instructions for repos that use the "configured prompt" (PROMPT_SKILL) instead of a skill. Empty = default for the UI language (DEFAULT_PROMPTS)
   reviewPrompt: '',
-  // 指摘への対応で「設定のプロンプト」を選んだリポジトリで使う指示。空なら画面の言語の既定値を使う
+  // Instructions for handling review comments in repos that use the "configured prompt". Empty = default for the UI language
   fixPrompt: '',
-  // 画面の言語 (ja / ko / en)。画面を開くと送られ、共通プロンプトの既定値を選ぶのに使う
+  // UI language (ja / ko / en). Sent when the page opens; picks the default shared prompts
   uiLang: '',
-  // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/acme/projects/1)
+  // URL of the GitHub Project shown on the roadmap screen (e.g. https://github.com/orgs/acme/projects/1)
   projects: [],
-  // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
+  // Number of past and future sprints shown on the sprint screen (future ones only if they have issues)
   sprintPast: 1,
   sprintFuture: 1,
-  // ロードマップの期間別の 1 区切り: week / 2week / month
+  // Period unit on the roadmap: week / 2week / month
   roadmapPeriod: 'month',
-  // 計画画面の md を置くフォルダ。空なら ~/docket-plans (その下に GitHub Projects ごとのフォルダを作る)
+  // Folder for plan md files. Empty = ~/docket-plans (one subfolder per GitHub Project)
   plansDir: '',
-  // Claude が PR に書く文章・ボードに出す指摘の言語: ja / ko / en
+  // Language Claude uses for text posted to PRs and findings shown on the board: ja / ko / en
   outputLang: 'ja',
-  // 他の人の PR へ投稿するコメントの言語を作成者ごとに変える (例: { "tanaka": "ja", "nguyen": "en" })。ない人は outputLang
+  // Comment language per author for posts on other people's PRs (e.g. { "tanaka": "ja", "nguyen": "en" }). Others use outputLang
   authorLangs: {},
-  // 同意しない指摘を理由付きで投稿するとき、レビュアー本人の意見の頭に付けるアイコン
+  // Icon prefixed to the reviewer's own opinion when posting a disagreed finding with a reason
   disagreeIcon: '🙅💭',
   agreeIcon: '🙆💭',
-  // 終わった実行のログ (.log) を残す日数。これより古いものは毎日自動で消す
+  // Days to keep logs (.log) of finished runs. Older ones are deleted daily
   logKeepDays: 30,
-  // 依頼が外れた Done (完了) を残す日数。投稿・スキップした日から数える
+  // Days to keep Done cards whose request was removed. Counted from the day posted or skipped
   doneKeepDays: 7,
-  // 同意した「使用前の注意」の版。CONSENT_VERSION 未満なら claude を起動しない
+  // Accepted version of the "before you use" notice. Below CONSENT_VERSION, claude is not started
   consentVersion: 0,
 };
 
-// 共通プロンプトの既定値。設定が空なら画面の言語のものを使う
+// Default shared prompts. If the setting is empty, the one for the UI language is used
 const DEFAULT_PROMPTS = {
   ja: {
     reviewPrompt: `PR {pr-url} をレビューしてください。
@@ -119,25 +119,25 @@ const DEFAULT_PROMPTS = {
 - Include the SHA of the fixing commit in each reply. Reply to threads with \`gh api repos/{full-repo-name}/pulls/{pr-number}/comments/<comment_id>/replies\`, and to PR comments by quoting the original with \`gh pr comment {pr-url}\`.`,
   },
 };
-// 以前は既定値の本文を config.json にそのまま保存していたので、どれかの言語の既定値と同じなら空とみなす
+// Defaults used to be saved verbatim in config.json, so treat a value equal to any language's default as empty
 function sharedPrompt(cfg, key) {
   const value = (cfg[key] || '').trim();
   const isDefault = !value || Object.values(DEFAULT_PROMPTS).some((p) => p[key] === value);
   return isDefault ? (DEFAULT_PROMPTS[cfg.uiLang] || DEFAULT_PROMPTS.ja)[key] : value;
 }
 
-// 「使用前の注意」の内容を大きく変えたら上げる (全員にもう一度同意を求める)
+// Bump when the "before you use" notice changes significantly (asks everyone to accept again)
 const CONSENT_VERSION = 2;
 const needsConsent = () => (Number(config.consentVersion) || 0) < CONSENT_VERSION;
-// claude を起動する API。同意前は受け付けない
+// APIs that start claude. Rejected before consent
 const RUN_PATHS = ['/api/review', '/api/post', '/api/mine/run', '/api/mine/apply', '/api/mine/apply-comments'];
 
-// 画面に出すエラーは言語に依存しないコードで返し、ブラウザ側で翻訳する
+// Errors shown in the UI are returned as language-neutral codes and translated in the browser
 const E = (code, params) => ({ code, ...(params && { params }) });
 
-// 再レビュー依頼と投稿直後の検索反映遅延を区別するための猶予
+// Grace period to tell a re-review request from search index lag right after posting
 const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
-// 依頼が外れた Done は × で消さないと溜まり続け、5 秒ごとの /api/board も重くなるので、設定の日数で消す
+// Done cards with a removed request pile up unless dismissed with x, slowing the 5s /api/board, so drop them after the configured days
 const doneKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.doneKeepDays) * 24 * 60 * 60 * 1000;
 const DONE_KEEP_MS = doneKeepMs();
 
@@ -171,21 +171,21 @@ fragment pr on PullRequest {
       } } }
 }`;
 
-// ---------- 純粋関数 (テスト対象) ----------
+// ---------- Pure functions (tested) ----------
 
 function searchQueries(mergedDays, now) {
   const base = 'is:pr archived:false user-review-requested:@me';
-  // 日付はローカル時刻で数える (UTC だと JST の朝 9 時前は 1 日ずれる)
+  // Count days in local time (with UTC, JST mornings before 9am are off by one day)
   const from = now - mergedDays * 24 * 60 * 60 * 1000;
   const since = new Date(from - new Date(from).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open',
-    // ponytail: 最近更新された 50 件だけ見る。古い Done は再依頼でしか戻らない
+    // ponytail: only checks the 50 most recently updated. Old Done cards come back only via a new request
     reviewed: 'is:pr archived:false reviewed-by:@me is:open sort:updated-desc' };
 }
 
-// GraphQL の Bot login には "[bot]" が付かないので揃えて比較する
+// GraphQL Bot logins lack "[bot]", so normalize before comparing
 function authorKey(login) {
-  // 設定に数値などが混ざっても落ちないよう文字列にする
+  // Coerce to string so numbers etc. in the config don't crash this
   return String(login ?? '').trim().toLowerCase().replace(/\[bot\]$/, '');
 }
 
@@ -220,15 +220,15 @@ function normalizePr(node) {
   };
 }
 
-// 自分が始めたスレッドのうち、未解決で最後の発言も自分 = 作成者の対応待ち、それ以外 = 対応済み
+// Threads I started: unresolved with my comment last = waiting on the author, otherwise = addressed
 function myThreadCounts(node, login) {
   const mine = (node.reviewThreads?.nodes || []).filter((t) => t.root?.nodes[0]?.author?.login === login);
   const waiting = mine.filter((t) => !t.isResolved && t.comments.nodes.at(-1)?.author?.login === login).length;
   return { waiting, answered: mine.length - waiting };
 }
 
-// GitHub の検索結果とローカル状態を突き合わせる
-// reviewed: 自分がレビューした open PR。指摘すると依頼が外れるので、指摘への対応状況はこちらで見る
+// Merge GitHub search results with local state
+// reviewed: open PRs I reviewed. Commenting removes the request, so track comment progress here
 function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DONE_KEEP_MS) {
   const reviewedByKey = new Map(reviewed.map((n) => [prKey(n), n]));
   const next = {};
@@ -238,7 +238,7 @@ function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DON
     seen.add(key);
     let entry = prs[key];
     if (!entry || (entry.status === 'commented' && !entry.skipped && now - (entry.commentedAt || 0) > RE_REQUEST_GRACE_MS)) {
-      // 再依頼でも PR ごとの累計使用量は引き継ぐ
+      // Keep the PR's cumulative usage across re-requests
       entry = { status: 'requested', ...(entry?.usage && { usage: entry.usage }) };
     }
     next[key] = { ...entry, pr: normalizePr(node), active: true };
@@ -246,14 +246,14 @@ function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DON
   for (let [key, entry] of Object.entries(prs)) {
     if (seen.has(key)) continue;
     const node = reviewedByKey.get(key);
-    // 自分の指摘に作成者が全部返信・解決したら、再レビューできるよう依頼に戻す
-    // 一度戻した PR は古いスレッドで戻り続けないよう、新しい指摘が対応待ちになってからにする
+    // When the author has replied to or resolved all my comments, move it back to requested for re-review
+    // Once moved back, wait until a new comment is pending so old threads don't keep moving it back
     if (entry.status === 'commented' && !entry.skipped && node) {
       const { waiting, answered } = myThreadCounts(node, login);
       if (waiting > 0 && !entry.awaitingAuthor) entry = { ...entry, awaitingAuthor: true };
       if (waiting === 0 && (entry.awaitingAuthor || (!entry.reopened && answered > 0))) entry = { status: 'requested', reopened: true, ...(entry.usage && { usage: entry.usage }) };
     }
-    // 依頼が外れた未着手 PR は消し (戻した PR は open の間だけ残す)、作業途中・完了済みは残す
+    // Drop untouched PRs whose request was removed (moved-back PRs stay while open); keep in-progress and done ones
     if (entry.status === 'requested' && !(entry.reopened && node)) continue;
     if (entry.status === 'commented' && now - (entry.commentedAt || 0) > keepMs) continue;
     next[key] = { ...entry, ...(node && { pr: normalizePr(node) }), active: false };
@@ -261,11 +261,11 @@ function mergeBoard(prs, fetched, now, reviewed = [], login = null, keepMs = DON
   return next;
 }
 
-// 未解決スレッドのうち最後の発言が自分以外 = まだ自分が応答していない指摘
-// 返信すると最後の発言が自分になるので、状態を持たずに「新しい指摘」を判定できる
-// AI 実行前に人が判断できるよう、最初の指摘と (返信が続いていれば) 最新の発言も持つ
-// 返信の無い自分だけのスレッド (自分の PR へのセルフ指摘) は、まだ誰も応答していないので数える
-// セルフ指摘は AI の返信も同じアカウントなので、AI の対応 (appliedAt) より後に自分が書き足したものは再指摘として数える
+// Unresolved threads whose last comment is not mine = comments I haven't answered yet
+// Replying makes me the last commenter, so new comments can be detected without extra state
+// Keep the first comment and (if replies follow) the latest one, so a human can judge before running AI
+// Threads with only my comments and no reply (self-comments on my own PR) count, since nobody has answered yet
+// AI replies to self-comments use the same account, so my additions after the AI run (appliedAt) count as new comments
 function pendingThreads(node, login, appliedAt = 0) {
   return (node.reviewThreads?.nodes || [])
     .filter((t) => {
@@ -291,9 +291,9 @@ function pendingThreads(node, login, appliedAt = 0) {
     });
 }
 
-// PR 全体へのコメント (Conversation のコメント・レビュー本文) には解決状態が無いので、
-// 自分が最後に PR 全体へ発言した後に他の人が書いたものを未対応とみなす
-// ponytail: 一部にだけ返信しても以前のものはすべて外れる。コメントごとの対応状態が要るならローカルに持つ
+// PR-level comments (Conversation comments, review bodies) have no resolved state, so
+// anything others wrote after my last PR-level comment counts as unaddressed
+// ponytail: replying to just one clears all earlier ones. Store per-comment state locally if that's needed
 function pendingComments(node, login) {
   const all = [
     ...(node.comments?.nodes || []).map((c) => ({ ...c, at: c.createdAt })),
@@ -306,22 +306,22 @@ function pendingComments(node, login) {
     .map((c) => ({ kind: 'comment', author: c.author?.login || null, url: c.url, path: null, line: null, comment: c.body, lastUrl: c.url }));
 }
 
-// 対象外にした指摘は、その時点の最後の発言とセットで覚える。新しい発言が付けば別のキーになり、また一覧に出る
+// Skipped comments are remembered with their last comment at that time. A new comment changes the key and shows it again
 const skipKey = (t) => `${t.url} ${t.lastUrl}`;
 
 function mineKey(pr) {
   return `mine:${prKey(pr)}`;
 }
 
-// 自分の open PR とローカル状態を突き合わせる。クローズされた PR は実行中のものだけ残す
+// Merge my open PRs with local state. Closed PRs are kept only while running
 function mergeMine(mine, fetched, login) {
   const next = {};
   for (const node of fetched) {
     const key = mineKey(node);
-    // レーンの「指摘あり」はスレッドだけで判定する (PR 全体へのコメントは返信するまで外れず、bot の定期コメントで居座るため)
+    // The lane's "has comments" uses threads only (PR-level comments stay until replied to, and periodic bot comments would stick)
     const all = [...pendingThreads(node, login, mine[key]?.appliedAt), ...pendingComments(node, login)];
     const prev = new Set(mine[key]?.skipped || []);
-    // 今も未対応のものだけ覚えておく (新しい発言が付いた・返信したものは忘れる)
+    // Remember only those still unaddressed (forget ones with new comments or my reply)
     const skipped = all.map(skipKey).filter((k) => prev.has(k));
     const threads = all.filter((t) => !prev.has(skipKey(t))).map((t, i) => ({ ...t, no: i + 1 }));
     const pending = threads.filter((t) => t.kind !== 'comment').length;
@@ -333,7 +333,7 @@ function mergeMine(mine, fetched, login) {
   return next;
 }
 
-// claude -p の JSON 出力から 1 実行分のトークン数 (全モデル・キャッシュ込み) と費用を取り出す
+// Extract tokens (all models, incl. cache) and cost for one run from claude -p JSON output
 function usageOf(parsed) {
   const models = Object.values(parsed.modelUsage || {});
   if (models.length === 0 && parsed.total_cost_usd == null) return null;
@@ -370,7 +370,7 @@ function fillTemplate(template, pr) {
     .replaceAll('{full-repo-name}', pr.repo);
 }
 
-// スキルの選択肢のうち、ローカルの skill ではなく設定の reviewPrompt を使うことを表す値
+// Skill option value meaning: use the configured reviewPrompt instead of a local skill
 const PROMPT_SKILL = '(prompt)';
 
 function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.ja.reviewPrompt, provider = 'claude', cwd) {
@@ -391,8 +391,8 @@ function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.ja.review
 </docket-findings>`;
 }
 
-// 前回の投稿・対応が途中で失敗した後のやり直しでも、同じものを二重に投稿・返信しないようにする
-// スキルを使わない (設定のプロンプト) 場合や、スキルに投稿手順がない場合の投稿方法
+// Avoid double posting or replying when retrying after a previous post/fix failed midway
+// How to post when not using a skill (configured prompt) or when the skill has no posting steps
 const GH_POST = 'スキルに投稿手順がない場合は、`gh api repos/{owner}/{repo}/pulls/{number}/reviews` で 1 つのレビューとして投稿する (body と event、行の指摘は comments に path・line・side: RIGHT)。diff に含まれない行で失敗したら、その指摘はファイル名と行番号を添えてレビュー本文に入れる。';
 
 const NO_DUPLICATE = '始める前に PR の既存のレビュー・コメント・コミットを確認し、前回の実行で既に投稿・返信・push 済みのものは繰り返さず、残りだけを行う。';
@@ -427,7 +427,7 @@ ${decisionLines(findings, decisions)}
 </docket-posted>`;
 }
 
-// 番号だけだと振り直した場合に取り違えるので、指摘の要約も添える
+// Numbers alone can be mixed up if renumbered, so include the finding summary too
 function decisionLines(items, decisions) {
   return items.map((f) => {
     const d = decisions[f.no] || {};
@@ -444,8 +444,8 @@ const APPLIED_TAG = `完了後、最終回答の末尾に次を必ず出力す�
 {"done":true,"error":null}
 </docket-applied>`;
 
-// AI の方針に引きずられないよう、人が先に各指摘の妥当性を判断する (triage)。
-// 同意 / 非同意 (理由必須) が AI の対象。skip (対象外: 指摘ではないコメントなど) は触れない
+// A human judges each finding first (triage) so the AI's plan doesn't bias them.
+// Agree / disagree (reason required) are for the AI. skip (out of scope, e.g. not a finding) is left alone
 function triageFrom(threads, decisions) {
   const triage = (threads || []).map((t) => ({ ...t, verdict: decisions?.[t.url]?.verdict, reason: decisions?.[t.url]?.reason?.trim() || '' }));
   return triage.every((t) => ['agree', 'disagree', 'skip'].includes(t.verdict)) ? triage : null;
@@ -453,7 +453,7 @@ function triageFrom(threads, decisions) {
 
 const triageTargets = (triage) => triage.filter((t) => t.verdict !== 'skip');
 
-// review-fix は手順 1〜3 (取得・チェックアウト・分類) で止め、対応計画だけを返させる
+// Stop review-fix at steps 1-3 (fetch, checkout, classify) and return only the plan
 function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_PROMPTS.ja.fixPrompt, provider = 'claude', cwd) {
   const lines = triageTargets(triage).map((t) => {
     const loc = t.path ? ` ${t.path}${t.line ? `:${t.line}` : ''}` : '';
@@ -516,8 +516,8 @@ ${decisionLines(items, decisions)}
 - ${APPLIED_TAG}`;
 }
 
-// セルフレビューは所感を本文に同意した指摘と合わせて PR に投稿 → 修正・push → 投稿した指摘へ返信、までを行う
-// 同意 0 件でも所感は投稿し、セルフレビューした記録を PR に残す
+// Self-review: post the summary plus agreed findings to the PR -> fix and push -> reply to the posted findings
+// Post the summary even with 0 agreed findings, to leave a record of the self-review on the PR
 function buildSelfApplyPrompt(pr, findings, decisions, summary, icon = DEFAULT_CONFIG.agreeIcon) {
   return `レビューボードでユーザーがセルフレビューの各指摘を判断しました。PR ${pr.url} について次を行ってください。これがユーザーの投稿・push の承認であり、追加の確認は不要です。
 
@@ -541,7 +541,7 @@ ${decisionLines(findings, decisions)}
 - ${APPLIED_TAG}`;
 }
 
-// 判断ダイアログを使わず、ユーザーが PR に直接書いたコメントを指示として対応させる
+// Skip the decision dialog and treat the user's own PR comments as instructions
 function buildCommentApplyPrompt(pr) {
   return `ユーザーは対応計画への判断をレビューボードではなく、PR ${pr.url} 上のコメントで行いました。PR のレビュースレッドとコメントを取得し、PR 作成者 (ユーザー) が最後に書いたコメントを指示として、スキル (または最初の指示) の修正・コミット・push・返信の手順を実行してください。これがユーザーの確認ゲートの承認であり、追加の確認は不要です。
 
@@ -553,7 +553,7 @@ function buildCommentApplyPrompt(pr) {
 - ${APPLIED_TAG}`;
 }
 
-// どの実行にも付ける出力言語の指示。指示文は日本語のまま、書かせる文章の言語だけ切り替える
+// Output language instruction added to every run. Instructions stay in Japanese; only the written text's language changes
 const OUTPUT_LANGS = { ja: '日本語', ko: '韓国語', en: '英語' };
 function withOutputLang(prompt, lang) {
   const name = OUTPUT_LANGS[lang] || OUTPUT_LANGS.ja;
@@ -564,14 +564,14 @@ function withOutputLang(prompt, lang) {
 - category など値が決められている項目は指示どおりの値のままにする。`;
 }
 
-// 投稿は PR 作成者が読むので、作成者ごとの言語があればそれを使う
+// Posts are read by the PR author, so use the author's language if set
 function postLang(login, cfg) {
   const want = authorKey(login);
   const lang = want && Object.entries(cfg.authorLangs || {}).find(([k]) => authorKey(k) === want)?.[1];
   return OUTPUT_LANGS[lang] ? lang : cfg.outputLang;
 }
 
-// 最終回答から <tag>JSON</tag> を取り出す (最後の出現を優先)
+// Extract <tag>JSON</tag> from the final answer (last occurrence wins)
 function extractTagJson(text, tag) {
   const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g');
   const matches = [...(text || '').matchAll(re)];
@@ -584,23 +584,23 @@ function extractTagJson(text, tag) {
   }
 }
 
-// Claude Code のセッション内でサーバーを起動した場合、親セッションの環境変数を引き継ぐと
-// 入れ子起動として拒否されるため取り除く (CLAUDE_CONFIG_DIR と Bedrock / Vertex などの接続先指定はユーザー設定なので残す)
+// When the server is started inside a Claude Code session, inheriting the parent's env vars
+// gets claude rejected as nested, so strip them (keep CLAUDE_CONFIG_DIR and Bedrock / Vertex endpoints; they are user settings)
 function childEnv(env) {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_USE_')));
 }
 
-// ~/.claude/settings.json の env.PATH はサーバーの PATH を丸ごと置き換え、pnpm や node が消えて pre-commit フックが落ちるので、--settings で上書きする
+// env.PATH in ~/.claude/settings.json replaces the server's whole PATH, losing pnpm/node and breaking pre-commit hooks, so override it with --settings
 function pathSettings(env) {
   return env.PATH ? ['--settings', JSON.stringify({ env: { PATH: env.PATH } })] : [];
 }
 
-// -p 実行では .claude/ 配下 (保護パス) の編集が確認待ちになり拒否されるので、確認を permission-mcp.js に回して skill の編集だけ通す
+// In -p runs, edits under .claude/ (protected path) wait for confirmation and get denied, so route it to permission-mcp.js and allow skill edits only
 function permissionArgs() {
   return ['--mcp-config', JSON.stringify({ mcpServers: { docket: { command: process.execPath, args: [path.join(__dirname, 'permission-mcp.js')] } } }), '--permission-prompt-tool', 'mcp__docket__approve'];
 }
 
-// 未指定だとサブエージェント (Explore など) は Haiku で動くので、設定のモデルに揃える
+// If unset, subagents (Explore etc.) run on Haiku, so match the configured model
 function modelOptions(cfg) {
   return {
     args: [...(cfg.model ? ['--model', cfg.model] : []), ...(cfg.effort ? ['--effort', cfg.effort] : [])],
@@ -608,7 +608,7 @@ function modelOptions(cfg) {
   };
 }
 
-// "--a b,c 'd e'" 形式の引数文字列を配列にする
+// Split an argument string like "--a b,c 'd e'" into an array
 function splitArgs(str) {
   const out = [];
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
@@ -617,8 +617,8 @@ function splitArgs(str) {
   return out;
 }
 
-// 判断は no をキーに保存するので、Claude が番号を重複・欠落させたら 1 から振り直す
-// null などオブジェクトでない要素は判断の保存・表示で落ちるので捨てる
+// Decisions are stored by no, so renumber from 1 if Claude duplicates or skips numbers
+// Drop non-object items like null; they break saving and showing decisions
 function normalizeNos(items) {
   if (!Array.isArray(items)) return null;
   const isObj = (f) => f && typeof f === 'object';
@@ -628,13 +628,13 @@ function normalizeNos(items) {
   return list.map((f, i) => ({ ...f, no: i + 1 }));
 }
 
-// 対象外 (skip) はレビュー投稿だけで選べる
+// skip (out of scope) is only available for review posting
 function canDecideAll(findings, decisions, allowSkip = false) {
   const verdicts = allowSkip ? ['agree', 'disagree', 'skip'] : ['agree', 'disagree'];
   return findings.every((f) => verdicts.includes(decisions?.[f.no]?.verdict));
 }
 
-// ---------- スプリント (GitHub Projects) ----------
+// ---------- Sprints (GitHub Projects) ----------
 
 function parseProjectUrl(url) {
   const m = /github\.com\/(orgs|users)\/([^/]+)\/projects\/(\d+)/.exec(url || '');
@@ -643,8 +643,8 @@ function parseProjectUrl(url) {
 
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
-// 最初の Iteration フィールドをスプリント、名前で開始日・終了日の Date フィールドを選ぶ (見つからなければ Date フィールドの 1・2 個目)
-// statuses: Status フィールドの選択肢 (プロジェクトでの並び順)
+// Use the first Iteration field as the sprint, and pick start/end Date fields by name (fallback: the 1st and 2nd Date fields)
+// statuses: options of the Status field (in project order)
 function detectFields(fields) {
   const iter = fields.find((f) => f.dataType === 'ITERATION');
   const dates = fields.filter((f) => f.dataType === 'DATE').map((f) => f.name);
@@ -656,7 +656,7 @@ function detectFields(fields) {
   return { sprint: iter?.name || null, start, end, iterations, statuses };
 }
 
-// 現在のスプリントと、過去 past 個・未来 future 個 (issue があるものだけ) に絞り、新しい順に並べる
+// Keep the current sprint plus `past` past and `future` future ones (only with issues), newest first
 function pickIterations(iterations, today, { past, future }) {
   const asc = [...iterations].sort((a, b) => a.startDate.localeCompare(b.startDate));
   const before = asc.filter((i) => i.endDate < today);
@@ -667,7 +667,7 @@ function pickIterations(iterations, today, { past, future }) {
   ].reverse();
 }
 
-// 期間別の区切り。週は月曜始まり、2 週は 2024-01-01 (月曜) から 2 週ずつ、月はカレンダーどおり
+// Period buckets. Weeks start Monday, 2 weeks count from 2024-01-01 (a Monday), months follow the calendar
 const PERIOD_UNITS = { week: 7, '2week': 14, month: 0 };
 function periodAt(date, unit) {
   const [y, m] = date.split('-').map(Number);
@@ -680,7 +680,7 @@ function periodAt(date, unit) {
   return { id: startDate, startDate, endDate: addDays(startDate, PERIOD_UNITS[unit] - 1) };
 }
 
-// 今日を含む区切りと、過去 past 個・未来 future 個を新しい順に並べる
+// The bucket containing today plus `past` past and `future` future ones, newest first
 function periodWindows(today, unit, { past, future }) {
   const list = [periodAt(today, unit)];
   for (let i = 0; i < past; i++) list.push(periodAt(addDays(list.at(-1).startDate, -1), unit));
@@ -688,14 +688,14 @@ function periodWindows(today, unit, { past, future }) {
   return list;
 }
 
-// ---------- 永続化 ----------
+// ---------- Persistence ----------
 
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (err) {
     if (err.code === 'ENOENT') return fallback;
-    // 手で直して壊した設定などを、次の保存で既定値に上書きしてしまわないよう別名で残す
+    // Keep a broken hand-edited config under another name so the next save doesn't overwrite it with defaults
     const keep = `${file}.broken-${Date.now()}`;
     try {
       fs.copyFileSync(file, keep);
@@ -720,12 +720,12 @@ function saveState() {
   writeJson(STATE_FILE, state);
 }
 
-// レビューする側は state.prs、レビューを受ける側 (キーが mine: で始まる) は state.mine
+// Reviewer side lives in state.prs, author side (keys starting with mine:) in state.mine
 const mapOf = (key) => (key.startsWith('mine:') ? state.mine : state.prs);
 
 function updateEntry(key, patch) {
   const map = mapOf(key);
-  // 実行中にカードが削除された場合は結果を捨てる
+  // Discard the result if the card was deleted while running
   if (!map[key]) return;
   map[key] = { ...map[key], ...patch, updatedAt: Date.now() };
   saveState();
@@ -736,22 +736,22 @@ function updateEntry(key, patch) {
 function gh(args) {
   return new Promise((resolve, reject) => {
     execFile('gh', args, { maxBuffer: 50 * 1024 * 1024 }, (err, stdout, stderr) => {
-      // GraphQL の一部だけエラーでも失敗で終わるので、取れたデータを使えるよう stdout も渡す
+      // gh fails if any part of the GraphQL query errors, so pass stdout too to use the data we got
       if (err) reject(Object.assign(new Error(stderr || err.message), { stdout }));
       else resolve(stdout);
     });
   });
 }
 
-// 定期取得と「更新」ボタンが重なっても GitHub を二重に叩かず、取得中のものを共有する
-// (別々に走ると後から終わった古い結果で state.prs を上書きし得る)
+// Share the in-flight fetch so periodic fetches and the Refresh button don't hit GitHub twice
+// (separate runs could overwrite state.prs with an older result that finished later)
 let refreshing = null;
 function refreshFromGitHub() {
   return (refreshing ||= fetchFromGitHub().finally(() => (refreshing = null)));
 }
 
-// ponytail: ページングせず 1 ページだけ取る。上限を超えたら画面で知らせる (超えるようなら after でページングする)
-// GitHub の検索はたまに issueCount より少ない nodes を返すので、ページが上限まで埋まったときだけ見る
+// ponytail: fetch one page only, no paging. Show a notice in the UI if over the limit (page with after if that happens)
+// GitHub search sometimes returns fewer nodes than issueCount, so only check when the page is full
 const SEARCH_LIMITS = { open: 100, merged: 100, mine: 50 };
 function isTruncated(data) {
   return Object.entries(SEARCH_LIMITS).some(([k, limit]) => data[k] && data[k].nodes.length >= limit && data[k].issueCount > limit);
@@ -759,7 +759,7 @@ function isTruncated(data) {
 
 async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
-  // SAML で保護された org の PR など一部のノードだけ読めないと gh は失敗で終わる。取れた分は反映し、エラーも画面に出す
+  // gh fails if some nodes are unreadable (e.g. PRs in SAML-protected orgs). Use what we got and show the error too
   let partialError = null;
   const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
     try {
@@ -771,7 +771,7 @@ async function fetchFromGitHub() {
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now(), (data.reviewed?.nodes || []).filter((n) => n?.number), data.viewer.login, doneKeepMs(config.doneKeepDays));
-  // 個人リポジトリなどを混ぜないよう、設定に登録したリポジトリの PR だけ扱う (未登録なら全件)
+  // Only handle PRs from repos in the config, to keep personal repos etc. out (all PRs if none configured)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
   state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n?.number && registered(n)), data.viewer.login);
   state.truncated = isTruncated(data);
@@ -780,7 +780,7 @@ async function fetchFromGitHub() {
   saveState();
 }
 
-// ---------- スプリント ----------
+// ---------- Sprints ----------
 
 function ghqlArgs(query, vars) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
@@ -794,12 +794,12 @@ async function ghql(query, vars = {}) {
   return json.data;
 }
 
-// 消された issue など一部が読めなくても、読めた分を返す
+// Return what could be read even if some items (e.g. deleted issues) are unreadable
 async function ghqlPartial(query, vars = {}) {
   return (await ghqlResult(query, vars)).data;
 }
 
-// 読めた分と、「無い」以外の理由 (rate limit・SAML・権限など) で読めなかったか
+// What was read, and whether anything failed for a reason other than "not found" (rate limit, SAML, permissions, etc.)
 async function ghqlResult(query, vars = {}) {
   const out = await gh(ghqlArgs(query, vars)).catch((e) => {
     if (e.stdout) return e.stdout;
@@ -826,14 +826,14 @@ const ISSUE_FIELDS = `fragment iss on Issue {
   } }
 }`;
 
-// 開始日・終了日・スプリントはこのプロジェクトの値だけ使う (プロジェクトに無い issue は未設定)
+// Use start/end dates and sprint only from this project (issues not in the project are unset)
 function normIssue(n, projectId) {
   const item = n.projectItems.nodes.find((i) => i.project?.id === projectId);
   return {
     id: n.id, number: n.number, title: n.title, url: n.url, repo: n.repository.nameWithOwner,
     state: n.state, stateReason: n.stateReason, assignees: n.assignees.nodes,
     subCount: n.subIssues.totalCount,
-    // 閉じただけの PR は出さない (マージ済み・オープン・Draft だけ)
+    // Skip PRs that were just closed (only merged, open, or Draft)
     prs: n.closedByPullRequestsReferences.nodes.filter((pr) => pr.state !== 'CLOSED'),
     sprintId: item?.sprint?.iterationId || null,
     sprintTitle: item?.sprint?.title || null,
@@ -843,11 +843,11 @@ function normIssue(n, projectId) {
   };
 }
 
-// サーバーを再起動しても取り直さないようファイルにも保存する
+// Also save to a file so a server restart doesn't refetch
 const sprintCache = new Map(Object.entries(readJson(SPRINT_CACHE_FILE, {})));
-// 全体スケジュールの把握用なので自動では取り直さない。最新にしたいときは画面の「今すぐ更新」で refresh=1 を送る
+// This is for an overall schedule view, so no auto-refetch. The UI's "Refresh now" sends refresh=1 to get the latest
 const SPRINT_CACHE_MS = 24 * 60 * 60 * 1000;
-// prefix で始まるキャッシュを捨てる (GitHub に書いた後、古い値を見せないように)
+// Drop caches whose key starts with prefix (after writing to GitHub, so stale values aren't shown)
 function dropCached(prefix) {
   for (const k of sprintCache.keys()) if (k.startsWith(prefix)) sprintCache.delete(k);
   writeJson(SPRINT_CACHE_FILE, Object.fromEntries(sprintCache));
@@ -857,7 +857,7 @@ async function cached(key, refresh, fn) {
   const hit = sprintCache.get(key);
   if (!refresh && hit && Date.now() - hit.at < SPRINT_CACHE_MS) return hit.data;
   const data = await fn();
-  // 一部取れなかった結果は残さない (次に開いたときに取り直す)
+  // Don't keep partial results (refetch next time it's opened)
   if (data?.partial) return data;
   sprintCache.set(key, { at: Date.now(), data });
   for (const [k, v] of sprintCache) if (Date.now() - v.at >= SPRINT_CACHE_MS) sprintCache.delete(k);
@@ -880,8 +880,8 @@ async function projectMeta(url, refresh) {
     } } } } }`, { login: p.login, number: p.number });
     const project = data[p.owner].projectV2;
     const fields = detectFields(project.fields.nodes);
-    // スプリントごとの件数はエイリアスでまとめて取る
-    // 件数で未来のスプリントを絞るので、未来はいったんすべて数える
+    // Fetch per-sprint counts in one query via aliases
+    // Future sprints are filtered by count, so count all of them first
     fields.iterations = pickIterations(fields.iterations, today, { past: range.past, future: Infinity });
     if (fields.iterations.length) {
       const counts = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} {
@@ -896,17 +896,17 @@ async function projectMeta(url, refresh) {
 
 const periodRange = () => ({ unit: PERIOD_UNITS[config.roadmapPeriod] !== undefined ? config.roadmapPeriod : 'month', past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) });
 
-// ---------- 計画 (Draft) ----------
+// ---------- Plans (Draft) ----------
 
-// 計画は md ファイルで持ち、git で管理できるようにする。GitHub には「GitHub に適用」したときだけ書く
+// Plans are md files so they can live in git. GitHub is written only on "Apply to GitHub"
 const plansRoot = () => config.plansDir || path.join(os.homedir(), 'docket-plans');
-// GitHub Projects ごとにフォルダを分ける (名前が変わっても変わらないよう owner と番号で決める)
+// One folder per GitHub Project (named by owner and number so renames don't change it)
 function projectDir(url) {
   const p = parseProjectUrl(url);
   if (!p) throw E('projectUrlInvalid', { url });
   return path.join(plansRoot(), `${p.login}-${p.number}`);
 }
-// docket-gits が作ったフォルダは git init しておく (自分で用意したフォルダには何もしない)
+// git init folders that docket-gits created (leave user-provided folders alone)
 function ensureDir(dir) {
   const root = plansRoot();
   if (!fs.existsSync(root)) {
@@ -923,18 +923,18 @@ function git(cwd, args) {
   }
 }
 const inGit = (dir) => fs.existsSync(dir) && git(dir, ['rev-parse', '--is-inside-work-tree'])?.trim() === 'true';
-// 最後のコミットの内容 (コミットされていなければ null)
+// Contents at the last commit (null if not committed)
 const committedText = (file) => git(path.dirname(file), ['show', `HEAD:./${path.basename(file)}`]);
 
 const PLAN_SYNC_FILE = path.join(DATA_DIR, 'plan-sync.json');
-// 最後に GitHub に反映した内容 (ファイル → issue のキー → syncSnapshot)。反映後に変えた issue を見分ける
-// 「^キー」には GitHub での親のキーを持つ (他の issue の下から持ってきた issue は、反映するまで計画の親と違う)
+// Contents last applied to GitHub (file -> issue key -> syncSnapshot). Used to spot issues changed after applying
+// "^key" holds the parent key on GitHub (an issue moved from under another issue differs from the plan's parent until applied)
 const planSync = readJson(PLAN_SYNC_FILE, {});
-// plan-sync.json のキー。計画のリポジトリの issue は番号だけ (以前の形式のまま)
+// Key in plan-sync.json. Issues in the plan's repo use just the number (legacy format)
 const syncKey = (plan, n) => (n.repo && n.repo !== plan.repo ? `${n.repo}#${n.issue}` : String(n.issue));
-// 計画をまたいで issue を見分けるキー
+// Key that identifies an issue across plans
 const fullKey = (plan, n) => `${n.repo || plan.repo}#${n.issue}`;
-// まだ作っていない親は '+'、最上位は ''
+// '+' for a parent not yet created, '' for top level
 const parentKey = (plan, p) => (!p ? '' : p.issue ? syncKey(plan, p) : '+');
 const relinked = (synced, plan, node, parent) => !!parent && `^${syncKey(plan, node)}` in synced && synced[`^${syncKey(plan, node)}`] !== parentKey(plan, parent);
 
@@ -957,7 +957,7 @@ function listPlans(url) {
       return {
         file: f, title: plan.title || f, status: plan.status, count: all.length,
         issues: nodes.filter((n) => n.issue).map((n) => fullKey(plan, n)),
-        // 画面の「スプリント · 期間」で計画を絞るのに使う
+        // Used to filter plans by the UI's "Sprint · Period"
         sprints: [...new Set(nodes.map((n) => n.sprint).filter(Boolean))],
         spans: nodes.filter((n) => n.start || n.end).map((n) => [n.start || n.end, n.end || n.start]),
       };
@@ -977,10 +977,10 @@ function planDoc(url, file) {
   const changed = flatten(plan.nodes).filter(({ node, parent }) => {
     if (!node.issue) return false;
     const key = syncKey(plan, node);
-    // 「+キー」は作ったが親への付け替え・Project への追加が終わっていない issue (途中で失敗したら次の反映でやり直す)
+    // "+key" = created, but not yet moved under its parent or added to the Project (retried on the next apply if it failed midway)
     return (synced[key] && synced[key] !== syncSnapshot(node)) || `+${key}` in synced || relinked(synced, plan, node, parent);
   }).map(({ node }) => syncKey(plan, node));
-  // GitHub と計画の両方で変わった項目 (計画の値を GitHub に合わせたものは除く)。キー → 項目 → GitHub の値
+  // Fields changed both on GitHub and in the plan (excluding plan values synced to GitHub). key -> field -> GitHub value
   const conflicts = {};
   for (const { node } of flatten(plan.nodes)) {
     const c = node.issue && synced[`!${syncKey(plan, node)}`];
@@ -1002,15 +1002,15 @@ function writePlan(url, file, plan) {
 function createPlan(url, { file, title, repo }) {
   if (fs.existsSync(planFile(url, file))) throw E('planExists', { file });
   const name = title || file.replace(/\.md$/, '');
-  // 計画 1 つが最上位 issue 1 つ。計画と同じ名前で最初から作っておく
+  // One plan = one top-level issue. Create it up front with the plan's name
   writePlan(url, file, { title: name, repo: repo || '', status: 'draft', nodes: [{ title: name, children: [] }] });
 }
 
-// 取り込む issue はラベル・マイルストーン・GitHub での親も取る
-// 本文は取らない (長い説明や画像があり、大事な話はコメントにあることも多いので、GitHub で見てもらう)
+// Imported issues also get labels, milestone, and their parent on GitHub
+// Body is not fetched (long text and images; key discussion is often in comments, so read it on GitHub)
 const IMPORT_FIELDS = ISSUE_FIELDS.replace('id number title', 'id number title labels(first: 20) { nodes { name } } milestone { title } parent { number repository { nameWithOwner } }');
 
-// GitHub の issue を sub issue ごと計画のノードにする (levels 階層まで)
+// Turn a GitHub issue and its sub issues into plan nodes (up to `levels` deep)
 async function importTree(url, repo, number, levels) {
   if (!validRepo(repo) || !(number > 0)) throw E('planIssueNotFound');
   const meta = await projectMeta(url, false);
@@ -1022,7 +1022,7 @@ async function importTree(url, repo, number, levels) {
   ${IMPORT_FIELDS}`, { owner, name, number, ...names });
   const raw = data.repository?.issue;
   if (!raw) throw E('planIssueNotFound');
-  // md に書いて読み直しても同じ値になるよう、タイトルの空白をそろえる
+  // Normalize title whitespace so writing to md and reading back gives the same value
   const toNode = (n) => {
     const item = n.projectItems.nodes.find((i) => i.project?.id === meta.id);
     return {
@@ -1055,7 +1055,7 @@ async function importTree(url, repo, number, levels) {
   return { root, parent: raw.parent ? { repo: raw.parent.repository.nameWithOwner, issue: raw.parent.number } : null };
 }
 
-// 1 つの issue は 1 つの計画にだけ入れる (2 つの計画が同じ issue を書き換え合わないように)
+// An issue belongs to only one plan (so two plans don't overwrite the same issue)
 function checkTaken(url, root) {
   const owners = {};
   for (const p of listPlans(url).plans) for (const k of p.issues) owners[k] = p;
@@ -1067,7 +1067,7 @@ function checkTaken(url, root) {
   walk(root);
 }
 
-// 取り込んだ issue は GitHub と同じ内容として記録する (触っていない issue を「変更」にしない)
+// Record imported issues as matching GitHub (so untouched issues don't show as "changed")
 function adoptTree(url, file, plan, { root, parent }) {
   const synced = (planSync[planFile(url, file)] ||= {});
   const walk = (n, pkey) => {
@@ -1093,7 +1093,7 @@ async function createPlanFromIssue(url, { file, repo, number }) {
   writePlan(url, file, plan);
 }
 
-// 計画の level 階層目 (1 始まり) に入れる issue を取ってくる。md に書くのは画面から保存したとき
+// Fetch issues for level `level` (1-based) of the plan. They're written to md when saved from the UI
 async function importIssue(url, file, { repo, number, level }) {
   const { plan } = planDoc(url, file);
   const tree = await importTree(url, repo, number, Math.max(1, MAX_DEPTH - (Number(level) || 1) + 1));
@@ -1101,10 +1101,10 @@ async function importIssue(url, file, { repo, number, level }) {
   return adoptTree(url, file, plan, tree);
 }
 
-// 見比べ・取り込みに使う issue の値 (サブ issue の番号も取る)
+// Issue fields used for comparing and importing (includes sub issue numbers)
 const PULL_QUERY_FIELDS = IMPORT_FIELDS.replace('id number title', 'id number title subs: subIssues(first: 50) { nodes { number repository { nameWithOwner } } }');
 
-// 計画の issue を GitHub から読む。キー (owner/name#番号) → issue
+// Read the plan's issues from GitHub. key (owner/name#number) -> issue
 async function remoteIssues(url, plan, nodes) {
   const meta = await projectMeta(url, false);
   const names = { sprint: meta.sprint || '-', start: meta.start || '-', end: meta.end || '-' };
@@ -1127,7 +1127,7 @@ async function remoteIssues(url, plan, nodes) {
   return { meta, issues, failed, message };
 }
 
-// GitHub の値を計画の項目の形にする。スプリント・開始日・終了日は Project から読めなければ (Project に無い issue、フィールドが無い) 計画の値のままとみなす
+// Convert GitHub values to plan fields. If sprint/start/end can't be read from the Project (issue not in it, no field), keep the plan's values
 function remoteFields(n, meta, base) {
   const item = n.projectItems.nodes.find((i) => i.project?.id === meta.id);
   const f = {
@@ -1143,9 +1143,9 @@ const liveOf = (n, meta) => {
   return { state: it.state, status: it.status?.name || null, color: it.status?.color || null, prs: it.prs.map((pr) => ({ number: pr.number, url: pr.url, kind: pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open' })) };
 };
 
-// GitHub で変わった値を計画に取り込む。計画でも変えた項目は衝突として記録し、どちらを使うかは画面で選ぶ
-// GitHub で計画の issue に足された sub issue は、他の計画に入っていなければ計画にも足す
-// 計画の md を読んで書き戻す処理を 1 ファイルずつ順に行う (取り込み中の保存・適用中の取り込みで、古い内容を書き戻さないように)
+// Import values changed on GitHub into the plan. Fields also changed in the plan are recorded as conflicts; the UI picks which wins
+// Sub issues added on GitHub to plan issues are added to the plan too, unless they're in another plan
+// Read and write back each plan md one file at a time (so saving during import, or importing during apply, doesn't write stale content)
 const planLocks = new Map();
 function withPlanLock(url, file, fn) {
   const key = `${url}\n${file}`;
@@ -1174,7 +1174,7 @@ async function pullPlanNow(url, file, meta, issues) {
       if (raw) {
         const key = syncKey(plan, node);
         const local = fieldsOf(node);
-        // 記録が無ければ (以前の計画) GitHub の値に合わせる
+        // No record (older plans): match GitHub's values
         const base = synced[key] ? snapshotFields(synced[key]) : local;
         const remote = remoteFields(raw, meta, base);
         const { take, conflicts } = mergeRemote(local, base, remote, synced[`!${key}`]);
@@ -1200,8 +1200,8 @@ async function pullPlanNow(url, file, meta, issues) {
   return { updated, added, conflicts: conflicted };
 }
 
-// 計画の issue の今の状態 (Status・開いているか・PR)。絞り込みと表示に使う
-// GitHub から読み直したとき (キャッシュが無い・↻) は、変わった値も計画に取り込む (古いキャッシュでは取り込まない。反映した値を戻してしまうため)
+// Current state of plan issues (Status, open/closed, PRs). Used for filtering and display
+// When reread from GitHub (no cache, or ↻), also import changed values (not from a stale cache, which would revert applied values)
 async function planLive(url, file, refresh) {
   const { plan } = planDoc(url, file);
   const nodes = flatten(plan.nodes).map(({ node }) => node).filter((n) => n.issue);
@@ -1211,13 +1211,13 @@ async function planLive(url, file, refresh) {
   const live = await cached(`plan-live:${url}:${keys.join(',')}`, refresh, async () => {
     const { meta, issues, failed } = await remoteIssues(url, plan, nodes);
     pulled = await pullPlan(url, file, meta, issues);
-    // 一部読めなかったときはキャッシュしない (cached が partial を見て残さない)
+    // Don't cache if anything was unreadable (cached checks partial and skips saving)
     return { issues: Object.fromEntries(Object.entries(issues).map(([k, n]) => [k, liveOf(n, meta)])), fetchedAt: Date.now(), ...(failed && { partial: true }) };
   });
   return { ...live, pulled };
 }
 
-// 「スプリント · 期間」の選択肢 (数は設定の過去 / 未来のスプリント・期間の数)
+// Options for "Sprint · Period" (counts follow the configured past/future sprint and period counts)
 async function planRanges(url, refresh) {
   const meta = await projectMeta(url, refresh).catch(() => null);
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -1225,7 +1225,7 @@ async function planRanges(url, refresh) {
   return { unit, title: meta?.title || null, statuses: meta?.statuses || [], sprints: (meta?.iterations || []).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })), periods: periodWindows(today, unit, range) };
 }
 
-// 開始日・終了日・スプリントを書く Project のフィールド (ロードマップと同じ選び方)
+// Project fields for start date, end date, and sprint (chosen the same way as the roadmap)
 async function projectFields(url, refresh = false) {
   const p = parseProjectUrl(url);
   if (!p) throw E('projectUrlInvalid', { url });
@@ -1240,9 +1240,9 @@ async function projectFields(url, refresh = false) {
     const ref = (name) => name && { id: nodes.find((n) => n.name === name).id, name };
     return {
       id: project.id, title: project.title, start: ref(f.start), end: ref(f.end), sprint: ref(f.sprint),
-      // 新しい計画のリポジトリの候補 (プロジェクトにリンクしたリポジトリ)
+      // Repo candidates for a new plan (repos linked to the project)
       repos: project.repositories.nodes.map((r) => r.nameWithOwner),
-      // 計画で選ぶのは終わっていないスプリントだけ
+      // Only unfinished sprints can be chosen in plans
       iterations: f.iterations.filter((i) => !i.completed).sort((a, b) => a.startDate.localeCompare(b.startDate)).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })),
     };
   });
@@ -1250,7 +1250,7 @@ async function projectFields(url, refresh = false) {
 
 const validRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(repo || '');
 
-// 担当者・ラベル・マイルストーンの候補
+// Candidates for assignees, labels, and milestones
 async function repoOptions(repo, refresh = false) {
   if (!validRepo(repo)) return { assignees: [], labels: [], milestones: [] };
   return cached(`plan-repo:${repo}`, refresh, async () => {
@@ -1266,7 +1266,7 @@ async function repoOptions(repo, refresh = false) {
   });
 }
 
-// gh api に JSON の本文を標準入力で渡す (空配列で担当者を外すなど -f では書けない値もそのまま送れる)
+// Pass a JSON body to gh api via stdin (sends values -f can't express, e.g. an empty array to clear assignees)
 function ghRest(method, endpoint, body) {
   return new Promise((resolve, reject) => {
     const child = execFile('gh', ['api', '-X', method, endpoint, '--input', '-'], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -1279,15 +1279,15 @@ function ghRest(method, endpoint, body) {
 
 const planApplying = new Set();
 
-// 作る issue (番号が無いもの) と、前回の反映後に変えた issue
+// Issues to create (no number) and issues changed since the last apply
 function applyTargets(doc) {
   const changed = new Set(doc.changed);
   return flatten(doc.plan.nodes).filter(({ node }) => !node.issue || changed.has(syncKey(doc.plan, node)));
 }
 
-// 親 → 子の順に issue を作り (作ったらすぐ md に番号を書く。途中で失敗しても二重に作らない)、子は親の sub issue にする
-// 他の issue の下から持ってきた issue は、計画の親の sub issue に付け替える
-// addToProject なら Project に追加して開始日・終了日・スプリントも入れる
+// Create issues parent first (write the number to md right away so a midway failure doesn't create duplicates); children become sub issues of the parent
+// Issues moved from under another issue are re-parented under the plan's parent
+// With addToProject, add to the Project and set start/end dates and sprint
 async function applyPlan(url, file, { addToProject = true, commit = false } = {}) {
   const doc = planDoc(url, file);
   const full = planFile(url, file);
@@ -1297,11 +1297,11 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
   const optsOf = {};
   const fields = addToProject ? await projectFields(url) : null;
   const synced = (planSync[full] ||= {});
-  // 前回そろえた後に GitHub で変わった issue があれば、上書きせずに止める (先に ↻ で取り込んでもらう)
+  // If an issue changed on GitHub since the last sync, stop instead of overwriting (import it with ↻ first)
   const existing = applyTargets(doc).map(({ node }) => node).filter((n) => n.issue && synced[syncKey(plan, n)]);
   if (existing.length) {
     const { meta, issues, failed, message } = await remoteIssues(url, plan, existing);
-    // 読めなかった issue を「GitHub では変わっていない」とみなすと、GitHub での変更を上書きしてしまう
+    // Treating unreadable issues as "unchanged on GitHub" would overwrite changes made there
     if (failed) throw E('planReadFailed', { message });
     for (const n of existing) {
       const raw = issues[fullKey(plan, n)];
@@ -1323,19 +1323,19 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     const milestone = node.milestone ? opts.milestones.find((m) => m.title === node.milestone) : null;
     if (node.milestone && !milestone) warnings.push(E('planMilestoneMissing', { title: node.title, milestone: node.milestone }));
     const body = { title: node.title, assignees: node.assignees, labels: node.labels, milestone: milestone ? milestone.number : null };
-    // 候補に無いマイルストーン (閉じた・取れなかった) で GitHub の値を消さない
+    // Don't clear GitHub's value with a milestone not in the candidates (closed or not fetched)
     if (node.milestone && !milestone) delete body.milestone;
-    // 反映済みの issue は計画で変えた項目だけ送る (担当者・ラベルは GitHub から一部しか読まないので、全部送ると残りが消える)
+    // For applied issues, send only fields changed in the plan (assignees/labels are only partly read from GitHub, so sending all would drop the rest)
     const snap = node.issue && synced[syncKey(plan, node)];
     if (snap) {
       const base = snapshotFields(snap);
       const local = fieldsOf(node);
       for (const f of ['title', 'assignees', 'labels', 'milestone']) if (same(local[f], base[f])) delete body[f];
     }
-    // 本文を書くのは作るときだけ。GitHub にある issue の本文は GitHub で書き、計画からは上書きしない
+    // Body is written only on create. Existing issue bodies are edited on GitHub, never overwritten from the plan
     if (!node.issue) body.body = node.body || '';
     const isNew = !node.issue;
-    // 前回、作ったところで止まった issue。作ったときと同じく親に付けて、Project の値は消さない
+    // Issue that stopped right after creation last time. Attach to the parent as on create, and keep Project values
     const fresh = isNew || `+${syncKey(plan, node)}` in synced;
     let issue;
     if (isNew) {
@@ -1355,7 +1355,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
       const ids = { project: fields.id, item: item.id };
       const set = (field, v, type, key) => ghql(`mutation($project: ID!, $item: ID!, $field: ID!, $v: ${type}!) { updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field, value: { ${key}: $v } }) { clientMutationId } }`, { ...ids, field: field.id, v });
       const clear = (field) => ghql('mutation($project: ID!, $item: ID!, $field: ID!) { clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field }) { clientMutationId } }', { ...ids, field: field.id });
-      // 反映済みの issue で消した値は Project からも消す
+      // For applied issues, values removed in the plan are removed from the Project too
       for (const k of ['start', 'end']) {
         if (!fields[k]) continue;
         if (node[k]) await set(fields[k], node[k], 'Date', 'date');
@@ -1379,31 +1379,31 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     const name = path.basename(full);
     committed = git(cwd, ['add', '--', name]) !== null && git(cwd, ['commit', '-q', '-m', `Apply plan "${plan.title || name}" to GitHub`, '--', name]) !== null;
   }
-  // 反映した値を古いキャッシュで計画に戻さないよう捨てる
+  // Drop the cache so stale values don't revert what was just applied
   dropCached(`plan-live:${url}:`);
   return { created, updated, committed, warnings, doc: planDoc(url, file) };
 }
 
-// 設定として知っている項目だけを、既定値と同じ型のときに受け付ける (型違いで後の処理が落ちないように)
+// Accept only known settings, and only with the same type as the default (so wrong types don't crash later)
 function sanitizeConfig(body) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
-  // 同意は /api/consent でだけ記録する
+  // Consent is recorded only via /api/consent
   return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v)) && (k !== 'provider' || validProvider(v))));
 }
 
-// 0 や空文字で GitHub を叩き続けないよう 1 分未満は既定値に戻す
-// setInterval は 2^31 ms (約 24.8 日) を超えると 1 ms になるので、1 日で頭打ちにする
+// Reset values under 1 minute to the default so 0 or empty doesn't keep hitting GitHub
+// setInterval turns delays over 2^31 ms (~24.8 days) into 1 ms, so cap at 1 day
 function pollIntervalMs(minutes) {
   const m = Number(minutes);
   return Math.min(m >= 1 ? m : DEFAULT_CONFIG.pollMinutes, 24 * 60) * 60 * 1000;
 }
 
-// 設定欄を空にすると 0 になり、キューが二度と動かなくなるので既定値に戻す
+// Clearing the field gives 0 and the queue would never run again, so reset to the default
 function concurrencyLimit(n) {
   return Math.max(1, Math.floor(Number(n)) || DEFAULT_CONFIG.maxConcurrent);
 }
 
-// 開始 > 終了なら日をまたぐ時間帯 (例: 22〜6) として扱う
+// start > end means a window crossing midnight (e.g. 22-6)
 function inPollHours(date, start, end) {
   const h = date.getHours(), s = Number(start), e = Number(end);
   if (s === e) return true;
@@ -1419,11 +1419,11 @@ function schedulePoll() {
   }, pollIntervalMs(config.pollMinutes));
 }
 
-// ---------- claude 実行 ----------
+// ---------- claude runs ----------
 
 const queue = [];
 let running = 0;
-// 自分の PR への対応は同じ clone でブランチを切り替えるので、リポジトリごとに 1 件ずつ実行する
+// Fixes on my PRs switch branches in the same clone, so run one per repo at a time
 const busyRepos = new Set();
 
 function parseLines(text) {
@@ -1436,7 +1436,7 @@ function parseLines(text) {
   });
 }
 
-// 実行中の stream-json 出力から、Claude の発言とツール呼び出しを直近 limit 件だけ 1 行ずつにする
+// From a running stream-json output, make one line each for the last `limit` Claude messages and tool calls
 function logLines(text, limit = 50) {
   const lines = [];
   for (const ev of parseLines(text)) {
@@ -1456,7 +1456,7 @@ function logLines(text, limit = 50) {
   return lines.slice(-limit);
 }
 
-// ログ画面は直近の行しか出さないので、3 秒ごとにファイル全体を読まないよう末尾だけ読む (途中で切れた先頭行は捨てる)
+// The log view shows only recent lines, so read just the tail instead of the whole file every 3s (drop the cut-off first line)
 function readTail(file, bytes = 1024 * 1024) {
   const fd = fs.openSync(file, 'r');
   try {
@@ -1471,7 +1471,7 @@ function readTail(file, bytes = 1024 * 1024) {
   }
 }
 
-// stdout/stderr をファイルに書き出した claude の結果を読む。合わせて .log にまとめ、元ファイルは消す
+// Read a claude result written to stdout/stderr files. Merge them into .log and delete the originals
 function readRun(dir, logName, code, provider = 'claude') {
   const base = path.join(dir, logName);
   let stdout;
@@ -1479,14 +1479,14 @@ function readRun(dir, logName, code, provider = 'claude') {
   try {
     stdout = fs.readFileSync(`${base}.out`, 'utf8');
     stderr = fs.readFileSync(`${base}.err`, 'utf8');
-    // close ハンドラ内で呼ばれるので、ここで投げるとサーバーごと落ちる
+    // Called inside the close handler; throwing here takes down the whole server
     fs.writeFileSync(`${base}.log`, `exit=${code}\n--- stdout\n${stdout}\n--- stderr\n${stderr}`);
     fs.rmSync(`${base}.out`, { force: true });
     fs.rmSync(`${base}.err`, { force: true });
   } catch (e) {
     return { ok: false, error: E('claudeReadFailed', { message: e.message }) };
   }
-  // stream-json は 1 行 1 イベントで、最後の result イベントに結果がまとまる
+  // stream-json is one event per line; the final result event holds the result
   if (provider === 'codex') return readCodexResult(stdout, stderr, code);
   const parsed = parseLines(stdout).findLast((ev) => ev.type === 'result');
   if (!parsed) return { ok: false, error: E('claudeParseFailed', { code, stderr: stderr.slice(-500) }) };
@@ -1508,7 +1508,7 @@ function readCodexResult(stdout, stderr, code) {
   };
 }
 
-// 終わった実行の .log だけを数える・消す (実行中の .out / .err は触らない)
+// Count / delete only .log files of finished runs (leave running .out / .err alone)
 function logFiles(dir) {
   let names = [];
   try {
@@ -1516,7 +1516,7 @@ function logFiles(dir) {
   } catch {
     return [];
   }
-  // リンク切れ・途中で消えたファイルは飛ばす (日次の削除で投げるとサーバーごと落ちる)
+  // Skip broken links and files deleted meanwhile (throwing in the daily cleanup takes down the server)
   return names.filter((n) => n.endsWith('.log')).flatMap((n) => {
     const file = path.join(dir, n);
     try {
@@ -1531,15 +1531,15 @@ function logFiles(dir) {
 const sumLogs = (list) => ({ count: list.length, bytes: list.reduce((n, f) => n + f.size, 0) });
 const logStats = (dir) => sumLogs(logFiles(dir));
 
-// 溜まり続けるので keepMs より古いものを消す。0 なら終わった .log をすべて消す (設定画面の「すべて削除」)
+// These pile up, so delete ones older than keepMs. 0 deletes all finished .log files ("Delete all" in settings)
 function pruneLogs(dir, now, keepMs) {
-  // 0 は時刻を比べない (書いた直後の mtime が now より少し後になることがある)
+  // With 0, don't compare times (mtime right after writing can be slightly after now)
   const old = logFiles(dir).filter((f) => keepMs === 0 || now - f.mtimeMs >= keepMs);
   for (const f of old) fs.rmSync(f.file, { force: true });
   return sumLogs(old);
 }
 
-// 設定の保存日数。空や 0 で自動削除が全部消してしまわないよう、1 日未満は既定に戻す
+// Configured retention days. Reset under 1 day to the default so empty or 0 doesn't make auto-cleanup delete everything
 const logKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.logKeepDays) * 24 * 60 * 60 * 1000;
 
 function isAlive(pid) {
@@ -1551,9 +1551,9 @@ function isAlive(pid) {
   }
 }
 
-// サーバー・マシンの再起動後は保存した PID が別のプロセスに再利用されていることがある。
-// 無関係なプロセスの終了を待ったり止めたりしないよう、まだ claude であることも確かめる
-// ユーザーが別に開いている claude を止めないよう、runAgent が付ける stream-json 出力の指定も見る (-ww: 長いプロンプトで切らせない)
+// After a server or machine restart, a saved PID may have been reused by another process.
+// Also check it's still claude, so we don't wait on or kill an unrelated process
+// Also check for the stream-json flags runAgent adds, so the user's own claude isn't killed (-ww: don't truncate long prompts)
 function isAgentRun(pid, provider = 'claude') {
   if (!isAlive(pid)) return false;
   try {
@@ -1564,8 +1564,8 @@ function isAgentRun(pid, provider = 'claude') {
   }
 }
 
-// detached で起動した claude はプロセスグループのリーダーなので、グループごと止めて Bash ツールの子プロセスも残さない
-// 確認した直後に終わっていると ESRCH で投げ、キャンセルが状態を戻せなくなるので無視する
+// claude started detached leads its process group, so kill the whole group to leave no Bash tool children behind
+// If it exited right after the check, kill throws ESRCH and cancel can't restore state, so ignore it
 function killRun(pid) {
   try {
     process.kill(-pid, 'SIGTERM');
@@ -1586,11 +1586,11 @@ function waitForExit(pid, provider) {
   });
 }
 
-// サーバーを再起動しても claude を止めず結果を回収できるよう、別プロセスグループで起動し出力をファイルに書かせる
+// Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
 function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang = config.outputLang }) {
   return new Promise((resolve) => {
-    // ログファイルを開けないなどで投げると呼び出し側のカードが実行中のまま止まるので、失敗として返す
-    // 起動後に投げた場合 (状態の保存失敗など) は claude が動いているので、close で結果を返す
+    // Throwing (e.g. log file can't be opened) would leave the caller's card stuck running, so return a failure
+    // If it throws after starting (e.g. saving state fails), claude is running, so return the result on close
     let child;
     try {
       const model = modelOptions(config);
@@ -1609,7 +1609,7 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
         const result = readRun(LOG_DIR, logName, code, provider);
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
-      // lastLog: 実行が終わった後も画面からログを見られるよう残す (タグの再出力はおまけなので本体のログを残す)
+      // lastLog: kept so the log stays viewable after the run (tag re-output is extra, so keep the main run's log)
       if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd, provider }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
     } catch (e) {
       if (!child) resolve({ ok: false, error: e.message });
@@ -1617,9 +1617,9 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
   });
 }
 
-// claude -p の result は最後のメッセージだけなので、サブエージェントの完了通知などで回答が続くと
-// 先に出力したタグが落ちる。その場合は同じセッションを 1 回だけ再開してタグを再出力させる
-// opts.cancelled: 最初の実行中にキャンセルされたら再開しない
+// claude -p's result is only the last message, so if the answer continues (e.g. subagent completion notices)
+// the earlier tag is lost. Then resume the same session once and have it output the tag again
+// opts.cancelled: don't resume if cancelled during the first run
 async function runForTag(tag, prompt, opts, run = runAgent) {
   const res = await run(prompt, opts);
   if (!res.ok || !res.sessionId || extractTagJson(res.result, tag) || opts.cancelled?.()) return res;
@@ -1649,7 +1649,7 @@ function pump() {
     queue.splice(i, 1);
     running++;
     if (job.repo) busyRepos.add(job.repo);
-    // 結果の保存に失敗するなどで投げても、未処理の rejection でサーバーごと落とさない
+    // Even if saving the result throws, don't crash the server with an unhandled rejection
     job.run().catch((e) => console.error(e)).finally(() => {
       running--;
       busyRepos.delete(job.repo);
@@ -1658,12 +1658,12 @@ function pump() {
   }
 }
 
-// キャンセル後にやり直した場合、前の実行の結果で新しい実行の状態を上書きしないよう runId で見分ける
+// When retried after cancel, use runId so the old run's result doesn't overwrite the new run's state
 function finishReview(key, cwd, res, runId) {
   const stale = runId && state.prs[key]?.runId !== runId;
-  // キャンセル・失敗時も消費したトークンは計上する
+  // Count tokens used even on cancel or failure
   updateEntry(key, { ...(!stale && { run: null }), usage: addUsage(state.prs[key]?.usage, res.usage) });
-  // キャンセル済みなら結果を捨てる
+  // Discard the result if cancelled
   if (stale || state.prs[key]?.status !== 'reviewing') return;
   if (!res.ok) return updateEntry(key, { status: 'requested', error: res.error || E('reviewFailed') });
   const parsed = extractTagJson(res.result, 'docket-findings');
@@ -1675,7 +1675,7 @@ function finishReview(key, cwd, res, runId) {
     raw: res.result,
     summary: parsed?.summary || null,
     findings,
-    // findings が配列でなければ投稿できないので、解析失敗として出力を見せる
+    // findings must be an array to post, so show the output as a parse failure otherwise
     error: findings ? null : E('findingsParseFailed'),
     reviewedAt: Date.now(),
   });
@@ -1687,7 +1687,7 @@ function finishPost(key, res) {
   if (!posted?.posted) {
     return updateEntry(key, { status: 'reviewed', error: posted?.error || res.error || E('postUnknown'), postRaw: res.result });
   }
-  // スキップ後に再レビューして投稿した PR も、作成者の対応で requested に戻るようにする
+  // PRs posted after a skip and re-review also return to requested once the author responds
   updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: posted.url || null, postRaw: res.result, skipped: false });
 }
 
@@ -1705,12 +1705,12 @@ function enqueueReview(key, provider = config.provider) {
   pump();
 }
 
-// 前回のサーバープロセスで起動した claude の終了を待って結果を回収する
+// Wait for claude started by the previous server process to exit and collect its result
 function recoverRun(run, finish, repo) {
   running++;
   if (repo) busyRepos.add(repo);
   waitForExit(run.pid, run.provider)
-    // 終了コードは取れないが、result イベントは最後に出力されるので解析できれば正常終了とみなす
+    // Exit code is unavailable, but the result event comes last, so a parseable result counts as success
     .then(() => readRun(LOG_DIR, run.logName, 0, run.provider))
     .then(finish)
     .catch((e) => console.error(e))
@@ -1721,7 +1721,7 @@ function recoverRun(run, finish, repo) {
     });
 }
 
-// 投稿は途中で止めると PR に一部だけ投稿された状態になり得るので、レビューのみ対象にする
+// Stopping a post midway can leave the PR partly posted, so only reviews can be cancelled
 function cancelReview(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
@@ -1747,18 +1747,18 @@ function enqueuePost(key, decisions, approve, humanRead) {
   pump();
 }
 
-// ---------- 自分の PR (レビューを受ける) ----------
+// ---------- My PRs (receiving reviews) ----------
 
 function finishMine(key, cwd, res, runId) {
   const stale = runId && state.mine[key]?.runId !== runId;
   updateEntry(key, { ...(!stale && { run: null }), usage: addUsage(state.mine[key]?.usage, res.usage) });
   const entry = state.mine[key];
-  // キャンセル済みなら結果を捨てる
+  // Discard the result if cancelled
   if (stale || entry?.status !== 'running') return;
   if (!res.ok) return updateEntry(key, { status: 'idle', error: res.error || E('runFailed') });
   const parsed = extractTagJson(res.result, entry.mode === 'self' ? 'docket-findings' : 'docket-fix-plan');
-  // rebut の判断材料として、事前判断で書いた理由を添える
-  // items が配列でないと map で投げ、カードが実行中のまま止まる
+  // Include the reasons from the pre-judgment as input for rebut
+  // If items isn't an array, map throws and the card stays stuck running
   const items = entry.mode === 'self' ? parsed?.findings : Array.isArray(parsed?.items) ? parsed.items.filter((i) => i && typeof i === 'object').map((i) => ({ ...i, ownReason: entry.triage?.find((t) => String(t.no) === String(i.no))?.reason || null })) : null;
   updateEntry(key, {
     status: 'planned',
@@ -1780,7 +1780,7 @@ function finishApply(key, res) {
   updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, appliedAt: Date.now(), applyRaw: res.result });
 }
 
-// 対象外にした指摘を覚え、次の取得を待たずに一覧と件数から外す
+// Remember skipped comments and drop them from the list and counts without waiting for the next fetch
 function skipThreads(key, triage) {
   const keys = triage.filter((t) => t.verdict === 'skip').map(skipKey);
   if (keys.length === 0) return;
@@ -1789,7 +1789,7 @@ function skipThreads(key, triage) {
   updateEntry(key, { skipped: [...(entry.skipped || []), ...keys], threads, pending: threads.filter((t) => t.kind !== 'comment').length });
 }
 
-// mode: 'self' (セルフレビュー) / 'fix' (指摘への対応計画。triage: 人の事前判断)
+// mode: 'self' (self-review) / 'fix' (plan for handling comments; triage: human pre-judgment)
 function enqueueMine(key, mode, triage = null, provider = config.provider) {
   const entry = state.mine[key];
   const mapping = repoTool(config.repos[entry.pr.repo], provider);
@@ -1804,7 +1804,7 @@ function enqueueMine(key, mode, triage = null, provider = config.provider) {
   pump();
 }
 
-// decisions が無ければ PR 上のコメントを指示として対応する
+// Without decisions, follow the comments on the PR as instructions
 function enqueueApply(key, decisions) {
   const entry = state.mine[key];
   const icon = config.agreeIcon.trim() || DEFAULT_CONFIG.agreeIcon;
@@ -1816,7 +1816,7 @@ function enqueueApply(key, decisions) {
   pump();
 }
 
-// 対応 (push・返信) は途中で止めると一部だけ反映された状態になり得るので、計画・セルフレビューのみ対象にする
+// Stopping fixes (push, replies) midway can leave them partly applied, so only plans and self-reviews can be cancelled
 function cancelMine(key) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
@@ -1825,9 +1825,9 @@ function cancelMine(key) {
   updateEntry(key, { status: 'idle', error: null });
 }
 
-// ---------- スキル候補 ----------
+// ---------- Skill candidates ----------
 
-// roots: 設定画面で編集中 (未保存) の作業ディレクトリも候補に含める
+// roots: also include working dirs being edited (unsaved) in settings
 function skillFiles(roots, provider = 'claude') {
   const scopes = provider === 'codex' ? ['.agents', '.codex'] : ['.claude'];
   const dirs = new Set();
@@ -1881,15 +1881,15 @@ function readBody(req) {
   });
 }
 
-// /api/board は 5 秒ごとに取られるので、Claude の出力は判断ダイアログを開ける状態のときだけ送る
-// postRaw・decisions・triage は画面で使わない (判断の下書きはブラウザ側に持つ)
-// 手で移せるレーン。実行中のカードは実行が見えなくならないよう移さない
+// /api/board is fetched every 5s, so send Claude's output only when the decision dialog can be opened
+// postRaw, decisions and triage aren't used by the UI (decision drafts live in the browser)
+// Lanes cards can be moved to by hand. Running cards aren't moved, so the run stays visible
 const MOVE_LANES = { prs: ['requested', 'reviewing', 'reviewed', 'commented'], mine: ['mine', 'pending', 'running', 'planned'] };
 const RUNNING = ['queued', 'reviewing', 'posting', 'running', 'applying'];
-// 手で移した時点から状態・未対応数・Draft・PR の更新 (コミット・コメントなど) が変わったら、自動のレーンに戻す
+// If state, unaddressed count, Draft, or PR updates (commits, comments, etc.) change after a manual move, return to the automatic lane
 const laneSnapshot = (e) => ({ status: e.status, pending: e.pending ?? null, isDraft: !!e.pr?.isDraft, prUpdatedAt: e.pr?.updatedAt ?? null });
 function manualLane(e) {
-  // 無くなったレーン (以前の下書きなど) に移したものは自動のレーンに戻す
+  // Cards moved to a lane that no longer exists (e.g. old Draft) go back to the automatic lane
   if (!e.manual || ![...MOVE_LANES.prs, ...MOVE_LANES.mine].includes(e.manual.lane)) return null;
   const now = laneSnapshot(e);
   return Object.keys(now).every((k) => e.manual[k] === now[k]) ? e.manual.lane : null;
@@ -1910,7 +1910,7 @@ function boardPayload() {
     prs: Object.entries(state.prs).map(([key, e]) => boardEntry(key, e)),
     mine: Object.entries(state.mine).map(([key, e]) => boardEntry(key, e)),
     config,
-    // 設定画面の「すべて既定に戻す」用
+    // For "Reset all to defaults" in settings
     defaults: DEFAULT_CONFIG,
     defaultPrompts: DEFAULT_PROMPTS,
   };
@@ -1926,7 +1926,7 @@ async function handlePlan(req, res, url) {
     if (req.method === 'GET' && url.pathname === '/api/plan') return send(res, 200, planDoc(project, file));
     if (req.method === 'GET' && url.pathname === '/api/plan/options') {
       const refresh = url.searchParams.get('refresh') === '1';
-      // Project を読めなくても担当者などは選べるようにする
+      // Allow choosing assignees etc. even if the Project can't be read
       const [fields, repo] = await Promise.all([projectFields(project, refresh).catch(() => null), repoOptions(url.searchParams.get('repo'), refresh)]);
       return send(res, 200, { fields, ...repo });
     }
@@ -1946,7 +1946,7 @@ async function handlePlan(req, res, url) {
       return send(res, 200, { node: await importIssue(project, file, { repo: body.repo, number: Number(body.number), level: body.level }) });
     }
     if (req.method === 'POST' && url.pathname === '/api/plan/apply') {
-      // 同じ計画を続けて押しても issue を二重に作らない
+      // Pressing the same plan repeatedly must not create issues twice
       const key = planFile(project, file);
       if (planApplying.has(key)) return send(res, 409, { error: E('planApplying') });
       planApplying.add(key);
@@ -1962,21 +1962,21 @@ async function handlePlan(req, res, url) {
   return send(res, 404, { error: 'not found' });
 }
 
-// 画素フォントのテーマで使うフォント (Fusion Pixel 12px 韓国語版を使う文字だけに絞ったもの。OFL)
+// Font for the pixel-font theme (Fusion Pixel 12px Korean, subset to the characters used. OFL)
 const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
 
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  // DNS rebinding 対策
+  // DNS rebinding protection
   if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'forbidden host' });
 
   if (req.method === 'GET' && url.pathname === '/') {
-    // 読めなかったときに 500 を返せるよう、ヘッダーより先に読む
+    // Read before sending headers so we can return 500 if it fails
     const html = fs.readFileSync(path.join(__dirname, 'index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(html);
   }
-  // テーマ用のフォント。決まったファイルだけ返す (パスを組み立てない)
+  // Theme font. Serve only fixed files (never build paths)
   if (req.method === 'GET' && FONTS[url.pathname]) {
     let font;
     try {
@@ -1989,7 +1989,7 @@ async function handle(req, res) {
   }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
-  // 他サイトからの CSRF 対策 (独自ヘッダーはプリフライトが必要になり、CORS を許可していないので弾かれる)
+  // CSRF protection from other sites (custom headers need a preflight, which fails since CORS isn't allowed)
   if (req.headers['x-docket'] !== '1') return send(res, 403, { error: 'missing header' });
 
   if (req.method === 'GET' && url.pathname === '/api/board') {
@@ -2006,7 +2006,7 @@ async function handle(req, res) {
     const key = url.searchParams.get('key');
     const entry = state.prs[key] || state.mine[key];
     const run = entry?.run;
-    // 実行中は書き込み途中の .out、終わった後は readRun がまとめた .log を読む
+    // While running, read the in-progress .out; after, read the .log merged by readRun
     const file = run ? `${run.logName}.out` : entry?.lastLog ? `${entry.lastLog}.log` : null;
     let text = '';
     try {
@@ -2031,7 +2031,7 @@ async function handle(req, res) {
     return send(res, 200, { ok: true });
   }
   if (req.method === 'POST' && RUN_PATHS.includes(url.pathname) && needsConsent()) return send(res, 403, { error: E('consentRequired') });
-  // all: 終わったログをすべて消す。それ以外は days (画面で入力中の保存日数) より古いものだけ
+  // all: delete all finished logs. Otherwise only those older than days (retention being typed in the UI)
   if (req.method === 'POST' && url.pathname === '/api/logs/clear') {
     const removed = pruneLogs(LOG_DIR, Date.now(), body.all ? 0 : logKeepMs(body.days ?? config.logKeepDays));
     return send(res, 200, { removed, ...logStats(LOG_DIR) });
@@ -2068,7 +2068,7 @@ async function handle(req, res) {
         if (!triage) return send(res, 400, { error: E('undecided') });
         if (triage.some((t) => t.verdict === 'disagree' && !t.reason)) return send(res, 400, { error: E('reasonRequired') });
         skipThreads(body.key, triage);
-        // すべて対象外なら AI は動かさず、覚えるだけで終わる
+        // If everything is skipped, don't run the AI; just remember them
         if (triageTargets(triage).length === 0) return send(res, 200, { ok: true });
       }
       enqueueMine(body.key, body.mode, triage, body.provider ?? config.provider);
@@ -2116,13 +2116,13 @@ async function handle(req, res) {
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/skip') {
-    // 投稿せずに Done へ移す。GitHub 上の依頼は残るので mergeBoard で requested に戻さない
+    // Move to Done without posting. The request stays on GitHub, so mergeBoard must not move it back to requested
     if (!['requested', 'reviewed'].includes(entry.status)) return send(res, 409, { error: E('cannotSkip') });
     updateEntry(body.key, { status: 'commented', commentedAt: Date.now(), skipped: true, error: null });
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/dismiss') {
-    // 実行中に消すと claude は動き続け、投稿中なら結果も記録されない
+    // Deleting while running leaves claude running, and a post's result wouldn't be recorded
     if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: E('running') });
     delete state.prs[body.key];
     saveState();
@@ -2135,8 +2135,8 @@ function main() {
   config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
   if (!validProvider(config.provider)) config.provider = 'claude';
   state = { mine: {}, ...readJson(STATE_FILE, { prs: {} }) };
-  // claude を起動済みのジョブは別プロセスグループで動き続けているので結果を回収する
-  // 未起動のレビュー・計画は副作用がないのでキューに積み直し、投稿・対応は二重実行を避けて戻す
+  // Jobs whose claude already started keep running in their own process group, so collect their results
+  // Unstarted reviews and plans have no side effects, so requeue them; posts and fixes are reverted to avoid running twice
   const requeue = [];
   for (const [key, e] of Object.entries(state.prs)) {
     if ((e.status === 'reviewing' || e.status === 'posting') && e.run) {
@@ -2155,14 +2155,14 @@ function main() {
       continue;
     }
     if (e.status === 'queued' || e.status === 'running') {
-      // 指摘への対応は事前判断 (triage) が無いとプロンプトを作れないので、引き継げなければ戻す
+      // Fixing comments needs the triage to build the prompt, so revert if it can't be carried over
       if (repoTool(config.repos[e.pr.repo], sessionProvider(e))[e.mode === 'self' ? 'selfSkill' : 'fixSkill'] && (e.mode === 'self' || e.triage)) requeue.push(() => enqueueMine(key, e.mode, e.triage, sessionProvider(e)));
       else state.mine[key] = { ...e, status: 'idle', error: E('restartInterrupted') };
     }
     if (e.status === 'applying') state.mine[key] = { ...e, status: 'planned', error: E('restartApplyInterrupted') };
   }
   saveState();
-  // 回収中のジョブを running に数えてから積むので maxConcurrent を超えない
+  // Count recovered jobs as running before queueing, so maxConcurrent isn't exceeded
   for (const fn of requeue) fn();
 
   refreshFromGitHub().catch((e) => {
@@ -2173,7 +2173,7 @@ function main() {
   setInterval(() => pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays)), 24 * 60 * 60 * 1000);
 
   http
-    // 送信後に投げた場合にもう一度 writeHead すると、未処理の rejection でサーバーごと落ちる
+    // If it threw after sending, calling writeHead again would crash the server with an unhandled rejection
     .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, 500, { error: e.message }))))
     .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
 }
