@@ -1,0 +1,163 @@
+# docket-gits
+
+docket-gits is a local web app for code review with an AI agent. It collects the GitHub pull requests waiting on you into a kanban board, lets [Claude Code](https://claude.com/claude-code) or [Codex CLI](https://developers.openai.com/codex/cli) do the review, and posts to GitHub only what you agreed to, one finding at a time.
+
+- **Review**: pull requests where your review is requested. The AI reviews; you agree or disagree with each finding before anything is posted.
+- **Get reviewed**: your own open pull requests. Run a self-review, or triage the comments you received and let the AI plan, fix, push and reply.
+- **Roadmap**: plan a feature as an issue / sub-issue tree in a Markdown file, then create or sync it on GitHub in one go.
+- **Home**: what is left to do, decisions waiting on you, unanswered comments and AI cost, at a glance.
+
+Everything runs on your machine. There are no dependencies to install, and state is kept in plain JSON files.
+
+## Requirements
+
+- Node.js 18 or later
+- macOS or Linux (Windows is not supported)
+- [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`
+- `claude` (Claude Code) or `codex` (Codex CLI), logged in
+
+## Getting started
+
+1. Clone the repository and start the server:
+
+   ```bash
+   git clone https://github.com/ruridev/docket-gits.git
+   cd docket-gits
+   node server.js
+   ```
+
+2. Open http://localhost:4649.
+3. Read the notice about the risks and agree to it. Nothing that starts `claude` or `codex` works until you do.
+4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
+   - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line).
+   - **Claude settings** / **Codex settings**: pick a review skill per repository, or use the built-in review prompt.
+5. Press **Refresh** in the left sidebar. Review requests show up under **Requested**.
+
+| Environment variable | Default | |
+| --- | --- | --- |
+| `PORT` | `4649` | Port to listen on |
+| `DOCKET_DATA` | `./data` | Where settings, state and logs are stored |
+
+If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
+
+## How it works
+
+### Review
+
+```mermaid
+flowchart LR
+  R[Requested] -->|Review| V[Reviewing]
+  V -->|AI runs your skill| D[Needs decision]
+  D -->|agree / disagree per finding, then Comment| C[Done]
+  R -->|Skip| C
+  D -->|Skip| C
+  C -->|review requested again| R
+```
+
+1. **Review** runs your skill (for example `claude -p "/<skill> <args>"`) and tells it not to post, but to return its findings as JSON.
+2. You decide on each finding:
+   - **Agree**: it is posted. A reason you add is reflected in the text.
+   - **Disagree with a reason**: your reason is posted as your own opinion, marked with `🙅💭`.
+   - **Disagree without a reason**: nothing is posted.
+3. **Comment** resumes the same AI session and has the skill post your decisions its own way.
+
+The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes between 9:00 and 19:00 by default, and the **Refresh** button fetches at any time. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
+
+You can drag cards between lanes. Dragging to **Done** skips the pull request, and dragging from **Done** to **Reviewing** reviews it again.
+
+### Get reviewed
+
+```mermaid
+flowchart LR
+  M[My PR / Has comments] -->|Self-review| R[Running]
+  M -->|Address comments| T[Triage each comment]
+  T -->|Have the AI plan| R
+  R --> P[Needs decision]
+  P -->|agree / disagree, then Comment| A[Running: fix, push, reply]
+  A --> M
+```
+
+- **Self-review** runs your self-review skill. Findings you agree with are posted, fixed, pushed and answered with the commit SHA.
+- **Address comments** first lists the unanswered comments *without* the AI, so you form your own view before reading the AI's. For each one you agree, disagree (with a reason) or skip.
+- **Have the AI plan** returns a plan per comment without changing anything: fix, reply, defer, split into another pull request, create a follow-up issue, or rebut (when the AI thinks your disagreement is wrong).
+- You review the plans, then **Comment** carries them out: fix, push and reply.
+
+A comment counts as unanswered while you are not the last one to have written in its thread. Runs on your own pull requests go one at a time per repository, since they switch branches in the same clone.
+
+### Roadmap
+
+A plan is one Markdown file. Heading depth is the issue tree, the text under a heading is the issue description, and attributes go in `{...}` at the end of the heading:
+
+```markdown
+# Notification settings screen {issue=#314 start=2026-11-05 end=2026-11-13 @alice labels=backend,ui sprint="Sprint 12"}
+
+Description
+
+## API {start=2026-11-05 end=2026-11-07}
+
+## Docs {issue=#41 repo=acme/docs}
+```
+
+- Edit plans on a timeline: drag bars to move them or change their dates, add sub-issues, or import existing issues by URL.
+- **Apply to GitHub** creates the issues (parents first), links sub-issues and can add them to a GitHub Project with dates and sprint. **Push changes** updates them later.
+- Changes made on GitHub are pulled back in. A field changed on both sides is shown as a conflict for you to resolve, and pushing stops instead of overwriting newer changes on GitHub.
+- Plans are stored under `~/docket-plans` by default, one folder per GitHub Project, in a git repository so you can see what changed.
+
+## Configuration
+
+All settings are in **Settings**, from the account menu at the top right. They are saved when you press **Save**, and can be exported to and imported from `docket-settings.json`.
+
+- **Execution & logs**: default AI tool, how many runs at once (2), how long to keep logs (30 days).
+- **Work targets**: working directory, repositories (each can have its own working directory), pull request authors to show, how long merged and done pull requests stay on the board.
+- **Shared prompts**: the built-in review and address-comments prompts, for repositories without a skill of their own.
+- **Claude settings** / **Codex settings**: model, effort, extra arguments, and the skills per repository for review, self-review and addressing comments.
+- **Roadmap**: GitHub Projects, sprints and periods to list, plan folder.
+- **Refresh**: how often the screen and GitHub are refreshed, and during which hours.
+- **Language**: display language (English / 日本語 / 한국어), the language the AI writes in, a language per pull request author, and the agree / disagree marks.
+- **Theme** and **Terms** (lane names).
+
+Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}` and `{full-repo-name}`, for example `{pr-number} --repo {repo-name}`.
+
+### Claude or Codex
+
+Pick the default tool under **Execution & logs**. The arrow next to each button runs the other tool once. A card keeps the tool it started with until it is done.
+
+- Claude skills are read from `.claude/skills`, Codex skills from `.agents/skills` and `.codex/skills`. Each tool has its own skill settings, and a tool that is not set up is disabled.
+- For Claude, list the commands your skill needs in `--allowedTools` under **Extra claude args**.
+- Codex runs with `codex exec --json`, by default with `--approve-for-me` and network access. Its output has no price, so its cost is shown as unavailable.
+
+### Several GitHub accounts
+
+docket-gits uses whichever account is active in `gh`, and the AI posts and pushes as that account. To switch, make sure nothing is running, run `gh auth switch`, then press **Refresh**. If your clones use SSH remotes, `git push` uses your SSH key, so switch that too.
+
+`data/` is not split per account. To keep accounts apart, run a second instance:
+
+```bash
+DOCKET_DATA=~/docket-data-other PORT=4650 node server.js
+```
+
+## Security
+
+docket-gits runs an AI agent that can execute commands without asking you each time. Before you use it:
+
+- **Only configure repositories you trust.** The content of a pull request goes to the AI as it is, so a malicious pull request can try to steer it (prompt injection).
+- **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
+- **AI runs cost money.** Costs are shown per pull request and in total.
+- The server listens on `127.0.0.1` only, and rejects requests from other web pages.
+
+## Related
+
+- [docket](https://github.com/ruridev/docket): one page to open, start and stop the local web tools on your PC.
+- [docket-jobs](https://github.com/ruridev/docket-jobs): manage the background jobs that start with your PC.
+
+## Development
+
+```bash
+node --test
+```
+
+The whole app is `server.js` and `index.html`, with no build step.
+
+## License
+
+[MIT](LICENSE)
