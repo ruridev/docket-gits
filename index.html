@@ -30,7 +30,7 @@
   select { padding-right: 28px; }
   /* 選んだ項目の長さに合わせる (スプリント・期間は閉じているとタイトルだけになる) */
   select[data-sp-iteration] { field-sizing: content; }
-  header { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 30; }
+  header { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 30; }
   .user-menu { position: relative; }
   .user-menu > summary { list-style: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
   .user-menu > summary::-webkit-details-marker { display: none; }
@@ -477,7 +477,7 @@
   :root[data-theme="g6"] body { font-family: "Fusion Pixel KO", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, ui-monospace, sans-serif; }
   :root[data-theme="g6"] body * { border-radius: 0 !important; box-shadow: none !important; font-weight: 400 !important; }
   :root[data-theme="g6"] body :is(button, input, select, textarea) { font-family: inherit; }
-  :root[data-theme="g6"] body header { background: var(--panel); border-bottom: 2px solid var(--text); padding: 8px 12px; }
+  :root[data-theme="g6"] body header { background: var(--panel); border-bottom: 2px solid var(--text); }
   :root[data-theme="g6"] body nav.tabs a { border-bottom: 0; padding: 2px 10px; }
   :root[data-theme="g6"] body nav.tabs a.on { background: #3a3a3a; color: var(--panel); }
   :root[data-theme="g6"] body button { border: 0; background: none; padding: 2px 2px; color: var(--text); }
