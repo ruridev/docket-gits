@@ -44,7 +44,7 @@ const DEFAULT_CONFIG = {
   fixPrompt: '',
   // 画面の言語 (ja / ko / en)。画面を開くと送られ、共通プロンプトの既定値を選ぶのに使う
   uiLang: '',
-  // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/docket/projects/76)
+  // ロードマップ画面で見る GitHub Projects の URL (例: https://github.com/orgs/acme/projects/1)
   projects: [],
   // スプリント画面に出す過去・未来のスプリント数 (未来は issue があるものだけ)
   sprintPast: 1,

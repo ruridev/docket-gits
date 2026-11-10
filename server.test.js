@@ -551,7 +551,7 @@ test('inPollHours: 開始時 <= 時 < 終了時 だけ取得し、日またぎ�
 const { parseProjectUrl, detectFields } = require('./server');
 
 test('parseProjectUrl: org / user のプロジェクト URL を解析し、それ以外は null', () => {
-  assert.deepEqual(parseProjectUrl('https://github.com/orgs/docket/projects/76/views/1'), { owner: 'organization', login: 'docket', number: 76 });
+  assert.deepEqual(parseProjectUrl('https://github.com/orgs/acme/projects/1/views/1'), { owner: 'organization', login: 'acme', number: 1 });
   assert.deepEqual(parseProjectUrl('https://github.com/users/alice/projects/3'), { owner: 'user', login: 'alice', number: 3 });
   assert.equal(parseProjectUrl('https://github.com/docket/repo'), null);
 });

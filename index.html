@@ -593,13 +593,6 @@ applyTheme(savedTheme());
 </dialog>
 
 <script>
-// 旧名 (Review Board) 時代の保存値を新しいキーへ移す
-try {
-  for (const k of Object.keys(localStorage)) {
-    const nk = k.startsWith('rb-') ? `docket-${k.slice(3)}` : k.startsWith('review-board:') ? `docket:${k.slice(13)}` : null;
-    if (nk) { if (localStorage.getItem(nk) == null) localStorage.setItem(nk, localStorage.getItem(k)); localStorage.removeItem(k); }
-  }
-} catch {}
 // ---------- 多言語 ----------
 // 画面の言語はブラウザごとに保存する (未設定ならブラウザの言語)。切り替えたら再読み込みする
 // 値は HTML としてそのまま入れるので、ユーザーデータは呼び出し側でエスケープして params に渡す
@@ -2006,7 +1999,7 @@ async function openSettings() {
         </div>
         <div class="settings-pane" data-pane-body="agent-roadmap">
           <h3>${tr('tab.roadmap')}</h3>
-          <div class="form-row"><label>${tr('s.projects')}</label><textarea data-cfg="projects" rows="3" placeholder="https://github.com/orgs/docket/projects/76">${esc((cfg.projects || []).join('\n'))}</textarea></div>
+          <div class="form-row"><label>${tr('s.projects')}</label><textarea data-cfg="projects" rows="3" placeholder="https://github.com/orgs/acme/projects/1">${esc((cfg.projects || []).join('\n'))}</textarea></div>
           <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintPast')}</label><input data-cfg="sprintPast" type="number" min="0" value="${esc(cfg.sprintPast ?? 1)}"></div>
           <div class="form-row"><label>${tr('s.period')}</label><select data-cfg="roadmapPeriod">${['week', '2week', 'month'].map((v) => [v, tr(`unit.${v}`)]).map(([v, l]) => `<option value="${v}" ${(cfg.roadmapPeriod || 'month') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="form-row"><label title="${esc(tr('s.sprintRange.title'))}">${tr('s.sprintFuture')}</label><input data-cfg="sprintFuture" type="number" min="0" value="${esc(cfg.sprintFuture ?? 1)}"></div>
