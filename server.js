@@ -43,7 +43,7 @@ const DEFAULT_CONFIG = {
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
   // selfSkill: self-review of my PRs, fixSkill: handle review comments on my PRs (empty hides the button)
   repos: {},
-  // Review instructions for repos that use the "configured prompt" (PROMPT_SKILL) instead of a skill. Empty = default for the UI language (DEFAULT_PROMPTS)
+  // Review instructions for repos that use the "configured prompt" (PROMPT_SKILL) instead of a skill, or have no review skill. Empty = default for the UI language (DEFAULT_PROMPTS)
   reviewPrompt: '',
   // Instructions for handling review comments in repos that use the "configured prompt". Empty = default for the UI language
   fixPrompt: '',
@@ -355,8 +355,10 @@ const validProvider = (value) => value === 'claude' || value === 'codex';
 // Old cards belong to Claude even after the user changes the default.
 const sessionProvider = (entry) => entry.provider || 'claude';
 // Keep legacy mappings for Claude; Codex has its own skills and argument templates.
+// Review without a skill uses the shared review prompt (PROMPT_SKILL)
 function repoTool(mapping = {}, provider = 'claude') {
-  return provider === 'codex' ? { ...mapping.codex, cwd: mapping.cwd } : mapping;
+  const tool = provider === 'codex' ? { ...mapping.codex, cwd: mapping.cwd } : mapping;
+  return { ...tool, skill: tool.skill || PROMPT_SKILL };
 }
 
 function codexOptions(cfg, prompt, resume, readOnly = false) {

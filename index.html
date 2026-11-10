@@ -126,6 +126,8 @@
   .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin: 8px -10px 0; padding: 8px 10px 0; border-top: 1px solid var(--border); }
   .card.hl .actions { margin-inline: -8px; padding-inline: 8px; }
   .actions:empty { display: none; }
+  /* Skip always sits on its own line, so every review card has the same layout whatever the skill name length */
+  .actions .skip-row { flex-basis: 100%; }
   .card .actions button { font-size: 12px; padding: 2px 8px; }
   .actions .btns { display: flex; flex-wrap: wrap; gap: 6px; }
   .run-split { display: inline-flex; align-items: stretch; vertical-align: middle; }
@@ -655,7 +657,7 @@ const I18N = {
     noMineFindings: '対応する指摘はありません。', prevApplyRaw: '前回の対応の原文', confirmed: '指摘内容を確認しました',
     confirmRerun: 'もう一度押すと判断を破棄してやり直す', confirmPush: 'もう一度押すと push・コメント',
     's.fixPrompt': '指摘への対応プロンプト', 's.fixPrompt.help': 'スキルの代わりに「(設定のプロンプト)」を選んだリポジトリで、指摘への対応に使う指示です。作業ディレクトリの clone でブランチを切り替え、コミット・push・返信まで行います。対応計画の出力形式と、計画段階では修正しないことは docket-gits が後ろに付けます。空にすると既定のプロンプトを使います。',
-    'opt.prompt': '(設定のプロンプト)', 's.reviewPrompt': 'レビュープロンプト', 's.reviewPrompt.help': 'スキルの代わりに「(設定のプロンプト)」を選んだリポジトリで、レビュー・セルフレビューに使う指示です。{pr-url} などの変数が使えます。投稿しないことと指摘の出力形式は docket-gits が後ろに付けます。空にすると既定のプロンプトを使います。',
+    'opt.prompt': '(設定のプロンプト)', 's.reviewPrompt': 'レビュープロンプト', 's.reviewPrompt.help': 'スキルの代わりに「(設定のプロンプト)」を選んだリポジトリのレビュー・セルフレビューと、レビューのスキルが未設定のリポジトリのレビューに使う指示です。{pr-url} などの変数が使えます。投稿しないことと指摘の出力形式は docket-gits が後ろに付けます。空にすると既定のプロンプトを使います。',
     unset: '(未設定)', skillPh: '(スキル)', default: '既定', defaultParen: '(既定)', save: '保存', saved: '保存しました',
     's.repoSkills': 'リポジトリとスキルの対応',
     's.repoSkills.help': '引数テンプレートで使える値: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}。作業ディレクトリが空なら既定値を使います。',
@@ -747,7 +749,7 @@ const I18N = {
     noMineFindings: '반영할 코멘트가 없습니다.', prevApplyRaw: '이전 반영 원문', confirmed: '리뷰 의견을 확인했습니다',
     confirmRerun: '한 번 더 누르면 선택을 초기화하고 다시 실행', confirmPush: '한 번 더 누르면 push·코멘트',
     's.fixPrompt': '코멘트 반영 프롬프트', 's.fixPrompt.help': '스킬 대신 「(설정의 프롬프트)」를 고른 리포지토리에서 코멘트 반영에 쓰는 지시입니다. 작업 디렉터리의 clone에서 브랜치를 바꾸고 커밋·push·답글까지 합니다. 반영 계획 출력 형식과 계획 단계에서는 수정하지 않는다는 지시는 docket-gits가 뒤에 붙입니다. 비우면 기본 프롬프트를 씁니다.',
-    'opt.prompt': '(설정의 프롬프트)', 's.reviewPrompt': '리뷰 프롬프트', 's.reviewPrompt.help': '스킬 대신 「(설정의 프롬프트)」를 고른 리포지토리에서 리뷰·셀프 리뷰에 쓰는 지시입니다. {pr-url} 등의 변수를 쓸 수 있습니다. 게시하지 않는다는 지시와 지적 출력 형식은 docket-gits가 뒤에 붙입니다. 비우면 기본 프롬프트를 씁니다.',
+    'opt.prompt': '(설정의 프롬프트)', 's.reviewPrompt': '리뷰 프롬프트', 's.reviewPrompt.help': '스킬 대신 「(설정의 프롬프트)」를 고른 리포지토리의 리뷰·셀프 리뷰와, 리뷰 스킬이 설정되지 않은 리포지토리의 리뷰에 쓰는 지시입니다. {pr-url} 등의 변수를 쓸 수 있습니다. 게시하지 않는다는 지시와 지적 출력 형식은 docket-gits가 뒤에 붙입니다. 비우면 기본 프롬프트를 씁니다.',
     unset: '(미설정)', skillPh: '(스킬)', default: '기본값', defaultParen: '(기본값)', save: '저장', saved: '저장했습니다',
     's.repoSkills': '저장소와 스킬 매핑',
     's.repoSkills.help': '인자 템플릿에서 쓸 수 있는 값: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. 작업 디렉터리가 비어 있으면 기본값을 사용합니다.',
@@ -839,7 +841,7 @@ const I18N = {
     noMineFindings: 'Nothing to address.', prevApplyRaw: 'Raw output of the last run', confirmed: "I've reviewed the findings",
     confirmRerun: 'Click again to discard decisions and redo', confirmPush: 'Click again to push and comment',
     's.fixPrompt': 'Address-comments prompt', 's.fixPrompt.help': 'Instructions used to address comments in repositories set to "(prompt in settings)" instead of a skill. It switches branches in the working directory clone, then commits, pushes and replies. docket-gits appends the plan format and the rule not to change code while planning. Leave empty to use the default prompt.',
-    'opt.prompt': '(prompt in settings)', 's.reviewPrompt': 'Review prompt', 's.reviewPrompt.help': 'Instructions used for review and self-review in repositories set to "(prompt in settings)" instead of a skill. Variables such as {pr-url} work. docket-gits appends the no-posting rule and the findings format. Leave empty to use the default prompt.',
+    'opt.prompt': '(prompt in settings)', 's.reviewPrompt': 'Review prompt', 's.reviewPrompt.help': 'Instructions used for review and self-review in repositories set to "(prompt in settings)" instead of a skill, and for review in repositories with no review skill set. Variables such as {pr-url} work. docket-gits appends the no-posting rule and the findings format. Leave empty to use the default prompt.',
     unset: '(not set)', skillPh: '(skill)', default: 'Default', defaultParen: '(default)', save: 'Save', saved: 'Saved',
     's.repoSkills': 'Repository skills',
     's.repoSkills.help': 'Argument template values: {pr-number} {pr-url} {repo-name} {owner-name} {full-repo-name}. An empty working directory uses the default.',
@@ -1278,9 +1280,9 @@ function cardHtml(e) {
   let action = '';
   if (e.status === 'requested') {
     action = hasToolSkill(e.pr.repo, 'review')
-      ? `${runButton(tr('btn.review'), e, 'review')}<span class="muted">${esc(skillLabel(mapping.skill || tr('unset')))}</span>`
+      ? `${runButton(tr('btn.review'), e, 'review')}${mapping.skill && mapping.skill !== PROMPT_SKILL ? `<span class="muted">${esc(mapping.skill)}</span>` : `<a href="#settings" data-settings-pane="agent-prompts" title="${esc(tr('opt.prompt'))}">${tr('default')}</a>`}`
       : `<button disabled>${tr('btn.review')}</button><a href="#settings" data-settings>${tr('skillMissing')}</a>`;
-    action += `<button data-skip="${esc(e.key)}" title="${esc(tr('skip.title'))}">${tr('skip')}</button>`;
+    action += `<div class="skip-row"><button data-skip="${esc(e.key)}" title="${esc(tr('skip.title'))}">${tr('skip')}</button></div>`;
   } else if (e.status === 'queued') {
     action = `<span class="muted"><span class="spin"></span> ${tr('queued')}</span><button data-cancel="${esc(e.key)}">${armedLabel(`cancel:${e.key}`, tr('cancel'), tr('confirmCancel'))}</button>`;
   } else if (e.status === 'reviewing') {
@@ -1301,7 +1303,8 @@ function cardHtml(e) {
 
 const MINE_RUNNING = { self: tr('running.self'), fix: tr('running.fix') };
 const toolMapping = (mapping = {}, provider) => provider === 'codex' ? mapping.codex || {} : mapping;
-const actionSkill = (repo, action, provider) => toolMapping(board.config.repos[repo], provider)[{ review: 'skill', self: 'selfSkill', fix: 'fixSkill' }[action]];
+// Same fallback as repoTool in server.js: review without a skill uses the shared prompt
+const actionSkill = (repo, action, provider) => toolMapping(board.config.repos[repo], provider)[{ review: 'skill', self: 'selfSkill', fix: 'fixSkill' }[action]] || (action === 'review' ? PROMPT_SKILL : undefined);
 const hasToolSkill = (repo, action) => ['claude', 'codex'].some((p) => actionSkill(repo, action, p));
 function runButton(label, entry, action) {
   const attrs = `data-run-action="${action}" data-key="${esc(entry.key)}" data-run-repo="${esc(entry.pr.repo)}"`;
@@ -1838,6 +1841,8 @@ function openTriage(key, provider = board.config.provider || 'claude') {
 
 // ---------- Settings dialog ----------
 
+// Pane to open on the next visit to #settings (e.g. the card's "default" link opens the shared prompts)
+let nextSettingsPane = null;
 async function openSettings() {
   // If the first fetch failed, editing and saving would save empty settings and wipe things like repo mappings
   if (!board.defaults) await load();
@@ -1938,7 +1943,8 @@ async function openSettings() {
   let terms = laneNames();
   const termRows = (v, lanes) => `<h4>${tr(`tab.${v}`)}</h4>${lanes.map((l) => `<div class="form-row"><label>${esc(l.label)}</label>`
     + `<input data-term="${v}:${l.id}" placeholder="${esc(l.label)}" value="${esc(terms[`${v}:${l.id}`] || '')}"></div>`).join('')}`;
-  let pane = PANES[0];
+  let pane = nextSettingsPane || PANES[0];
+  nextSettingsPane = null;
   // Unlike other settings, the screen theme is applied and saved immediately (so you can preview while choosing)
   let uiTheme = savedTheme();
   const setTheme = (t) => {
@@ -3139,6 +3145,7 @@ async function review(key, provider) {
 
 $('#board').addEventListener('click', async (ev) => {
   const t = ev.target;
+  if (t.matches('[data-settings-pane]')) nextSettingsPane = t.dataset.settingsPane;
   if (t.closest('[data-archive-back]')) { archiveView = false; return render(); }
   const arch = t.closest('[data-archive]')?.dataset.archive;
   if (arch) {

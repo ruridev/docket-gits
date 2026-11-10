@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { repoTool, listSkills, readCodexResult, readRun, codexOptions, sessionProvider, sanitizeConfig, addUsage, logLines, skillInvocation, runForTag } = require('./server');
+const { repoTool, listSkills, readCodexResult, readRun, codexOptions, sessionProvider, sanitizeConfig, addUsage, logLines, skillInvocation, runForTag, PROMPT_SKILL } = require('./server');
 
 const jsonl = (events) => events.map((event) => JSON.stringify(event)).join('\n');
 const codexEvents = (text = 'answer') => [
@@ -78,8 +78,10 @@ test('Repository mappings preserve Claude settings and keep Codex skills and arg
   const mapping = { skill: 'claude-review', args: 'claude-args', selfSkill: 'claude-self', fixSkill: 'claude-fix', cwd: '/repo', codex: { skill: 'codex-review', args: 'codex-args', selfSkill: 'codex-self', fixSkill: 'codex-fix' } };
   assert.equal(repoTool(mapping, 'claude').skill, 'claude-review');
   assert.deepEqual(repoTool(mapping, 'codex'), { ...mapping.codex, cwd: '/repo' });
-  assert.equal(repoTool({ skill: 'claude-only' }, 'codex').skill, undefined);
-  assert.equal(repoTool(undefined, 'claude').skill, undefined);
+  // Review falls back to the shared prompt when no skill is set; self/fix stay hidden
+  assert.equal(repoTool({ skill: 'claude-only' }, 'codex').skill, PROMPT_SKILL);
+  assert.equal(repoTool(undefined, 'claude').skill, PROMPT_SKILL);
+  assert.equal(repoTool(undefined, 'claude').fixSkill, undefined);
 });
 
 test('Tag retry keeps the selected provider and explicit session', async () => {
@@ -160,7 +162,7 @@ test('HTTP flow: default and explicit tools, triage, posting and applying retain
   assert.equal((await api('/api/review', { key: 'acme/api#1', provider: 'shell' })).status, 400);
   assert.equal((await api('/api/config', { provider: 'shell' }, 'PUT')).status, 400);
   assert.equal((await api('/api/skills?provider=shell')).status, 400);
-  assert.equal((await api('/api/review', { key: 'acme/api#1', provider: 'codex' })).status, 400);
+  // Review without a Codex skill falls back to the shared prompt (repoTool), but self-review stays unavailable
   assert.equal((await api('/api/mine/run', { key: mineKey, mode: 'self', provider: 'codex' })).status, 400);
   await api('/api/config', { repos: { 'acme/api': { ...mapping, codex: { ...mapping, args: 'codex-args' } } } }, 'PUT');
   assert.equal((await api('/api/board')).data.config.repos['acme/api'].codex.args, 'codex-args');
