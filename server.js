@@ -1985,9 +1985,15 @@ function manualLane(e) {
   return Object.keys(now).every((k) => e.manual[k] === now[k]) ? e.manual.lane : null;
 }
 
+// newCount: comments not yet in the current plan. A planned thread counts again once it gets a new comment
 function boardEntry(key, { postRaw, decisions, triage, raw, applyRaw, findings, summary, manual, ...e }) {
   const lane = manualLane({ ...e, manual });
-  return { key, ...e, ...(lane && { manualLane: lane }), ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }) };
+  const planned = new Set((triage || []).map(skipKey));
+  return {
+    key, ...e, ...(lane && { manualLane: lane }),
+    ...(e.threads && { newCount: e.threads.filter((t) => !planned.has(skipKey(t))).length }),
+    ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }),
+  };
 }
 
 function boardPayload() {

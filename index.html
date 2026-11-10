@@ -1669,7 +1669,7 @@ function openMine(key) {
   const findings = e.findings && (e.mode === 'fix' ? e.findings.map(planToFinding) : e.findings);
   const runLabel = e.mode === 'self' ? tr('rerunSelf') : tr('rerunFix');
   // New comments added to the PR while waiting for a decision. Allow starting pre-judgment -> addressing comments from here
-  const newCount = hasToolSkill(e.pr.repo, 'fix') ? (e.threads || []).length : 0;
+  const newCount = hasToolSkill(e.pr.repo, 'fix') ? e.newCount || 0 : 0;
 
   const renderDlg = () => {
     armed = null; // Redrawing resets the button label, so also clear any pending "press again"

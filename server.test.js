@@ -144,6 +144,14 @@ test('boardEntry: does not send Claude output when the decision dialog cannot be
   assert.equal(boardEntry('k', { status: 'planned', ...heavy }).raw, 'r');
 });
 
+test('boardEntry: newCount leaves out threads already in the plan unless they got a new comment', () => {
+  const planned = { url: 'u1', lastUrl: 'u1' };
+  const threads = [planned, { url: 'u2', lastUrl: 'u2' }];
+  assert.equal(boardEntry('k', { status: 'planned', threads, triage: [{ ...planned, verdict: 'agree' }] }).newCount, 1);
+  assert.equal(boardEntry('k', { status: 'planned', threads: [{ url: 'u1', lastUrl: 'u3' }], triage: [{ ...planned, verdict: 'agree' }] }).newCount, 1);
+  assert.equal(boardEntry('k', { status: 'planned', threads }).newCount, 2);
+});
+
 test('mergeBoard: moves back to requested when re-requested after commented (not right after posting)', () => {
   const prev = { 'acme/api#1': { status: 'commented', commentedAt: 1000 } };
   assert.equal(mergeBoard(prev, [node(1)], 1000 + 1)['acme/api#1'].status, 'commented');
