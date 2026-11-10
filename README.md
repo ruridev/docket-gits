@@ -125,7 +125,9 @@ Pick the default tool under **Execution & logs**. The arrow next to each button 
 
 - Claude skills are read from `.claude/skills`, Codex skills from `.agents/skills` and `.codex/skills`. Each tool has its own skill settings, and a tool that is not set up is disabled.
 - For Claude, list the commands your skill needs in `--allowedTools` under **Extra claude args**.
-- Review, self-review and **Have the AI plan** must not change anything. For these Claude runs, `--permission-mode` and `--allowedTools` are removed from the extra args and only **Read-only tools** (`readOnlyTools`) are allowed, with Write / Edit denied. Empty `readOnlyTools` uses the extra args as they are. Codex runs them with `--sandbox read-only`. Posting and applying fixes use the full args.
+- Review, self-review and **Have the AI plan** are meant to change nothing. For these Claude runs, `--permission-mode` and `--allowedTools` are removed from the extra args and only **Read-only tools** (`readOnlyTools`) are allowed. Write / Edit and `gh api` with a write flag (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`) are denied. Empty `readOnlyTools` uses the extra args as they are. Codex runs them with `--sandbox read-only`.
+- Posting a review uses the full args with Write / Edit denied. Applying fixes uses the full args.
+- Every Claude run denies `gh auth`, `gh alias`, `gh extension`, `gh config`, `git config`, `git credential`, `git -c` and reading `~/.ssh`, `~/.aws`, `~/.config/gh` and `~/.netrc`, on top of your own `--disallowedTools`.
 - Codex runs with `codex exec --json`, by default with `--approve-for-me` and no network access. Its output has no price, so its cost is shown as unavailable.
 
 ### Several GitHub accounts
@@ -146,8 +148,8 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
 - **AI runs cost money.** Costs are shown per pull request and in total.
 - The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API has no password or token: any program on this PC that can reach `127.0.0.1` (a container, for example) can use it. Don't run docket-gits on a PC you share with other people.
-- Reviews and plans run with read-only tools (`readOnlyTools`), and no run starts in your home directory or `/`.
-- Claude may edit files only under `<working directory>/.claude/skills` without asking; other protected paths are denied.
+- Reviews and plans run with read-only tools (`readOnlyTools`), and no run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
+- Only fix runs may edit files under `<working directory>/.claude/skills` without asking; other protected paths are denied, and review and post runs can't edit skills.
 - Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).
 - `data/` is readable only by you (0700, files 0600).
 

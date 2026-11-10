@@ -935,12 +935,30 @@ test('permissionArgs: passes permission-mcp.js to claude as the permission promp
   assert.deepEqual(args.slice(2), ['--permission-prompt-tool', 'mcp__docket__approve']);
 });
 
-test('claudeArgs: read-only runs replace permission mode and allowed tools; empty readOnlyTools keeps the args', () => {
-  const { claudeArgs } = require('./server');
-  const cfg = { claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Write Bash(gh:*) --model x --allowedTools=Edit --dangerously-skip-permissions', readOnlyTools: 'Read,Bash(git log:*)' };
-  assert.deepEqual(claudeArgs(cfg), splitArgs(cfg.claudeArgs));
-  assert.deepEqual(claudeArgs(cfg, true), ['--model', 'x', '--allowedTools', 'Read,Bash(git log:*)', '--disallowedTools', 'Write,Edit,NotebookEdit']);
-  assert.deepEqual(claudeArgs({ ...cfg, readOnlyTools: ' ' }, true), splitArgs(cfg.claudeArgs));
+test('claudeArgs: every run denies secrets; read-only runs also deny edits and gh api writes; posts deny edits', () => {
+  const { claudeArgs, ALWAYS_DENY } = require('./server');
+  const cfg = { claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Write Bash(gh:*) --model x --allowedTools=Edit --dangerously-skip-permissions --disallowedTools WebFetch', readOnlyTools: 'Read,Bash(git log:*)' };
+  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
+  const kept = ['--permission-mode', 'acceptEdits', '--allowedTools', 'Read,Write', 'Bash(gh:*)', '--model', 'x', '--allowedTools=Edit', '--dangerously-skip-permissions'];
+
+  const apply = claudeArgs(cfg);
+  assert.deepEqual(apply.slice(0, -2), kept);
+  assert.equal(apply.filter((a) => a === '--disallowedTools').length, 1);
+  assert.deepEqual(denied(apply), ['WebFetch', ...ALWAYS_DENY]);
+  for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
+
+  const post = denied(claudeArgs(cfg, 'post'));
+  assert.ok(['Write', 'Edit', 'NotebookEdit', ...ALWAYS_DENY].every((r) => post.includes(r)));
+
+  const read = claudeArgs(cfg, 'read');
+  assert.deepEqual(read.slice(0, 4), ['--model', 'x', '--allowedTools', 'Read,Bash(git log:*)']);
+  const readDenied = denied(read);
+  for (const rule of ['Write', 'Edit', 'Bash(gh api -f*)', 'Bash(gh api * -f*)', 'Bash(gh api * -X*)', 'Bash(gh api * --method*)', 'Bash(gh api * --input*)', 'Bash(gh api * --raw-field*)']) assert.ok(readDenied.includes(rule), rule);
+
+  // Empty readOnlyTools keeps the args, but the denies still apply
+  const loose = claudeArgs({ ...cfg, readOnlyTools: ' ' }, 'read');
+  assert.deepEqual(loose.slice(0, -2), kept);
+  assert.ok(denied(loose).includes('Bash(gh api * -f*)'));
 });
 
 test('codexOptions: read-only runs drop auto-approval and network overrides and use the read-only sandbox', () => {

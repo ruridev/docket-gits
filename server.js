@@ -646,14 +646,28 @@ function dropFlags(args, takes, drop = () => true) {
   return out;
 }
 
-// Claude args for a run. Read-only runs replace the permission mode and allowed tools with readOnlyTools
-function claudeArgs(cfg, readOnly = false) {
-  const args = splitArgs(cfg.claudeArgs);
-  const tools = (cfg.readOnlyTools || '').trim();
-  if (!readOnly || !tools) return args;
+// Denied on every Claude run, whatever the extra args say. PR text is untrusted, so block the plain ways
+// to read the GitHub token or other credentials, and to run arbitrary commands through git/gh config.
+// ponytail: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal; posting without an agent is the real fix
+const ALWAYS_DENY = ['Bash(gh auth *)', 'Bash(gh alias *)', 'Bash(gh extension *)', 'Bash(gh config *)', 'Bash(git config *)', 'Bash(git credential *)', 'Bash(git -c *)',
+  'Read(~/.ssh/**)', 'Read(~/.aws/**)', 'Read(~/.config/gh/**)', 'Read(~/.netrc)'];
+const FILE_EDITS = ['Write', 'Edit', 'NotebookEdit'];
+// gh api sends POST / PATCH / DELETE with any of these flags, so read-only runs refuse them
+const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '--input'].flatMap((f) => [`Bash(gh api ${f}*)`, `Bash(gh api * ${f}*)`]);
+
+// Claude args for a run. mode: 'read' (review / self-review / fix plan), 'post' (posts a review, edits no files)
+// or 'apply' (fixes, push, replies). Read-only runs replace the permission mode and allowed tools with readOnlyTools.
+// The user's own --disallowedTools are merged into one flag with the denies above
+function claudeArgs(cfg, mode = 'apply') {
   const many = Infinity;
-  return [...dropFlags(args, { '--permission-mode': 1, '--allowedTools': many, '--allowed-tools': many, '--dangerously-skip-permissions': 0 }),
-    '--allowedTools', tools, '--disallowedTools', 'Write,Edit,NotebookEdit'];
+  const own = [];
+  let args = dropFlags(splitArgs(cfg.claudeArgs), { '--disallowedTools': many, '--disallowed-tools': many }, (_, value) => { own.push(value); return true; });
+  const tools = (cfg.readOnlyTools || '').trim();
+  if (mode === 'read' && tools) {
+    args = [...dropFlags(args, { '--permission-mode': 1, '--allowedTools': many, '--allowed-tools': many, '--dangerously-skip-permissions': 0 }), '--allowedTools', tools];
+  }
+  const deny = [...own, ...(mode === 'apply' ? [] : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...ALWAYS_DENY];
+  return [...args, '--disallowedTools', deny.filter(Boolean).join(',')];
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -1653,7 +1667,8 @@ function waitForExit(pid, provider) {
 
 // Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
 // readOnly: review / self-review / fix plan. These must not change anything, so they get restricted tools
-function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang = config.outputLang, readOnly = false }) {
+// post: posting a review on someone else's PR. It edits no files
+function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang = config.outputLang, readOnly = false, post = false }) {
   return new Promise((resolve) => {
     const unsafe = cwdError(cwd);
     if (unsafe) return resolve({ ok: false, error: unsafe });
@@ -1663,7 +1678,9 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
     try {
       const model = modelOptions(config);
       const instruction = withOutputLang(prompt, lang);
-      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...permissionArgs(cwd), ...claudeArgs(config, readOnly)];
+      // Only fix runs may edit skills: review and post runs read other people's PRs
+      const mode = readOnly ? 'read' : post ? 'post' : 'apply';
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' ? permissionArgs(cwd) : []), ...claudeArgs(config, mode)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
@@ -1807,6 +1824,7 @@ function enqueuePost(key, decisions, approve, humanRead) {
       provider: sessionProvider(entry),
       cwd: entry.cwd,
       resume: entry.sessionId,
+      post: true,
       logName: logName(key, 'post'),
       lang: postLang(entry.pr.author?.login, config),
     });
@@ -2252,4 +2270,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { claudeArgs, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
