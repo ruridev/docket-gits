@@ -7,6 +7,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
+// Creates the account on a fresh server and returns the API headers with its session.
+async function signUp(port) {
+  const res = await fetch(`http://localhost:${port}/api/auth/setup`, { method: 'POST', headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'alice', password: 'correct horse' }) });
+  assert.equal(res.status, 200);
+  return { 'X-Docket': '1', Cookie: res.headers.get('set-cookie').split(';')[0] };
+}
+
 const node = (number, repo = 'acme/api') => ({
   number,
   title: `PR ${number}`,
@@ -808,7 +815,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -817,7 +824,8 @@ test('GET /: returns 500 when index.html cannot be read, and the server stays up
       child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve());
       child.on('exit', (code) => reject(new Error(`server exited: ${code}`)));
     });
-    const get = (p) => fetch(`http://localhost:${port}${p}`, { headers: { 'X-Docket': '1' } }).then((r) => r.status);
+    const headers = await signUp(port);
+    const get = (p) => fetch(`http://localhost:${port}${p}`, { headers }).then((r) => r.status);
     assert.equal(await get('/'), 500);
     assert.equal(await get('/api/logs'), 200);
   } finally {
@@ -857,7 +865,7 @@ test('GitHub fetch: on a permission error for some nodes (gh exits with failure)
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
   try {
     await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve()));
-    const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: { 'X-Docket': '1' } }).then((r) => r.json());
+    const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: await signUp(port) }).then((r) => r.json());
     assert.deepEqual(board.prs.map((p) => p.key), ['acme/api#1']);
     assert.match(board.fetchError, /SAML/);
   } finally {
@@ -1000,7 +1008,7 @@ test('comment prompts: name the PR author and quote comments as escaped data', (
   assert.match(buildCommentApplyPrompt(pr), /このログインが書いたコメントだけ/);
 });
 
-test('HTTP: API needs only the custom header, no token; data is private; CSP allows the portal frame', async () => {
+test('HTTP: API needs the custom header and the session; data is private; CSP allows the portal frame', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const data = path.join(dir, 'data');
   fs.mkdirSync(data, { mode: 0o755 });
@@ -1011,9 +1019,16 @@ test('HTTP: API needs only the custom header, no token; data is private; CSP all
     assert.ok(line.includes(`docket-gits: http://localhost:${port}\n`));
     assert.equal(fs.existsSync(path.join(data, 'token')), false);
     assert.equal(fs.statSync(data).mode & 0o777, 0o700);
-    const call = (p, body, headers = { 'X-Docket': '1' }) => fetch(`http://localhost:${port}${p}`, { method: body ? 'POST' : 'GET', headers, body: body && JSON.stringify(body) });
+    assert.equal((await fetch(`http://localhost:${port}/api/logs`, { headers: { 'X-Docket': '1' } })).status, 401);
+    assert.match(await (await fetch(`http://localhost:${port}/`)).text(), /login\.js/);
+    const session = await signUp(port);
+    const call = (p, body, headers = session) => fetch(`http://localhost:${port}${p}`, { method: body ? 'POST' : 'GET', headers, body: body && JSON.stringify(body) });
     assert.equal((await call('/api/logs', undefined, {})).status, 403);
+    assert.equal((await call('/api/logs', undefined, { 'X-Docket': '1', Cookie: 'docket_gits_session=YWxpY2U.9999999999999.forged' })).status, 401);
+    assert.equal((await call('/api/auth/setup', { name: 'mallory', password: 'something long' })).status, 409);
     assert.equal((await call('/api/logs')).status, 200);
+    assert.match(await (await call('/')).text(), /<title>docket-gits<\/title>/);
+    for (const f of ['/login.css', '/login.js']) assert.equal((await fetch(`http://localhost:${port}${f}`)).status, 200, f);
     assert.equal((await call('/api/consent', {})).status, 200);
     // Inherited names are not state entries
     for (const key of ['constructor', '__proto__', 'mine:constructor']) {

@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
+const { createAuth } = require('./auth');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = process.env.DOCKET_DATA || path.join(__dirname, 'data');
@@ -13,6 +14,7 @@ const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
+const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session' });
 // The docket portal embeds this app in an iframe. X-Frame-Options can't allow-list, so use CSP only
 const FRAME_ANCESTORS = process.env.DOCKET_FRAME_ANCESTORS || "'self' http://localhost:4600 http://127.0.0.1:4600";
 
@@ -2052,6 +2054,8 @@ async function handlePlan(req, res, url) {
 
 // Font for the pixel-font theme (Fusion Pixel 12px Korean, subset to the characters used. OFL)
 const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
+// The sign-in page and its files. Serve only fixed files (never build paths)
+const LOGIN_FILES = { '/login.css': 'text/css; charset=utf-8', '/login.js': 'text/javascript; charset=utf-8' };
 
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
@@ -2060,10 +2064,15 @@ async function handle(req, res) {
   if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'forbidden host' });
 
   if (req.method === 'GET' && url.pathname === '/') {
-    // Read before sending headers so we can return 500 if it fails
-    const html = fs.readFileSync(path.join(__dirname, 'index.html'));
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    // Read before sending headers so we can return 500 if it fails. Signed out, the page is the sign-in page
+    const html = fs.readFileSync(path.join(__dirname, auth.user(req) ? 'index.html' : 'login.html'));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(html);
+  }
+  if (req.method === 'GET' && LOGIN_FILES[url.pathname]) {
+    const file = fs.readFileSync(path.join(__dirname, url.pathname.slice(1)));
+    res.writeHead(200, { 'Content-Type': LOGIN_FILES[url.pathname], 'X-Content-Type-Options': 'nosniff' });
+    return res.end(file);
   }
   // Theme font. Serve only fixed files (never build paths)
   if (req.method === 'GET' && FONTS[url.pathname]) {
@@ -2080,6 +2089,10 @@ async function handle(req, res) {
 
   // CSRF protection from other sites (custom headers need a preflight, which fails since CORS isn't allowed)
   if (req.headers['x-docket'] !== '1') return send(res, 403, { error: 'missing header' });
+  // Every other API call needs the owner's session (see auth.js)
+  const signIn = await auth.route(req, res, url.pathname, () => readBody(req));
+  if (signIn) return send(res, signIn.status, signIn.body);
+  if (!auth.user(req)) return send(res, 401, { error: 'signin' });
 
   if (req.method === 'GET' && url.pathname === '/api/board') {
     if (url.searchParams.get('refresh') === '1') {
@@ -2270,6 +2283,8 @@ function main() {
     .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
 }
 
-if (require.main === module) main();
+if (require.main === module && process.argv.includes('--reset-password')) {
+  console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
+} else if (require.main === module) main();
 
 module.exports = { claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

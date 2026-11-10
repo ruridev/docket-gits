@@ -26,7 +26,7 @@ Everything runs on your machine. There are no dependencies to install, and state
    node server.js
    ```
 
-2. Open http://localhost:4649.
+2. Open http://localhost:4649 and create your account (see [Signing in](#signing-in)).
 3. Read the notice about the risks and agree to it. Nothing that starts `claude` or `codex` works until you do.
 4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
    - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.
@@ -40,6 +40,15 @@ Everything runs on your machine. There are no dependencies to install, and state
 | `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`) |
 
 If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
+
+## Signing in
+
+The first time you open docket-gits, it asks you to create an account: a name and a password of 8 characters or more. There is one account and no email, because nothing is ever sent out and the account only guards this app on this PC. From then on every API call needs the signed-in session.
+
+- The account is kept in `data/auth.json` (0600): a scrypt hash of the password and the secret that signs the session cookie. A session lasts 30 days and survives restarts.
+- Forgot the password? Run `node server.js --reset-password` in this folder. It removes only the account; your data stays, and the next visit asks you to create the account again.
+- Create the account right after the first start: until then, any program on this PC that can reach the port could create it first.
+- docket, docket-gits and docket-jobs each have their own account. Inside the docket portal, each tool shows its own sign-in page the first time.
 
 ## How it works
 
@@ -147,7 +156,7 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **Only configure repositories you trust.** The content of a pull request goes to the AI as it is, so a malicious pull request can try to steer it (prompt injection).
 - **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
 - **AI runs cost money.** Costs are shown per pull request and in total.
-- The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API has no password or token: any program on this PC that can reach `127.0.0.1` (a container, for example) can use it. Don't run docket-gits on a PC you share with other people.
+- The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
 - Reviews and plans run with read-only tools (`readOnlyTools`), and no run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
 - Only fix runs may edit files under `<working directory>/.claude/skills` without asking; other protected paths are denied, and review and post runs can't edit skills.
 - Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).

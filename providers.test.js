@@ -147,8 +147,10 @@ test('HTTP flow: default and explicit tools, triage, posting and applying retain
     child.stdout.on('data', (chunk) => { const match = /docket-gits: (http:\/\/localhost:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
     child.once('exit', () => reject(new Error(stderr)));
   });
+  const setup = await fetch(`${address}/api/auth/setup`, { method: 'POST', headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'alice', password: 'correct horse' }) });
+  const session = setup.headers.get('set-cookie').split(';')[0];
   const api = async (route, body, method = 'POST') => {
-    const response = await fetch(address + route, { method: body === undefined ? 'GET' : method, headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(address + route, { method: body === undefined ? 'GET' : method, headers: { 'X-Docket': '1', 'Content-Type': 'application/json', Cookie: session }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, data: await response.json() };
   };
   const wait = async (kind, status) => {
