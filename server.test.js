@@ -787,7 +787,7 @@ test('起動: 待機中の指摘への対応 (fix) が残っていても、事�
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
   const started = await new Promise((resolve) => {
-    child.stdout.on('data', (d) => /Docket:/.test(d) && resolve(true));
+    child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve(true));
     child.on('exit', () => resolve(false));
   });
   child.kill();
@@ -814,7 +814,7 @@ test('GET /: index.html を読めなくても 500 を返し、サーバーは落
   try {
     // 起動前に落ちたら待ち続けずに失敗させる
     await new Promise((resolve, reject) => {
-      child.stdout.on('data', (d) => /Docket:/.test(d) && resolve());
+      child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve());
       child.on('exit', (code) => reject(new Error(`server exited: ${code}`)));
     });
     const get = (p) => fetch(`http://localhost:${port}${p}`, { headers: { 'X-Docket': '1' } }).then((r) => r.status);
@@ -830,7 +830,7 @@ test('GET /fonts/pixel.ttf: テーマのフォントを返し、決めたファ�
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
-    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve()));
     const font = await fetch(`http://localhost:${port}/fonts/pixel.ttf`);
     assert.equal(font.status, 200);
     assert.equal(font.headers.get('content-type'), 'font/ttf');
@@ -856,7 +856,7 @@ test('GitHub 取得: 一部のノードだけ権限エラー (gh は失敗で終
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
   try {
-    await new Promise((resolve) => child.stdout.on('data', (d) => /Docket:/.test(d) && resolve()));
+    await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve()));
     const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: { 'X-Docket': '1' } }).then((r) => r.json());
     assert.deepEqual(board.prs.map((p) => p.key), ['acme/api#1']);
     assert.match(board.fetchError, /SAML/);

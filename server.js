@@ -906,7 +906,7 @@ function projectDir(url) {
   if (!p) throw E('projectUrlInvalid', { url });
   return path.join(plansRoot(), `${p.login}-${p.number}`);
 }
-// Docket が作ったフォルダは git init しておく (自分で用意したフォルダには何もしない)
+// docket-gits が作ったフォルダは git init しておく (自分で用意したフォルダには何もしない)
 function ensureDir(dir) {
   const root = plansRoot();
   if (!fs.existsSync(root)) {
@@ -2175,7 +2175,7 @@ function main() {
   http
     // 送信後に投げた場合にもう一度 writeHead すると、未処理の rejection でサーバーごと落ちる
     .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, 500, { error: e.message }))))
-    .listen(PORT, '127.0.0.1', () => console.log(`Docket: http://localhost:${PORT}`));
+    .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
 }
 
 if (require.main === module) main();

@@ -142,7 +142,7 @@ test('HTTP flow: default and explicit tools, triage, posting and applying retain
   });
   const address = await new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.stdout.on('data', (chunk) => { const match = /Docket: (http:\/\/localhost:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
+    child.stdout.on('data', (chunk) => { const match = /docket-gits: (http:\/\/localhost:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
     child.once('exit', () => reject(new Error(stderr)));
   });
   const api = async (route, body, method = 'POST') => {
