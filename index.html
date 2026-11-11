@@ -2026,7 +2026,7 @@ async function openSettings() {
         </div>
         <div class="settings-pane" data-pane-body="lang">
           <div class="form-row"><label>${tr('s.uiLang')}</label><select data-ui-lang>${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${uiLang === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-          <div class="form-row"><label title="${esc(tr('s.outLang.title'))}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'ja') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          <div class="form-row"><label title="${esc(tr('s.outLang.title'))}">${tr('s.outLang')}</label><select data-cfg="outputLang">${Object.entries(LANGS).map(([v, l]) => `<option value="${v}" ${(cfg.outputLang || 'en') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
           <div class="form-row"><label>${tr('s.authorLangs')}</label><div><textarea data-cfg="authorLangs" rows="4" placeholder="tanaka ja&#10;nguyen en">${esc(Object.entries(cfg.authorLangs || {}).map(([a, l]) => `${a} ${l}`).join('\n'))}</textarea><p class="muted" style="margin:4px 0 0">${tr('s.authorLangs.hint')}</p></div></div>
           <div class="form-row"><label title="${esc(tr('s.agreeIcon.title'))}">${tr('s.agreeIcon')}</label><input data-cfg="agreeIcon" placeholder="🙆💭" style="width:8em" value="${esc(cfg.agreeIcon ?? '🙆💭')}"></div>
           <div class="form-row"><label title="${esc(tr('s.disagreeIcon.title'))}">${tr('s.disagreeIcon')}</label><input data-cfg="disagreeIcon" placeholder="🙅💭" style="width:8em" value="${esc(cfg.disagreeIcon ?? '🙅💭')}"></div>

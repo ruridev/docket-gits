@@ -50,7 +50,7 @@ function main() {
     if (msg.method === 'tools/list') return send(msg.id, { tools: [{ name: 'approve', description: 'Approve or deny a tool call', inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' } } } }] });
     if (msg.method === 'tools/call') {
       const { tool_name: toolName, input } = msg.params.arguments || {};
-      const answer = approves(toolName, input) ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'docket: この操作は許可されていません' };
+      const answer = approves(toolName, input) ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'docket: this action is not allowed' };
       return send(msg.id, { content: [{ type: 'text', text: JSON.stringify(answer) }] });
     }
     send(msg.id, {});
