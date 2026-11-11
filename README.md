@@ -69,7 +69,7 @@ flowchart LR
    - **Agree**: it is posted. A reason you add is reflected in the text.
    - **Disagree with a reason**: your reason is posted as your own opinion, marked with `🙅💭`.
    - **Disagree without a reason**: nothing is posted.
-3. **Comment** resumes the same AI session and has the skill post your decisions its own way.
+3. **Comment** starts a new AI session that sees only the findings and your decisions, not the pull request, and posts them as one review. That session may run only `gh api` on the reviews of that pull request (Claude); Codex runs it with your `codexArgs`.
 
 The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes between 9:00 and 19:00 by default, and the **Refresh** button fetches at any time. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
 
@@ -157,7 +157,7 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
 - **AI runs cost money.** Costs are shown per pull request and in total.
 - The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
-- Reviews and plans run with read-only tools (`readOnlyTools`), and no run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
+- Reviews and plans run with read-only tools (`readOnlyTools`). **Comment** starts a new session that never reads the pull request and, with Claude, may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
 - Only fix runs may edit files under `<working directory>/.claude/skills` without asking; other protected paths are denied, and review and post runs can't edit skills.
 - Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).
 - `data/` is readable only by you (0700, files 0600).
