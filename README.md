@@ -135,7 +135,8 @@ Pick the default tool under **Execution & logs**. The arrow next to each button 
 - Claude skills are read from `.claude/skills`, Codex skills from `.agents/skills` and `.codex/skills`. Each tool has its own skill settings, and a tool that is not set up is disabled.
 - For Claude, list the commands your skill needs in `--allowedTools` under **Extra claude args**.
 - Review, self-review and **Have the AI plan** are meant to change nothing. For these Claude runs, `--permission-mode` and `--allowedTools` are removed from the extra args and only **Read-only tools** (`readOnlyTools`) are allowed. Write / Edit and `gh api` with a write flag (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`) are denied. Empty `readOnlyTools` uses the extra args as they are. Codex runs them with `--sandbox read-only`.
-- Posting a review uses the full args with Write / Edit denied. Applying fixes uses the full args.
+- Posting a review starts a new session: `--permission-mode` and `--allowedTools` are removed, and only `gh api` on that pull request's reviews is allowed. Applying fixes uses the full args.
+- Every Claude run denies reading credentials (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.netrc`, `.env*` files and this app's `data/`), `gh api --hostname`, force-push, `gh pr merge`, `gh repo delete` / `edit`, `gh secret`, `gh variable` and `gh gist`.
 - Every Claude run denies `gh auth`, `gh alias`, `gh extension`, `gh config`, `git config`, `git credential`, `git -c` and reading `~/.ssh`, `~/.aws`, `~/.config/gh` and `~/.netrc`, on top of your own `--disallowedTools`.
 - Codex runs with `codex exec --json`, by default with `--approve-for-me` and no network access. Its output has no price, so its cost is shown as unavailable.
 

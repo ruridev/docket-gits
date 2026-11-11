@@ -974,7 +974,10 @@ test('claudeArgs: every run denies secrets; read-only runs also deny edits and g
   assert.deepEqual(apply.slice(0, -2), kept);
   assert.equal(apply.filter((a) => a === '--disallowedTools').length, 1);
   assert.deepEqual(denied(apply), ['WebFetch', ...ALWAYS_DENY]);
-  for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
+  for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)', 'Read(**/.env*)',
+    'Bash(gh api * --hostname*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh secret*)', 'Bash(gh gist*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
+  // The data folder (session secret, logs) is denied by absolute path: Read(//abs/path/**)
+  assert.ok(ALWAYS_DENY.some((r) => /^Read\(\/\/.+\/\*\*\)$/.test(r)));
 
   // Posts drop the permission mode and allowed tools, and allow only the reviews endpoint of that PR
   const tool = postTools({ repo: 'o/r', number: 7 });

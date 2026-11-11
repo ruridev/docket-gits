@@ -669,10 +669,15 @@ function dropFlags(args, takes, drop = () => true) {
 }
 
 // Denied on every Claude run, whatever the extra args say. PR text is untrusted, so block the plain ways
-// to read the GitHub token or other credentials, and to run arbitrary commands through git/gh config.
-// ponytail: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal; posting without an agent is the real fix
+// to read the GitHub token or other credentials (including this app's session secret and .env files),
+// to run arbitrary commands through git/gh config, to send requests to another host with gh api,
+// and the gh / git commands that cannot be undone or publish data (force-push, merge, repo delete, secrets, gists).
+// ponytail: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal
 const ALWAYS_DENY = ['Bash(gh auth *)', 'Bash(gh alias *)', 'Bash(gh extension *)', 'Bash(gh config *)', 'Bash(git config *)', 'Bash(git credential *)', 'Bash(git -c *)',
-  'Read(~/.ssh/**)', 'Read(~/.aws/**)', 'Read(~/.config/gh/**)', 'Read(~/.netrc)'];
+  'Bash(gh api --hostname*)', 'Bash(gh api * --hostname*)',
+  'Bash(git push --force*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(git push * -f*)', 'Bash(git push * +*)',
+  'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh repo edit*)', 'Bash(gh secret*)', 'Bash(gh variable*)', 'Bash(gh gist*)',
+  'Read(~/.ssh/**)', 'Read(~/.aws/**)', 'Read(~/.config/gh/**)', 'Read(~/.netrc)', `Read(/${DATA_DIR}/**)`, 'Read(**/.env*)'];
 const FILE_EDITS = ['Write', 'Edit', 'NotebookEdit'];
 // gh api sends POST / PATCH / DELETE with any of these flags, so read-only runs refuse them
 const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '--input'].flatMap((f) => [`Bash(gh api ${f}*)`, `Bash(gh api * ${f}*)`]);
