@@ -870,6 +870,20 @@ test('GET /fonts/pixel.ttf: serves the theme font, 404 for any other file', asyn
   }
 });
 
+test('POST /api/auth/setup: answers 413 to a body over 1 MB, before any session check', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
+  const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
+  const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
+  try {
+    await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve()));
+    const res = await fetch(`http://localhost:${port}/api/auth/setup`, { method: 'POST', headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: `"${'a'.repeat(2e6)}"` });
+    assert.equal(res.status, 413);
+    assert.equal(fs.existsSync(path.join(dir, 'data', 'auth.json')), false);
+  } finally {
+    child.kill();
+  }
+});
+
 test('killRun: does not throw for an already exited process (so cancel can restore state)', () => {
   const { pid } = require('node:child_process').spawnSync('true');
   assert.doesNotThrow(() => killRun(pid));

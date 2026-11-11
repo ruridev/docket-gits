@@ -1981,10 +1981,21 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+const MAX_BODY = 1e6;
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (d) => (data += d));
+    // Sign-in routes read the body before any session check, so cap it. Past the cap the rest is drained, not kept
+    const onData = (d) => {
+      data += d;
+      if (data.length <= MAX_BODY) return;
+      req.off('data', onData);
+      req.resume();
+      reject(Object.assign(new Error('Request body too large'), { status: 413 }));
+    };
+    req.on('data', onData);
+    req.on('error', reject);
     req.on('end', () => {
       try {
         resolve(data ? JSON.parse(data) : {});
@@ -2309,7 +2320,7 @@ function main() {
 
   http
     // If it threw after sending, calling writeHead again would crash the server with an unhandled rejection
-    .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, 500, { error: e.message }))))
+    .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, e.status || 500, { error: e.message }))))
     .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
 }
 
