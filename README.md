@@ -11,7 +11,7 @@ Everything runs on your machine. There are no dependencies to install, and state
 
 ## Requirements
 
-- Node.js 18 or later
+- Node.js 22 or later
 - macOS or Linux (Windows is not supported)
 - [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`
 - `claude` (Claude Code) or `codex` (Codex CLI), logged in
