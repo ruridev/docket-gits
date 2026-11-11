@@ -2320,7 +2320,7 @@ function main() {
 
   http
     // If it threw after sending, calling writeHead again would crash the server with an unhandled rejection
-    .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : send(res, e.status || 500, { error: e.message }))))
+    .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : e.status ? send(res, e.status, { error: e.message }) : (console.error(e), send(res, 500, { error: 'Internal error' })))))
     .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
 }
 
