@@ -575,7 +575,7 @@ test('inPollHours: fetches only when start <= hour < end, handles overnight and 
   assert.equal(inPollHours(at(3), '9', '19'), false);
 });
 
-const { parseProjectUrl, detectFields } = require('./server');
+const { parseProjectUrl, detectFields, clearSynced } = require('./server');
 
 test('parseProjectUrl: parses org / user project URLs, null otherwise', () => {
   assert.deepEqual(parseProjectUrl('https://github.com/orgs/acme/projects/1/views/1'), { owner: 'organization', login: 'acme', number: 1 });
@@ -583,20 +583,51 @@ test('parseProjectUrl: parses org / user project URLs, null otherwise', () => {
   assert.equal(parseProjectUrl('https://github.com/docket/repo'), null);
 });
 
-test('detectFields: picks the first Iteration and start/end Date fields by name', () => {
+test('detectFields: uses only the fields the user chose, with the right type; lists the filterable fields', () => {
   const fields = [
     { name: 'Status', dataType: 'SINGLE_SELECT', options: [{ name: 'Todo' }, { name: 'Done' }] },
-    { name: '[必須]Sprint', dataType: 'ITERATION', configuration: { iterations: [{ id: 'b', title: 'S2', startDate: '2026-10-24', duration: 14 }], completedIterations: [{ id: 'a', title: 'S1', startDate: '2026-10-10', duration: 14 }] } },
-    { name: '終了日', dataType: 'DATE' },
-    { name: '開始日', dataType: 'DATE' },
+    { name: 'Sprint', dataType: 'ITERATION', configuration: { iterations: [{ id: 'b', title: 'S2', startDate: '2026-10-24', duration: 14 }], completedIterations: [{ id: 'a', title: 'S1', startDate: '2026-10-10', duration: 14 }] } },
+    { name: 'Finish', dataType: 'DATE' },
+    { name: 'Kickoff', dataType: 'DATE' },
+    { name: 'Estimate', dataType: 'NUMBER' },
+    { name: 'Title', dataType: 'TITLE' },
   ];
-  const f = detectFields(fields);
-  assert.equal(f.sprint, '[必須]Sprint');
-  assert.equal(f.start, '開始日');
-  assert.equal(f.end, '終了日');
+  const f = detectFields(fields, { start: 'Kickoff', end: 'Finish', sprint: 'Sprint' });
+  assert.equal(f.sprint, 'Sprint');
+  assert.equal(f.start, 'Kickoff');
+  assert.equal(f.end, 'Finish');
   assert.deepEqual(f.statuses, ['Todo', 'Done']);
   assert.deepEqual(f.iterations.map((i) => [i.id, i.endDate, i.completed]), [['b', '2026-11-06', false], ['a', '2026-10-23', true]]);
-  assert.deepEqual(detectFields([{ name: 'Target', dataType: 'DATE' }, { name: 'Begin', dataType: 'DATE' }]), { sprint: null, start: 'Begin', end: 'Target', iterations: [], statuses: [] });
+  assert.deepEqual(f.fields, [
+    { name: 'Status', type: 'SINGLE_SELECT', options: ['Todo', 'Done'] },
+    { name: 'Sprint', type: 'ITERATION', options: ['S2', 'S1'] },
+    { name: 'Finish', type: 'DATE' },
+    { name: 'Kickoff', type: 'DATE' },
+    { name: 'Estimate', type: 'NUMBER' },
+  ]);
+  // Nothing is guessed from names; a choice with the wrong type or a missing field is ignored
+  const none = detectFields([{ name: 'Start date', dataType: 'DATE' }, { name: 'Target date', dataType: 'DATE' }]);
+  assert.deepEqual([none.start, none.end, none.sprint, none.iterations], [null, null, null, []]);
+  const wrong = detectFields(fields, { start: 'Estimate', end: 'Gone', sprint: 'Finish' });
+  assert.deepEqual([wrong.start, wrong.end, wrong.sprint], [null, null, null]);
+});
+
+test('clearSynced: a newly linked field has no synced value, so plan dates are pushed instead of being cleared by GitHub', () => {
+  const { syncSnapshot, snapshotFields, mergeRemote } = require('./plans');
+  const node = { title: 'API', start: '2026-11-05', end: '2026-11-07' };
+  const synced = { 3: syncSnapshot(node), '!3': { start: '2026-11-01', title: 'X' }, '+4': true, '^3': '' };
+  clearSynced(synced, ['start', 'end']);
+  assert.deepEqual(snapshotFields(synced[3]), { ...snapshotFields(syncSnapshot(node)), start: null, end: null });
+  assert.deepEqual(synced['!3'], { title: 'X' });
+  assert.equal(synced['+4'], true);
+  assert.equal(synced['^3'], '');
+  // GitHub has no date yet: nothing is taken into the plan, and the plan shows as changed (to push)
+  const local = { title: 'API', assignees: [], labels: [], milestone: null, sprint: null, start: '2026-11-05', end: '2026-11-07' };
+  const remote = { ...local, start: null, end: null };
+  assert.deepEqual(mergeRemote(local, snapshotFields(synced[3]), remote), { take: {}, conflicts: {} });
+  assert.notEqual(synced[3], syncSnapshot(node));
+  // GitHub already has another date: shown as a conflict, not silently overwritten either way
+  assert.deepEqual(mergeRemote(local, snapshotFields(synced[3]), { ...remote, start: '2026-11-01' }).conflicts, { start: '2026-11-01' });
 });
 
 const { pickIterations } = require('./server');

@@ -60,6 +60,9 @@ const DEFAULT_CONFIG = {
   roadmapPeriod: 'month',
   // Folder for plan md files. Empty = ~/docket-plans (one subfolder per GitHub Project)
   plansDir: '',
+  // Project fields the roadmap uses, chosen per project on the roadmap screen: { [url]: { start, end, sprint } } (field names or null).
+  // Saved only via /api/plan/fields, so saving the settings form never overwrites it
+  projectFields: {},
   // Language Claude uses for text posted to PRs and findings shown on the board: ja / ko / en
   outputLang: 'en',
   // Comment language per author for posts on other people's PRs (e.g. { "tanaka": "ja", "nguyen": "en" }). Others use outputLang
@@ -747,18 +750,27 @@ function parseProjectUrl(url) {
 
 const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
-// Use the first Iteration field as the sprint, and pick start/end Date fields by name (fallback: the 1st and 2nd Date fields)
-// statuses: options of the Status field (in project order)
-function detectFields(fields) {
-  const iter = fields.find((f) => f.dataType === 'ITERATION');
-  const dates = fields.filter((f) => f.dataType === 'DATE').map((f) => f.name);
-  const start = dates.find((n) => /開始|start|begin/i.test(n)) || dates[0] || null;
-  const end = dates.find((n) => /終了|end|due|target|deadline/i.test(n)) || dates.find((n) => n !== start) || null;
+// Project field types the roadmap can filter by (with the field's options for select and iteration fields)
+const FILTER_TYPES = ['TEXT', 'NUMBER', 'DATE', 'SINGLE_SELECT', 'ITERATION'];
+
+// start / end (Date fields) and sprint (an Iteration field) are the fields the user chose for this project.
+// Nothing is guessed: until chosen, or if a chosen field is gone or has another type, that value is null
+// statuses: options of the Status field (in project order). fields: every field the roadmap can filter by
+function detectFields(fields, choice = {}) {
+  const pick = (name, type) => (name && fields.some((f) => f.name === name && f.dataType === type) ? name : null);
+  const start = pick(choice.start, 'DATE');
+  const end = pick(choice.end, 'DATE');
+  const sprint = pick(choice.sprint, 'ITERATION');
+  const iter = sprint && fields.find((f) => f.name === sprint);
   const toIter = (completed) => (i) => ({ id: i.id, title: i.title, startDate: i.startDate, endDate: addDays(i.startDate, i.duration - 1), completed });
   const iterations = iter ? [...iter.configuration.iterations.map(toIter(false)), ...iter.configuration.completedIterations.map(toIter(true))] : [];
   const statuses = (fields.find((f) => f.name === 'Status')?.options || []).map((o) => o.name);
-  return { sprint: iter?.name || null, start, end, iterations, statuses };
+  const options = (f) => (f.options ? f.options.map((o) => o.name) : f.configuration ? [...f.configuration.iterations, ...f.configuration.completedIterations].map((i) => i.title) : undefined);
+  const filterable = fields.filter((f) => FILTER_TYPES.includes(f.dataType)).map((f) => ({ name: f.name, type: f.dataType, ...(options(f) && { options: options(f) }) }));
+  return { sprint, start, end, iterations, statuses, fields: filterable };
 }
+
+const fieldChoice = (url) => config.projectFields?.[url] || null;
 
 // Keep the current sprint plus `past` past and `future` future ones (only with issues), newest first
 function pickIterations(iterations, today, { past, future }) {
@@ -929,6 +941,13 @@ const ISSUE_FIELDS = `fragment iss on Issue {
     status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name color } }
     start: fieldValueByName(name: $start) { ... on ProjectV2ItemFieldDateValue { date } }
     end: fieldValueByName(name: $end) { ... on ProjectV2ItemFieldDateValue { date } }
+    values: fieldValues(first: 50) { nodes {
+      ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } }
+      ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2FieldCommon { name } } }
+      ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2FieldCommon { name } } }
+      ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } }
+      ... on ProjectV2ItemFieldIterationValue { title field { ... on ProjectV2FieldCommon { name } } }
+    } }
   } }
 }`;
 
@@ -985,7 +1004,7 @@ async function projectMeta(url, refresh) {
       ... on ProjectV2SingleSelectField { options { name } }
     } } } } }`, { login: p.login, number: p.number });
     const project = data[p.owner].projectV2;
-    const fields = detectFields(project.fields.nodes);
+    const fields = detectFields(project.fields.nodes, fieldChoice(url) || {});
     // Fetch per-sprint counts in one query via aliases
     // Future sprints are filtered by count, so count all of them first
     fields.iterations = pickIterations(fields.iterations, today, { past: range.past, future: Infinity });
@@ -1244,9 +1263,13 @@ function remoteFields(n, meta, base) {
   return f;
 }
 
+// Project field values of an item, by field name (text, number, date, option name or iteration title)
+const itemValues = (item) => Object.fromEntries((item?.values?.nodes || []).filter((v) => v?.field?.name)
+  .map((v) => [v.field.name, v.text ?? v.number ?? v.date ?? v.name ?? v.title ?? null]).filter(([, v]) => v !== null));
+
 const liveOf = (n, meta) => {
   const it = normIssue(n, meta.id);
-  return { state: it.state, status: it.status?.name || null, color: it.status?.color || null, prs: it.prs.map((pr) => ({ number: pr.number, url: pr.url, kind: pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open' })) };
+  return { fields: itemValues(n.projectItems.nodes.find((i) => i.project?.id === meta.id)), state: it.state, status: it.status?.name || null, color: it.status?.color || null, prs: it.prs.map((pr) => ({ number: pr.number, url: pr.url, kind: pr.state === 'MERGED' ? 'merged' : pr.isDraft ? 'draft' : 'open' })) };
 };
 
 // Import values changed on GitHub into the plan. Fields also changed in the plan are recorded as conflicts; the UI picks which wins
@@ -1323,12 +1346,55 @@ async function planLive(url, file, refresh) {
   return { ...live, pulled };
 }
 
+// Save the Project fields the roadmap uses. Each must exist with the right type (or be null for "not used")
+async function saveFieldChoice(url, body) {
+  const meta = await projectMeta(url, true);
+  const choice = {};
+  for (const [k, type] of [['start', 'DATE'], ['end', 'DATE'], ['sprint', 'ITERATION']]) {
+    const name = body?.[k] || null;
+    if (name !== null && !meta.fields.some((f) => f.name === name && f.type === type)) throw E('planFieldInvalid', { name: String(name) });
+    choice[k] = name;
+  }
+  const before = fieldChoice(url) || {};
+  config = { ...config, projectFields: { ...config.projectFields, [url]: choice } };
+  writeJson(CONFIG_FILE, config);
+  unsyncFields(url, ['sprint', 'start', 'end'].filter((k) => (before[k] || null) !== choice[k]));
+  for (const prefix of [`meta:${url}:`, `plan-fields:v2:${url}`, `plan-live:${url}:`]) dropCached(prefix);
+}
+
+// A newly linked field has no synced value yet: clear it from the last-synced snapshots, so plan values show as
+// changes to push (instead of an empty GitHub value overwriting them), and a value already on GitHub shows as a conflict
+function unsyncFields(url, keys) {
+  if (!keys.length) return;
+  for (const { file } of listPlans(url).plans) {
+    const synced = planSync[planFile(url, file)];
+    if (synced) clearSynced(synced, keys);
+  }
+  writeJson(PLAN_SYNC_FILE, planSync);
+}
+
+// In one plan's sync record: null those fields in each snapshot (plain keys) and drop them from conflicts ("!" keys)
+function clearSynced(synced, keys) {
+  const at = { sprint: 5, start: 6, end: 7 };
+  for (const [k, v] of Object.entries(synced)) {
+    if (k[0] === '!') keys.forEach((f) => delete v[f]);
+    else if (!'+^'.includes(k[0])) {
+      const snap = JSON.parse(v);
+      keys.forEach((f) => (snap[at[f]] = null));
+      synced[k] = JSON.stringify(snap);
+    }
+  }
+  return synced;
+}
+
 // Options for "Sprint · Period" (counts follow the configured past/future sprint and period counts)
 async function planRanges(url, refresh) {
   const meta = await projectMeta(url, refresh).catch(() => null);
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const { unit, ...range } = periodRange();
-  return { unit, title: meta?.title || null, statuses: meta?.statuses || [], sprints: (meta?.iterations || []).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })), periods: periodWindows(today, unit, range) };
+  // chosen: whether the user has picked the date and sprint fields for this project (the roadmap asks first if not)
+  const choice = { start: meta?.start || null, end: meta?.end || null, sprint: meta?.sprint || null };
+  return { unit, title: meta?.title || null, readable: !!meta, chosen: !!fieldChoice(url), choice, fields: meta?.fields || [], statuses: meta?.statuses || [], sprints: (meta?.iterations || []).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })), periods: periodWindows(today, unit, range) };
 }
 
 // Project fields for start date, end date, and sprint (chosen the same way as the roadmap)
@@ -1342,7 +1408,7 @@ async function projectFields(url, refresh = false) {
     } } } } }`, { login: p.login, number: p.number });
     const project = data[p.owner].projectV2;
     const nodes = project.fields.nodes.filter((f) => f.id);
-    const f = detectFields(nodes);
+    const f = detectFields(nodes, fieldChoice(url) || {});
     const ref = (name) => name && { id: nodes.find((n) => n.name === name).id, name };
     return {
       id: project.id, title: project.title, start: ref(f.start), end: ref(f.end), sprint: ref(f.sprint),
@@ -1495,7 +1561,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
 function sanitizeConfig(body) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
   // Consent is recorded only via /api/consent
-  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v)) && (k !== 'provider' || validProvider(v))));
+  return Object.fromEntries(Object.entries(body || {}).filter(([k, v]) => k in DEFAULT_CONFIG && k !== 'consentVersion' && k !== 'projectFields' && kind(v) === kind(DEFAULT_CONFIG[k]) && !(typeof v === 'number' && !Number.isFinite(v)) && (k !== 'provider' || validProvider(v))));
 }
 
 // Reset values under 1 minute to the default so 0 or empty doesn't keep hitting GitHub
@@ -2071,6 +2137,10 @@ async function handlePlan(req, res, url) {
       else createPlan(project, { file, title: body.title, repo: body.repo });
       return send(res, 200, planDoc(project, file));
     }
+    if (req.method === 'PUT' && url.pathname === '/api/plan/fields') {
+      await saveFieldChoice(project, body);
+      return send(res, 200, await planRanges(project, false));
+    }
     if (req.method === 'GET' && url.pathname === '/api/plan/ranges') return send(res, 200, await planRanges(project, url.searchParams.get('refresh') === '1'));
     if (req.method === 'GET' && url.pathname === '/api/plan/live') return send(res, 200, await planLive(project, file, url.searchParams.get('refresh') === '1'));
     if (req.method === 'POST' && url.pathname === '/api/plan/import') {
@@ -2328,4 +2398,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

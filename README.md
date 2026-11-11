@@ -108,6 +108,9 @@ Description
 ## Docs {issue=#41 repo=acme/docs}
 ```
 
+- The first time you open a GitHub Project, choose which of its Date fields hold the start and end dates, and which Iteration field is the sprint. Nothing is guessed from field names, and **Field settings** changes the choice later. A field left as **Not used** stays in the plan only.
+- A Project without Date fields can still be planned. Add Date fields to it later and choose them in **Field settings**: the plan's dates then show as changes, and the next **Push changes** writes them to GitHub.
+- Filters also offer the Project's own fields: text (contains), number and date (range), single select and iteration.
 - Edit plans on a timeline: drag bars to move them or change their dates, add sub-issues, or import existing issues by URL.
 - **Apply to GitHub** creates the issues (parents first), links sub-issues and can add them to a GitHub Project with dates and sprint. **Push changes** updates them later.
 - Changes made on GitHub are pulled back in. A field changed on both sides is shown as a conflict for you to resolve, and pushing stops instead of overwriting newer changes on GitHub.
