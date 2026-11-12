@@ -14,7 +14,8 @@ Everything runs on your machine. There are no dependencies to install, and state
 - Node.js 22 or later
 - macOS or Linux (Windows is not supported)
 - [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`
-- `claude` (Claude Code), logged in
+- `claude` (Claude Code), logged in. AI runs use its [sandbox](https://docs.anthropic.com/en/docs/claude-code/sandboxing), which is built in on macOS and needs `bubblewrap` and `socat` on Linux; runs refuse to start without it
+- A read-only GitHub token for AI runs (see [Read-only token for AI runs](#read-only-token-for-ai-runs))
 
 ## Getting started
 
@@ -32,16 +33,32 @@ Everything runs on your machine. There are no dependencies to install, and state
 3. Read the notice about the risks and agree to it. Nothing that starts `claude` works until you do.
 4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
    - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.
-   - **Claude settings**: pick a review skill per repository, or use the built-in review prompt.
+   - **Claude settings**: pick a review skill per repository, or use the built-in review prompt, and save a [read-only token](#read-only-token-for-ai-runs) for each repository owner. AI runs refuse to start without one.
 5. Press **Refresh** in the left sidebar. Review requests show up under **Requested**.
 
 | Environment variable | Default | |
 | --- | --- | --- |
 | `PORT` | `4649` | Port to listen on |
 | `DOCKET_DATA` | `./data` | Where settings, state and logs are stored (created with mode 0700) |
+| `DOCKET_WORK` | the system temp folder + `/docket-gits-work` | Where each AI run gets its throwaway clone of the pull request; removed when the run ends |
 | `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`); the default is the docket portal. Set `"'self'"` if you don't use docket |
 
 If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
+
+## Read-only token for AI runs
+
+AI runs read pull requests that anyone can write, so they never get a way to write to GitHub. Each run gets a fine-grained token that can only read, and posting reviews, pushing fixes and replying are done by docket-gits itself with your own `gh` login, after you approve them.
+
+Create one token per repository owner (your account or an organization):
+
+1. On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+2. **Resource owner**: the owner of the repositories you review.
+3. **Repository access**: **Only select repositories**, and pick the repositories you review.
+4. **Repository permissions**, all **Read-only**: **Contents**, **Pull requests**, **Issues**, **Metadata** (added automatically), and **Commit statuses** and **Actions** if runs should see CI results. Leave everything else at **No access**.
+5. An organization may need to approve the token before it works.
+6. In docket-gits, paste it under **Settings → Agent settings → Claude settings → GitHub token for AI runs**. docket-gits accepts only fine-grained tokens (`github_pat_...`) and checks that it can read a configured repository of that owner. It can't check that the token is read-only, so check the permissions above.
+
+Tokens are stored in `data/agent-tokens.json` (readable by your user only) and are never sent to the browser.
 
 ## Signing in
 
@@ -192,9 +209,10 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 
 ```bash
 npm test
+npm run check:sandbox   # one short real Claude run: checks that runs can't read credentials, reach other hosts or write outside their folder
 ```
 
-The whole app is `server.js` and `index.html`, with no build step.
+The whole app is `server.js`, `workspace.js` (the environment of AI runs) and `index.html`, with no build step.
 
 ## License
 

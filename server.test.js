@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -245,39 +245,6 @@ test('buildPostPrompt: carries each finding as escaped data, since the post runs
 test('modelOptions: passes the given model/effort and uses the same model for subagents; adds nothing when unset', () => {
   assert.deepEqual(modelOptions({ model: 'opus', effort: 'medium' }), { args: ['--model', 'opus', '--effort', 'medium'], env: { CLAUDE_CODE_SUBAGENT_MODEL: 'opus' } });
   assert.deepEqual(modelOptions({ model: '', effort: '' }), { args: [], env: {} });
-});
-
-test('pathSettings: passes the server PATH via --settings so env.PATH in user settings does not override it', () => {
-  assert.deepEqual(pathSettings({ PATH: '/pnpm/bin:/bin' }), ['--settings', '{"env":{"PATH":"/pnpm/bin:/bin"}}']);
-  assert.deepEqual(pathSettings({}), []);
-});
-
-test('childEnv: drops env vars of the parent Claude Code session, keeps the rest', () => {
-  const env = childEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_PID: '1', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
-  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h',
-    GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null' });
-});
-
-test('childEnv: turns git hooks off after config the parent already passes on', () => {
-  const env = childEnv({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'user.name', GIT_CONFIG_VALUE_0: 'a' });
-  assert.equal(env.GIT_CONFIG_COUNT, '2');
-  assert.equal(env.GIT_CONFIG_KEY_0, 'user.name');
-  assert.equal(env.GIT_CONFIG_KEY_1, 'core.hooksPath');
-  assert.equal(env.GIT_CONFIG_VALUE_1, '/dev/null');
-});
-
-test('childEnv: git really skips hooks with that env', () => {
-  const { execFileSync } = require('node:child_process');
-  const os = require('node:os');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-hooks-'));
-  const git = (...a) => execFileSync('git', a, { cwd: dir, env: childEnv({ ...process.env, GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@a', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@a' }), stdio: 'pipe' });
-  git('init', '-q');
-  fs.mkdirSync(path.join(dir, '.husky'));
-  fs.writeFileSync(path.join(dir, '.husky', 'pre-commit'), '#!/bin/sh\ntouch ran\n', { mode: 0o755 });
-  git('config', 'core.hooksPath', '.husky');
-  git('commit', '-q', '--allow-empty', '-m', 'x');
-  assert.ok(!fs.existsSync(path.join(dir, 'ran')));
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('searchQueries: limits merged PRs to the given days, skips them at 0 days', () => {
@@ -879,7 +846,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1212,7 +1179,8 @@ test('claudeArgs: read and apply runs take their tools from the bundled skills; 
   for (const t of ['Write', 'Edit', 'Bash(git:*)', 'Bash(gh pr:*)', 'Bash(gh api repos/*)', 'Bash(gh api /repos/*)']) assert.ok(skillTools('apply').includes(t), t);
   // No tool that takes any path or runs every gh command
   for (const t of ['Bash(gh:*)', 'Bash(jq:*)', 'Bash(ls:*)', 'Bash(cat:*)']) assert.ok(!skillTools('apply').includes(t), t);
-  assert.deepEqual(rulesOf(apply, '--disallowedTools'), [...APPLY_DENY, ...ALWAYS_DENY]);
+  for (const r of [...APPLY_DENY, ...ALWAYS_DENY, 'WebFetch', 'Read(~/.ssh/**)']) assert.ok(rulesOf(apply, '--disallowedTools').includes(r), r);
+  assert.equal(JSON.parse(rulesOf(apply, '--settings').join(',')).sandbox.enabled, true);
 
   // Read runs: no edits and nothing that writes to GitHub, even when the skill allows Bash(gh *) or Bash(git *)
   const read = claudeArgs('read');
@@ -1285,6 +1253,19 @@ test('claudeArgs: the commands each run needs still pass, and the ones that esca
   for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of bad) assert.ok(!permits(args, cmd, mode), `${mode} should block: ${cmd}`);
 });
 
+test('checkAgentToken: only fine-grained tokens, and one that can read a configured repository of the owner', async () => {
+  const { checkAgentToken } = require('./server');
+  const token = 'github_pat_' + 'a'.repeat(30);
+  for (const t of ['ghp_' + 'a'.repeat(36), 'gho_x', 'github_pat_short']) assert.equal((await checkAgentToken('acme', t, { repos: {} })).code, 'agentTokenNotFineGrained');
+  assert.equal(await checkAgentToken('acme', token, { repos: {}, fetchImpl: () => assert.fail('no repository, no request') }), null);
+  const seen = [];
+  const fetchImpl = async (url, opts) => { seen.push([url, opts.headers.Authorization]); return { ok: url.toLowerCase().endsWith('/acme/api'), status: 404 }; };
+  assert.equal(await checkAgentToken('acme', token, { repos: { 'Acme/api': {} }, fetchImpl }), null);
+  assert.deepEqual(seen, [['https://api.github.com/repos/Acme/api', `Bearer ${token}`]]);
+  assert.deepEqual(await checkAgentToken('acme', token, { repos: { 'acme/web': {} }, fetchImpl }), { code: 'agentTokenCannotRead', params: { repo: 'acme/web', status: 404 } });
+  assert.equal((await checkAgentToken('acme', token, { repos: { 'acme/web': {} }, fetchImpl: async () => { throw new Error('offline'); } })).code, 'agentTokenCheckFailed');
+});
+
 test('postTools: the reviews endpoint is allowed whether the method flag comes before or after the path', () => {
   const rules = postTools({ repo: 'o/r', number: 7 }).split(',');
   for (const r of ['Bash(gh api repos/o/r/pulls/7/reviews*)', 'Bash(gh api -X POST repos/o/r/pulls/7/reviews*)', 'Bash(gh api --method POST repos/o/r/pulls/7/reviews*)']) assert.ok(rules.includes(r), r);
@@ -1342,7 +1323,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   const agentScript = `
     const fs = require('node:fs');
     const { command, args, calls } = JSON.parse(process.argv[1]);
-    fs.appendFileSync(calls, JSON.stringify({ command, args }) + '\\n');
+    fs.appendFileSync(calls, JSON.stringify({ command, args, token: process.env.GH_TOKEN || null, ghConfig: process.env.GH_CONFIG_DIR || null, cwd: process.cwd() }) + '\\n');
     const prompt = args[args.indexOf('-p') + 1];
     const result = prompt.includes('<docket-posted>') ? '<docket-posted>{"posted":true}</docket-posted>'
       : prompt.includes('<docket-applied>') ? '<docket-applied>{"done":true}</docket-applied>'
@@ -1356,8 +1337,18 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
     cp.spawn = (command, args, options) => command === 'claude'
       ? original(process.execPath, ['-e', ${JSON.stringify(agentScript)}, JSON.stringify({command,args,calls:${JSON.stringify(path.join(dir, 'calls.jsonl'))}})], options)
       : original(command, args, options);
-    cp.execFile = (command, args, options, callback) => process.nextTick(() => callback(new Error('GitHub disabled in test')));
+    // git runs for real (the workspace clone comes from a local repository); gh and GitHub are off
+    const execFile = cp.execFile;
+    cp.execFile = (command, args, options, callback) => command === 'git' ? execFile(command, args, options, callback) : process.nextTick(() => callback(new Error('GitHub disabled in test')));
   `);
+  // The pull request's repository, cloned into each run's workspace, and the read-only token runs need
+  const origin = path.join(dir, 'origins', 'acme', 'api.git');
+  fs.mkdirSync(origin, { recursive: true });
+  const git = (...a) => require('node:child_process').execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd: origin });
+  git('init', '-q');
+  git('commit', '-q', '--allow-empty', '-m', 'base');
+  git('update-ref', 'refs/pull/1/head', 'HEAD');
+  fs.writeFileSync(path.join(dir, 'agent-tokens.json'), JSON.stringify({ acme: 'github_pat_test' }));
   const pr = { repo: 'acme/api', number: 1, url: 'https://github.com/acme/api/pull/1', reviews: [], requested: [], labels: [], issues: [], author: {} };
   const mineKey = 'mine:acme/api#1';
   const mapping = { skill: '(prompt)', selfSkill: '(prompt)', fixSkill: '(prompt)' };
@@ -1370,7 +1361,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
       server.close(() => resolve(port));
     });
   });
-  const child = spawn(process.execPath, ['--require', preload, path.join(__dirname, 'server.js')], { env: { ...process.env, DOCKET_DATA: dir, PORT: String(port) } });
+  const child = spawn(process.execPath, ['--require', preload, path.join(__dirname, 'server.js')], { env: { ...process.env, DOCKET_DATA: dir, PORT: String(port), DOCKET_CLONE_BASE: path.join(dir, 'origins'), DOCKET_WORK: path.join(dir, 'work') } });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   t.after(async () => {
@@ -1420,6 +1411,15 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   assert.ok(post.includes('--allowedTools'));
   assert.ok(apply.includes('--permission-mode'));
   for (const args of calls.map((c) => c.args)) assert.ok(!args.includes('--resume'));
+  // Every run is sandboxed with the owner's read-only token in a workspace that is gone afterwards
+  for (const args of calls.map((c) => c.args)) assert.equal(JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.enabled, true);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'work')), []);
+  for (const c of calls) {
+    assert.equal(c.token, 'github_pat_test');
+    assert.ok(c.ghConfig && c.cwd.startsWith(fs.realpathSync(path.join(dir, 'work'))), c.cwd);
+  }
+  // Runs that read code get a clone of the pull request; the post run gets an empty folder
+  assert.deepEqual(calls.map((c) => path.basename(c.cwd) === 'repo'), [true, false, true, true, true]);
   const file = path.join(dir, '.claude', 'skills', 'docket-claude-review', 'SKILL.md');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, 'Review instructions');

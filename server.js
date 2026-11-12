@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
+const { agentArgs, agentEnv, prepareWorkspace, removeWorkspace, pruneWorkspaces } = require('./workspace');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = path.resolve(process.env.DOCKET_DATA || path.join(__dirname, 'data'));
@@ -14,6 +15,8 @@ const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
+// Read-only fine-grained tokens for runs, one per repository owner: { "acme": "github_pat_..." }. Never sent to the browser
+const AGENT_TOKENS_FILE = path.join(DATA_DIR, 'agent-tokens.json');
 const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session', header: 'x-docket' });
 // The docket portal embeds this app in an iframe. X-Frame-Options can't allow-list, so use CSP only
 const FRAME_ANCESTORS = process.env.DOCKET_FRAME_ANCESTORS || "'self' http://localhost:4600 http://127.0.0.1:4600";
@@ -703,21 +706,6 @@ function extractTagJson(text, tag) {
   }
 }
 
-// When the server is started inside a Claude Code session, inheriting the parent's env vars
-// gets claude rejected as nested, so strip them (keep CLAUDE_CONFIG_DIR and Bedrock / Vertex endpoints; they are user settings)
-function childEnv(env) {
-  const out = Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_USE_')));
-  // No git hooks in agent runs: a fix run could write a hook script (e.g. .husky/pre-commit) and then commit to run it.
-  // Command-line level config (GIT_CONFIG_COUNT) wins over the repository's core.hooksPath
-  const n = Number(out.GIT_CONFIG_COUNT) || 0;
-  return { ...out, GIT_CONFIG_COUNT: String(n + 1), [`GIT_CONFIG_KEY_${n}`]: 'core.hooksPath', [`GIT_CONFIG_VALUE_${n}`]: '/dev/null' };
-}
-
-// env.PATH in ~/.claude/settings.json replaces the server's whole PATH, losing pnpm/node and breaking pre-commit hooks, so override it with --settings
-function pathSettings(env) {
-  return env.PATH ? ['--settings', JSON.stringify({ env: { PATH: env.PATH } })] : [];
-}
-
 // In -p runs, edits under .claude/ (protected path) wait for confirmation and get denied, so route it to permission-mcp.js and allow skill edits only
 // DOCKET_SKILLS_ROOT: only <cwd>/.claude/skills of this run may be edited
 function permissionArgs(cwd) {
@@ -791,10 +779,55 @@ const READ_DENY = [
 // or 'apply' (fixes, push, replies). Read and apply runs get their tools from a skill: the run's own skill's
 // allowed-tools, or the bundled plugin's read / apply skill (see withBundledSkill). Post runs allow only
 // postTools (the reviews endpoint of that pull request). The deny lists below win over every skill
-function claudeArgs(mode = 'apply', postOnly = '') {
+// run: { runDir, workdir } of the run's workspace (see workspace.js), which adds the sandbox and its own deny rules
+function claudeArgs(mode = 'apply', postOnly = '', run = {}) {
   const head = mode === 'apply' ? ['--permission-mode', 'acceptEdits'] : mode === 'post' ? ['--allowedTools', postOnly] : [];
   const deny = [...(mode === 'apply' ? APPLY_DENY : FILE_EDITS), ...(mode === 'read' ? [...GH_API_WRITES, ...READ_DENY] : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
-  return [...head, '--plugin-dir', PLUGIN_DIR, '--disallowedTools', deny.join(',')];
+  return [...head, '--plugin-dir', PLUGIN_DIR, ...agentArgs({ runDir: run.runDir, workdir: run.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny })];
+}
+
+function readAgentTokens() {
+  try {
+    const tokens = JSON.parse(fs.readFileSync(AGENT_TOKENS_FILE, 'utf8'));
+    return tokens && typeof tokens === 'object' && !Array.isArray(tokens) ? tokens : {};
+  } catch {
+    return {};
+  }
+}
+
+const agentToken = (repo) => readAgentTokens()[repo.split('/')[0].toLowerCase()] || null;
+
+// Only fine-grained tokens can be limited to reading; classic ones (ghp_, gho_) can't. If a repository of the
+// owner is set up, the token must be able to read it. Read-only access itself can't be checked: the README says how to make one
+async function checkAgentToken(owner, token, { repos = config.repos, fetchImpl = fetch } = {}) {
+  if (!/^github_pat_\w{20,}$/.test(token)) return E('agentTokenNotFineGrained');
+  const repo = Object.keys(repos).find((r) => r.split('/')[0].toLowerCase() === owner);
+  if (!repo) return null;
+  try {
+    const r = await fetchImpl(`https://api.github.com/repos/${repo}`, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'docket-gits' } });
+    return r.ok ? null : E('agentTokenCannotRead', { repo, status: r.status });
+  } catch (e) {
+    return E('agentTokenCheckFailed', { message: e.message });
+  }
+}
+
+// Runs fn(ws) in a throwaway clone of the pull request (clone: false gives an empty folder) and removes it afterwards.
+// workdir: the user's working directory, which the run may read but not write
+async function withWorkspace(pr, workdir, fn, clone = true) {
+  const unsafe = cwdError(workdir);
+  if (unsafe) return { ok: false, error: unsafe };
+  if (!agentToken(pr.repo)) return { ok: false, error: E('agentTokenMissing', { owner: pr.repo.split('/')[0] }) };
+  let ws;
+  try {
+    ws = await prepareWorkspace(pr, { runId: newRunId(), workdir, clone });
+  } catch (e) {
+    return { ok: false, error: E('workspaceFailed', { message: e.message }) };
+  }
+  try {
+    return await fn({ ...ws, workdir });
+  } finally {
+    removeWorkspace(ws.runDir);
+  }
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -1870,12 +1903,13 @@ function waitForExit(pid) {
 }
 
 // Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
+// ws: the run's workspace from withWorkspace. Claude runs in ws.cwd, with the read-only token of the pull request's owner
 // readOnly: review / self-review / fix plan. These must not change anything, so they get restricted tools
 // post: posting a review on someone else's PR: the postTools rule allowed for this run. It edits no files
-function runAgent(prompt, { key, cwd, resume, logName, lang = config.outputLang, readOnly = false, post = '', pr = null }) {
+function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, post = '', pr }) {
   return new Promise((resolve) => {
-    const unsafe = cwdError(cwd);
-    if (unsafe) return resolve({ ok: false, error: unsafe });
+    const token = agentToken(pr.repo);
+    if (!token) return resolve({ ok: false, error: E('agentTokenMissing', { owner: pr.repo.split('/')[0] }) });
     // Throwing (e.g. log file can't be opened) would leave the caller's card stuck running, so return a failure
     // If it throws after starting (e.g. saving state fails), claude is running, so return the result on close
     let child;
@@ -1884,13 +1918,13 @@ function runAgent(prompt, { key, cwd, resume, logName, lang = config.outputLang,
       const instruction = withOutputLang(prompt, lang);
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = readOnly ? 'read' : post ? 'post' : 'apply';
-      const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(mode, post)];
+      const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, post, ws)];
       if (resume) args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w', 0o600);
       const err = fs.openSync(`${base}.err`, 'w', 0o600);
-      child = spawn('claude', args, { cwd, env: { ...childEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { token, ghDir: ws.ghDir }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
@@ -1899,7 +1933,7 @@ function runAgent(prompt, { key, cwd, resume, logName, lang = config.outputLang,
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
       // lastLog: kept so the log stays viewable after the run (tag re-output is extra, so keep the main run's log)
-      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
+      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd: ws.cwd, runDir: ws.runDir, workdir: ws.workdir }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
     } catch (e) {
       if (!child) resolve({ ok: false, error: e.message });
     }
@@ -1989,7 +2023,7 @@ function enqueueReview(key) {
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await runForTag('docket-findings', prompt, { key, cwd, pr: entry.pr, readOnly: true, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), runId);
+    finishReview(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag('docket-findings', prompt, { key, ws, pr: entry.pr, readOnly: true, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' })), runId);
   } });
   pump();
 }
@@ -2004,6 +2038,7 @@ function recoverRun(run, finish, repo) {
     .then(finish)
     .catch((e) => console.error(e))
     .finally(() => {
+      removeWorkspace(run.runDir);
       running--;
       busyRepos.delete(repo);
       pump();
@@ -2023,15 +2058,17 @@ function enqueuePost(key, decisions, approve, humanRead) {
   const entry = state.prs[key];
   updateEntry(key, { status: 'posting', error: null, decisions, approve, humanRead });
   queue.push({ key, run: async () => {
-    const res = await runAgent(buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary), {
+    const prompt = buildPostPrompt(entry.pr, entry.findings, decisions, approve, humanRead, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary);
+    // Posting needs no code: an empty folder
+    const res = await withWorkspace(entry.pr, entry.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir, (ws) => runAgent(prompt, {
       key,
-      cwd: entry.cwd,
+      ws,
       // A fresh session: the review session read the untrusted pull request
       post: postTools(entry.pr),
       pr: entry.pr,
       logName: logName(key, 'post'),
       lang: postLang(entry.pr.author?.login, config),
-    });
+    }), false);
     finishPost(key, res);
   } });
   pump();
@@ -2089,7 +2126,7 @@ function enqueueMine(key, mode, triage = null) {
   updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {} });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, cwd, pr: entry.pr, readOnly: true, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), runId);
+    finishMine(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, ws, pr: entry.pr, readOnly: true, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' })), runId);
   } });
   pump();
 }
@@ -2100,7 +2137,7 @@ function enqueueApply(key, decisions, comment = '') {
   const { prompt, opts } = applyRun(entry, decisions, comment);
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
-    finishApply(key, await runAgent(prompt, { ...opts, key, logName: logName(key, 'apply') }));
+    finishApply(key, await withWorkspace(entry.pr, opts.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir, (ws) => runAgent(prompt, { ...opts, ws, key, logName: logName(key, 'apply') })));
   } });
   pump();
 }
@@ -2341,7 +2378,31 @@ async function handle(req, res) {
 
   if (url.pathname.startsWith('/api/plan')) return handlePlan(req, res, url);
 
+  // The owners runs need a token for, and whether one is saved. Tokens never leave the server
+  if (req.method === 'GET' && url.pathname === '/api/agent-tokens') {
+    const tokens = readAgentTokens();
+    // Owners of configured repositories and of every pull request on the board (review requests come from anywhere)
+    const repos = [...Object.keys(config.repos), ...[...Object.values(state.prs), ...Object.values(state.mine)].map((e) => e.pr?.repo).filter(Boolean)];
+    const owners = [...new Set([...repos.map((r) => r.split('/')[0].toLowerCase()), ...Object.keys(tokens)])].sort();
+    return send(res, 200, { owners: owners.map((owner) => ({ owner, set: Boolean(tokens[owner]) })) });
+  }
+
   const body = await readBody(req);
+  if (req.method === 'PUT' && url.pathname === '/api/agent-tokens') {
+    const owner = String(body?.owner || '').toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(owner)) return send(res, 400, { error: E('agentTokenInvalid') });
+    const token = String(body?.token || '').trim();
+    const tokens = readAgentTokens();
+    if (!token) {
+      delete tokens[owner];
+      writeJson(AGENT_TOKENS_FILE, tokens);
+      return send(res, 200, { ok: true });
+    }
+    const error = await checkAgentToken(owner, token);
+    if (error) return send(res, 400, { error });
+    writeJson(AGENT_TOKENS_FILE, { ...tokens, [owner]: token });
+    return send(res, 200, { ok: true });
+  }
   if (req.method === 'POST' && url.pathname === '/api/consent') {
     config = { ...config, consentVersion: CONSENT_VERSION };
     writeJson(CONFIG_FILE, config);
@@ -2462,7 +2523,7 @@ function main() {
   const requeue = [];
   for (const [key, e] of Object.entries(state.prs)) {
     if ((e.status === 'reviewing' || e.status === 'posting') && e.run) {
-      recoverRun(e.run, (res) => (e.status === 'reviewing' ? finishReview(key, e.run.cwd, res, e.runId) : finishPost(key, res)));
+      recoverRun(e.run, (res) => (e.status === 'reviewing' ? finishReview(key, e.run.workdir || e.run.cwd, res, e.runId) : finishPost(key, res)));
       continue;
     }
     if (e.status === 'queued' || e.status === 'reviewing') {
@@ -2473,7 +2534,7 @@ function main() {
   }
   for (const [key, e] of Object.entries(state.mine)) {
     if ((e.status === 'running' || e.status === 'applying') && e.run) {
-      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.cwd, res, e.runId) : finishApply(key, res)), e.pr.repo);
+      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.workdir || e.run.cwd, res, e.runId) : finishApply(key, res)), e.pr.repo);
       continue;
     }
     if (e.status === 'queued' || e.status === 'running') {
@@ -2492,6 +2553,8 @@ function main() {
   });
   schedulePoll();
   pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays));
+  // Workspaces of runs that ended while the server was down; recovered runs remove their own
+  pruneWorkspaces(new Set([...Object.values(state.prs), ...Object.values(state.mine)].map((e) => e.run?.runDir).filter(Boolean)));
   setInterval(() => pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays)), 24 * 60 * 60 * 1000);
 
   http
@@ -2509,4 +2572,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { APPLY_DENY, PLUGIN_DIR, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { APPLY_DENY, PLUGIN_DIR, checkAgentToken, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
