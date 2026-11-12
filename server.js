@@ -169,11 +169,8 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
   } } }
 }
 fragment pr on PullRequest {
-      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName additions deletions mergeable
+      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName
       repository { nameWithOwner }
-      milestone { title }
-      assignees(first: 10) { nodes { login } }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       author { login avatarUrl }
       labels(first: 10) { nodes { name color } }
       closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
@@ -184,7 +181,27 @@ fragment pr on PullRequest {
       } } }
 }`;
 
+// Values used only by the board filters. Fetched in a second query that runs alongside SEARCH_QUERY:
+// in the same query, the check state and mergeability pushed it past GitHub's time limit (HTTP 502)
+const FILTER_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
+  open: search(query: $open, type: ISSUE, first: 100) { nodes { ...extra } }
+  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { nodes { ...extra } }
+  mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...extra } }
+}
+fragment extra on PullRequest {
+  url additions deletions mergeable
+  milestone { title }
+  assignees(first: 10) { nodes { login } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+}`;
+
 // ---------- Pure functions (tested) ----------
+
+// Add the filter values (FILTER_QUERY result) to the search nodes, matched by URL
+function withFilterValues(nodes, data) {
+  const extra = new Map(['open', 'merged', 'mine'].flatMap((k) => data?.[k]?.nodes || []).filter((n) => n?.url).map((n) => [n.url, n]));
+  return nodes.map((n) => (n?.url && extra.has(n.url) ? { ...extra.get(n.url), ...n } : n));
+}
 
 function searchQueries(mergedDays, now) {
   const base = 'is:pr archived:false user-review-requested:@me';
@@ -894,13 +911,21 @@ async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
   // gh fails if some nodes are unreadable (e.g. PRs in SAML-protected orgs). Use what we got and show the error too
   let partialError = null;
-  const out = await gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
-    try {
-      if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
-    } catch {}
-    throw e;
-  });
+  const vars = ['-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`];
+  // The filter values are optional: if that query fails, the board still updates without them
+  const [out, filterOut] = await Promise.all([
+    gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, ...vars, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
+      try {
+        if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
+      } catch {}
+      throw e;
+    }),
+    gh(['api', 'graphql', '-f', `query=${FILTER_QUERY}`, ...vars]).catch((e) => e.stdout || null),
+  ]);
   const { data } = JSON.parse(out);
+  let filterData = null;
+  try { filterData = JSON.parse(filterOut).data; } catch {}
+  for (const k of ['open', 'merged', 'mine']) if (data[k]) data[k].nodes = withFilterValues(data[k].nodes, filterData);
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now(), (data.reviewed?.nodes || []).filter((n) => n?.number), data.viewer.login, doneKeepMs(config.doneKeepDays));
@@ -2414,4 +2439,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { normalizePr, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { normalizePr, withFilterValues, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

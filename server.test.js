@@ -1133,3 +1133,14 @@ test('normalizePr: keeps what the board filters need, and tolerates PRs fetched 
   const old = normalizePr(node(2));
   assert.deepEqual([old.size, old.conflict, old.milestone, old.assignees, old.ci], [0, false, null, [], null]);
 });
+
+test('withFilterValues: adds the second query values by URL; without them the nodes stay as they are', () => {
+  const { withFilterValues } = require('./server');
+  const a = node(1);
+  const b = node(2);
+  const data = { open: { nodes: [{ url: a.url, additions: 3, deletions: 4, mergeable: 'MERGEABLE' }, null] }, mine: { nodes: [] } };
+  const [x, y] = withFilterValues([a, b], data);
+  assert.deepEqual([x.additions, x.deletions, x.number], [3, 4, 1]);
+  assert.equal(y, b);
+  assert.deepEqual(withFilterValues([a, null], null), [a, null]);
+});
