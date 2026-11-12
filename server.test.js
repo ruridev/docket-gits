@@ -830,8 +830,8 @@ test('buildReviewPrompt: starts with /skill when a skill is set', () => {
 
 test('buildReviewPrompt: (prompt) expands the configured prompt template', () => {
   const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, 'Look at {pr-url}');
-  assert.match(prompt, /^Look at https:\/\/x\/1\n/);
-  assert.doesNotMatch(prompt, /^\//);
+  // Claude starts it with the bundled read skill, which holds the tools
+  assert.match(prompt, /^\/docket-gits:read\nLook at https:\/\/x\/1\n/);
   assert.match(prompt, /stop at the preview/);
   assert.match(prompt, /<docket-findings>/);
 });
@@ -849,7 +849,7 @@ test('post prompt: can post with gh api even if the skill has no posting steps',
 test('buildFixPlanPrompt: (prompt) expands the configured fix prompt template', () => {
   const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, '{pr-url} に対応');
-  assert.match(prompt, /^https:\/\/x\/3 に対応\n/);
+  assert.match(prompt, /^\/docket-gits:read\nhttps:\/\/x\/3 に対応\n/);
   assert.match(prompt, /<docket-fix-plan>/);
   assert.match(buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, ''), /gh pr checkout https:\/\/x\/3/);
 });
@@ -1206,44 +1206,6 @@ test('latestAuthorComment: picks the newest non-empty comment by the PR author o
   assert.equal(latestAuthorComment([''], 'me'), null);
 });
 
-test('claudeArgs: tools are fixed per run; skills add their own with allowed-tools, and saved claude args are gone', () => {
-  const { claudeArgs, ALWAYS_DENY, APPLY_DENY, DEFAULT_CONFIG } = require('./server');
-  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
-  const allowed = (args) => args[args.indexOf('--allowedTools') + 1].split(',');
-  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
-  assert.ok(!('claudeArgs' in DEFAULT_CONFIG) && !('readOnlyTools' in DEFAULT_CONFIG));
-
-  const apply = claudeArgs('apply', '', pr);
-  assert.deepEqual(apply.slice(0, 2), ['--permission-mode', 'acceptEdits']);
-  for (const t of ['Write', 'Edit', 'Bash(git:*)', 'Bash(gh pr:*)', 'Bash(gh api repos/acme/*)', 'Bash(gh api /repos/acme/*)']) assert.ok(allowed(apply).includes(t), t);
-  // No tool that takes any path or runs every gh command
-  for (const t of ['Bash(gh:*)', 'Bash(jq:*)', 'Bash(ls:*)', 'Bash(cat:*)']) assert.ok(!allowed(apply).includes(t), t);
-  assert.deepEqual(denied(apply), [...APPLY_DENY, ...ALWAYS_DENY]);
-
-  // Read runs: no edits and nothing that writes to GitHub, even when the skill allows Bash(gh *) or Bash(git *)
-  const read = claudeArgs('read', '', pr);
-  assert.ok(!read.includes('--permission-mode'));
-  assert.ok(!allowed(read).includes('Write') && allowed(read).includes('Bash(gh pr diff:*)'));
-  for (const rule of ['Write', 'Edit', 'Bash(gh api * -f*)', 'Bash(gh api * --input*)', 'Bash(gh pr comment*)', 'Bash(gh pr review*)', 'Bash(gh pr create*)', 'Bash(gh pr edit*)',
-    'Bash(gh pr close*)', 'Bash(gh issue create*)', 'Bash(gh issue comment*)', 'Bash(gh issue edit*)', 'Bash(gh label*)', 'Bash(git push*)', 'Bash(git commit*)', ...ALWAYS_DENY]) assert.ok(denied(read).includes(rule), rule);
-
-  // Posts: only the reviews endpoint of that PR
-  const tool = postTools({ repo: 'o/r', number: 7 });
-  const post = claudeArgs('post', tool);
-  assert.deepEqual(post.slice(0, 2), ['--allowedTools', tool]);
-  assert.ok(['Write', 'Edit', 'Bash(gh api * -X DELETE*)', 'Bash(gh api * --input /*)', ...ALWAYS_DENY].every((r) => denied(post).includes(r)));
-  assert.ok(!denied(post).includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
-  for (const mode of ['apply', 'read', 'post']) {
-    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)', 'Read(~/.ssh/**)']) assert.ok(denied(claudeArgs(mode, tool)).includes(rule), `${mode}: ${rule}`);
-  }
-  // Without a PR the placeholder stays, so the rule matches nothing
-  assert.ok(allowed(claudeArgs('apply')).includes('Bash(gh api repos/{owner-name}/*)'));
-});
-
-test('settings: claude args and read-only tools can no longer be saved', () => {
-  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
-});
-
 // Mirrors how Claude matches a Bash rule: a rule ending in ":*" is a prefix, every other "*" matches anything
 const ruleMatches = (rule, cmd) => {
   const m = /^Bash\((.*)\)$/.exec(rule);
@@ -1253,8 +1215,62 @@ const ruleMatches = (rule, cmd) => {
   if (re.endsWith(' .*') && m[1].split('*').length === 2) re = `${re.slice(0, -3)}( .*)?`; // "git status *" also matches "git status"
   return new RegExp(`^${re}$`, 's').test(cmd);
 };
-const rulesOf = (args, flag) => args[args.indexOf(flag) + 1].split(',');
-const permits = (args, cmd) => rulesOf(args, '--allowedTools').some((r) => ruleMatches(r, cmd)) && !rulesOf(args, '--disallowedTools').some((r) => ruleMatches(r, cmd));
+const rulesOf = (args, flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1].split(',') : []);
+// The allowed-tools of a bundled skill (plugin/skills/<mode>/SKILL.md)
+const skillTools = (mode) => /^allowed-tools: (.*)$/m.exec(fs.readFileSync(path.join(__dirname, 'plugin', 'skills', mode, 'SKILL.md'), 'utf8'))[1].split(', ');
+// A read or apply run gets its tools from the bundled skill it starts with; a post run only from --allowedTools
+const permits = (args, cmd, mode) => [...rulesOf(args, '--allowedTools'), ...(mode === 'post' ? [] : skillTools(mode))].some((r) => ruleMatches(r, cmd))
+  && !rulesOf(args, '--disallowedTools').some((r) => ruleMatches(r, cmd));
+
+test('claudeArgs: read and apply runs take their tools from the bundled skills; posts get only the reviews endpoint', () => {
+  const { claudeArgs, ALWAYS_DENY, APPLY_DENY, DEFAULT_CONFIG, PLUGIN_DIR } = require('./server');
+  assert.ok(!('claudeArgs' in DEFAULT_CONFIG) && !('readOnlyTools' in DEFAULT_CONFIG));
+  const tool = postTools({ repo: 'o/r', number: 7 });
+  for (const mode of ['apply', 'read', 'post']) assert.deepEqual(rulesOf(claudeArgs(mode, tool), '--plugin-dir'), [PLUGIN_DIR], mode);
+
+  const apply = claudeArgs('apply');
+  assert.deepEqual(apply.slice(0, 2), ['--permission-mode', 'acceptEdits']);
+  assert.ok(!apply.includes('--allowedTools'), 'fix tools come from the skill');
+  for (const t of ['Write', 'Edit', 'Bash(git:*)', 'Bash(gh pr:*)', 'Bash(gh api repos/*)', 'Bash(gh api /repos/*)']) assert.ok(skillTools('apply').includes(t), t);
+  // No tool that takes any path or runs every gh command
+  for (const t of ['Bash(gh:*)', 'Bash(jq:*)', 'Bash(ls:*)', 'Bash(cat:*)']) assert.ok(!skillTools('apply').includes(t), t);
+  assert.deepEqual(rulesOf(apply, '--disallowedTools'), [...APPLY_DENY, ...ALWAYS_DENY]);
+
+  // Read runs: no edits and nothing that writes to GitHub, even when the skill allows Bash(gh *) or Bash(git *)
+  const read = claudeArgs('read');
+  assert.ok(!read.includes('--permission-mode') && !read.includes('--allowedTools'));
+  assert.ok(!skillTools('read').includes('Write') && skillTools('read').includes('Bash(gh pr diff:*)'));
+  for (const rule of ['Write', 'Edit', 'Bash(gh api * -f*)', 'Bash(gh api * --input*)', 'Bash(gh pr comment*)', 'Bash(gh pr review*)', 'Bash(gh pr create*)', 'Bash(gh pr edit*)',
+    'Bash(gh pr close*)', 'Bash(gh issue create*)', 'Bash(gh issue comment*)', 'Bash(gh issue edit*)', 'Bash(gh label*)', 'Bash(git push*)', 'Bash(git commit*)', ...ALWAYS_DENY]) assert.ok(rulesOf(read, '--disallowedTools').includes(rule), rule);
+
+  // Posts: only the reviews endpoint of that PR
+  const post = claudeArgs('post', tool);
+  assert.deepEqual(post.slice(0, 2), ['--allowedTools', tool]);
+  assert.ok(['Write', 'Edit', 'Bash(gh api * -X DELETE*)', 'Bash(gh api * --input /*)', ...ALWAYS_DENY].every((r) => rulesOf(post, '--disallowedTools').includes(r)));
+  assert.ok(!rulesOf(post, '--disallowedTools').includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
+  for (const mode of ['apply', 'read', 'post']) {
+    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)', 'Read(~/.ssh/**)']) assert.ok(rulesOf(claudeArgs(mode, tool), '--disallowedTools').includes(rule), `${mode}: ${rule}`);
+  }
+});
+
+test('bundled skills: only docket-gits can start them, and runs without a skill of their own start with them', () => {
+  for (const mode of ['read', 'apply']) {
+    const text = fs.readFileSync(path.join(__dirname, 'plugin', 'skills', mode, 'SKILL.md'), 'utf8');
+    // The model must not call the apply skill from a read run to get its tools
+    assert.match(text, /^disable-model-invocation: true$/m, mode);
+    assert.match(text, new RegExp(`^name: ${mode}$`, 'm'));
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8')).name, 'docket-gits');
+  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
+  assert.match(buildReviewPrompt(pr, { skill: PROMPT_SKILL }, 'Review it'), /^\/docket-gits:read\nReview it/);
+  assert.match(buildReviewPrompt(pr, { skill: PROMPT_SKILL }, 'Review it', 'codex'), /^Review it/);
+  assert.match(buildReviewPrompt(pr, { skill: 'my-review', args: '{pr-number}' }, ''), /^\/my-review 5/);
+  assert.match(buildFixPlanPrompt(pr, { fixSkill: PROMPT_SKILL }, [], 'Plan it'), /^\/docket-gits:read\nPlan it/);
+});
+
+test('settings: claude args and read-only tools can no longer be saved', () => {
+  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
+});
 
 test('claudeArgs: the commands each run needs still pass, and the ones that escape the fence do not', () => {
   const { claudeArgs } = require('./server');
@@ -1274,13 +1290,14 @@ test('claudeArgs: the commands each run needs still pass, and the ones that esca
     post: ['gh api repos/acme/api/pulls/5/reviews', 'gh api repos/acme/api/pulls/5/reviews -X POST --input -', 'gh api -X POST repos/acme/api/pulls/5/reviews -f event=APPROVE -f body=LGTM',
       'gh api --method POST repos/acme/api/pulls/5/reviews -f event=COMMENT'],
   };
-  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of ok[mode]) assert.ok(permits(args, cmd), `${mode} should allow: ${cmd}`);
+  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of ok[mode]) assert.ok(permits(args, cmd, mode), `${mode} should allow: ${cmd}`);
   // Every gh / git command a fix run's prompt tells the agent to run must pass the fix run's rules
   const { applyRun } = require('./server');
   const { prompt } = applyRun({ pr: { ...pr, author: { login: 'alice' } }, mode: 'fix', findings: [], cwd: '/tmp/api' }, {});
+  assert.match(prompt, /^\/docket-gits:apply\n/);
   const told = [...prompt.matchAll(/`((?:gh|git) [^`]+)`/g)].map((m) => m[1]).filter((c) => c.split(' ').length > 2); // skip bare mentions such as `gh api`
   assert.ok(told.some((c) => c.includes('--paginate')), 'the prompt has the retry queries');
-  for (const cmd of told) assert.ok(permits(apply, cmd), `fix prompt command should pass: ${cmd}`);
+  for (const cmd of told) assert.ok(permits(apply, cmd, 'apply'), `fix prompt command should pass: ${cmd}`);
 
   const bad = ["git fetch --upload-pack='sh -c x' origin", 'git fetch origin --upl=x', 'git pull --upload-pack=x origin main', "git push --receive-pack='sh -c x' origin",
     'git push --rece=x origin', 'git rebase --exe x main', 'git ls-remote -u x origin', 'git clone -u x https://github.com/acme/api', 'git grep -Ox foo', 'git grep -nOx foo',
@@ -1288,7 +1305,7 @@ test('claudeArgs: the commands each run needs still pass, and the ones that esca
     'git push origin :feature-x', 'git push origin :refs/heads/feature-x', 'gh api repos/acme/api -X PATCH -f private=false', 'gh api repos/acme/api --method=PATCH -f archived=true',
     'gh api -X PATCH repos/acme/api -f default_branch=x', 'gh api -X DELETE repos/acme/api/git/refs/heads/x', 'gh api repos/acme/api/dispatches -f event_type=x',
     'gh api repos/acme/api/actions/workflows/ci.yml/dispatches -f ref=main', 'git push --force origin x', 'git push origin main', 'gh pr merge 5'];
-  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of bad) assert.ok(!permits(args, cmd), `${mode} should block: ${cmd}`);
+  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of bad) assert.ok(!permits(args, cmd, mode), `${mode} should block: ${cmd}`);
 });
 
 test('postTools: the reviews endpoint is allowed whether the method flag comes before or after the path', () => {

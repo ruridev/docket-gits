@@ -422,10 +422,14 @@ function fillTemplate(template, pr) {
 
 // Skill option value meaning: use the configured reviewPrompt instead of a local skill
 const PROMPT_SKILL = '(prompt)';
+// The plugin docket-gits loads into its own Claude runs (--plugin-dir). Its read and apply skills hold the tools
+// for runs that use the configured prompt instead of a skill; only docket-gits can start them (disable-model-invocation)
+const PLUGIN_DIR = path.join(__dirname, 'plugin');
+const withBundledSkill = (mode, provider, text) => (provider === 'claude' ? `/docket-gits:${mode}\n${text}` : text);
 
 function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.en.reviewPrompt, provider = 'claude', cwd) {
   const head = mapping.skill === PROMPT_SKILL
-    ? fillTemplate(reviewPrompt?.trim() || DEFAULT_PROMPTS.en.reviewPrompt, pr)
+    ? withBundledSkill('read', provider, fillTemplate(reviewPrompt?.trim() || DEFAULT_PROMPTS.en.reviewPrompt, pr))
     : skillInvocation(mapping.skill, fillTemplate(mapping.args, pr), provider, cwd);
   return `${head}
 
@@ -540,7 +544,7 @@ function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_PROMPTS.en.
     return `- #${t.no}${t.kind === 'comment' ? ' [PR comment]' : ''} @${t.author}${loc} ${t.url}\n  Comment: ${quoteComment(t.author, summary)}\n  ${t.verdict === 'agree' ? 'agree' : 'disagree'} / ${t.reason ? `reason: ${t.reason}` : 'no reason'}`;
   });
   const head = mapping.fixSkill === PROMPT_SKILL
-    ? fillTemplate(fixPrompt?.trim() || DEFAULT_PROMPTS.en.fixPrompt, pr)
+    ? withBundledSkill('read', provider, fillTemplate(fixPrompt?.trim() || DEFAULT_PROMPTS.en.fixPrompt, pr))
     : skillInvocation(mapping.fixSkill, fillTemplate(mapping.fixArgs, pr), provider, cwd);
   return `${head}
 
@@ -664,7 +668,7 @@ function applyHead(entry, provider, cfg) {
   const mapping = repoTool(cfg.repos?.[entry.pr.repo], provider);
   const [skill, args, key] = entry.mode === 'self' ? [mapping.selfSkill, mapping.selfArgs, 'reviewPrompt'] : [mapping.fixSkill, mapping.fixArgs, 'fixPrompt'];
   return !skill || skill === PROMPT_SKILL
-    ? fillTemplate(sharedPrompt(cfg, key)?.trim() || DEFAULT_PROMPTS.en[key], entry.pr)
+    ? withBundledSkill('apply', provider, fillTemplate(sharedPrompt(cfg, key)?.trim() || DEFAULT_PROMPTS.en[key], entry.pr))
     : skillInvocation(skill, fillTemplate(args, entry.pr), provider, entry.cwd);
 }
 
@@ -815,11 +819,6 @@ const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '
 const POST_DENY = ['-X DELETE', '-XDELETE', '--method DELETE', '--method=DELETE', '-X PUT', '-XPUT', '--method PUT', '--method=PUT', '-X PATCH', '-XPATCH', '--method PATCH', '--method=PATCH',
   '--input /', '--input ~', '--input .', '--input=', '-F *=@', '--field *=@'].map((f) => `Bash(gh api * ${f}*)`);
 
-// Tools docket-gits allows on its own. A skill adds the commands it needs with allowed-tools in its
-// SKILL.md frontmatter (Claude applies those while the skill runs); the deny lists below still win.
-// {owner-name} and the other fillTemplate placeholders are filled with the run's pull request
-const APPLY_TOOLS = 'Read,Grep,Glob,Write,Edit,Agent,Bash(gh pr:*),Bash(gh issue:*),Bash(gh api repos/{owner-name}/*),Bash(gh api /repos/{owner-name}/*),Bash(git:*),Bash(mkdir:*)';
-const READ_TOOLS = 'Read,Grep,Glob,Agent,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api repos/{owner-name}/*),Bash(gh api /repos/{owner-name}/*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git status:*)';
 // Read runs read content anyone can write, so nothing in them may write to GitHub or commit,
 // whatever a skill allows (for example Bash(gh *) or Bash(git *))
 const READ_DENY = [
@@ -829,13 +828,13 @@ const READ_DENY = [
 ];
 
 // Claude args for a run. mode: 'read' (review / self-review / fix plan), 'post' (posts a review, edits no files)
-// or 'apply' (fixes, push, replies). Post runs allow only postTools (the reviews endpoint of that pull request)
-function claudeArgs(mode = 'apply', postOnly = '', pr = null) {
-  const fill = (s) => (pr ? fillTemplate(s, pr) : s);
-  const head = mode === 'apply' ? ['--permission-mode', 'acceptEdits', '--allowedTools', fill(APPLY_TOOLS)]
-    : ['--allowedTools', mode === 'post' ? postOnly : fill(READ_TOOLS)];
+// or 'apply' (fixes, push, replies). Read and apply runs get their tools from a skill: the run's own skill's
+// allowed-tools, or the bundled plugin's read / apply skill (see withBundledSkill). Post runs allow only
+// postTools (the reviews endpoint of that pull request). The deny lists below win over every skill
+function claudeArgs(mode = 'apply', postOnly = '') {
+  const head = mode === 'apply' ? ['--permission-mode', 'acceptEdits'] : mode === 'post' ? ['--allowedTools', postOnly] : [];
   const deny = [...(mode === 'apply' ? APPLY_DENY : FILE_EDITS), ...(mode === 'read' ? [...GH_API_WRITES, ...READ_DENY] : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
-  return [...head, '--disallowedTools', deny.join(',')];
+  return [...head, '--plugin-dir', PLUGIN_DIR, '--disallowedTools', deny.join(',')];
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -1950,7 +1949,7 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
       const instruction = withOutputLang(prompt, lang);
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = readOnly ? 'read' : post ? 'post' : 'apply';
-      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(mode, post, pr)];
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(mode, post)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
@@ -2596,4 +2595,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { APPLY_DENY, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { APPLY_DENY, PLUGIN_DIR, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

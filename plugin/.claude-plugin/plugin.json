@@ -1,0 +1,5 @@
+{
+  "name": "docket-gits",
+  "description": "The tools docket-gits gives its own Claude runs. docket-gits loads it with --plugin-dir; you do not install it.",
+  "license": "MIT"
+}
