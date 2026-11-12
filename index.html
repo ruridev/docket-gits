@@ -1443,9 +1443,9 @@ document.addEventListener('toggle', (ev) => {
 // Small label above the select
 const field = (label, html) => `<div class="ms-field"><span class="ms-label">${label}</span>${html}</div>`;
 function multiSelect(key, label, summary, items, isOn, extra = '') {
-  const open = document.querySelector(`details.ms[data-ms="${key}"]`)?.open;
+  const open = document.querySelector(`details.ms[data-ms="${CSS.escape(key)}"]`)?.open;
   const q = (msQuery[key] || '').toLowerCase();
-  return field(label, `<details class="ms" data-ms="${key}"${open ? ' open' : ''}><summary>${summary}</summary><div class="ms-pop">
+  return field(label, `<details class="ms" data-ms="${esc(key)}"${open ? ' open' : ''}><summary>${summary}</summary><div class="ms-pop">
     <input type="search" data-ms-q placeholder="${esc(tr('search'))}" value="${esc(msQuery[key] || '')}">
     <div class="ms-list">${items.map((i) => `<label data-ms-text="${esc(i.text.toLowerCase())}"${i.text.toLowerCase().includes(q) ? '' : ' hidden'} title="${esc(i.value)}"${i.disabled ? ' class="off"' : ''}><input type="checkbox" data-ms-value="${esc(i.value)}"${i.disabled ? ' disabled' : isOn(i.value) ? ' checked' : ''}>${i.img ? `<img class="avatar" src="${esc(i.img)}" alt="">` : ''}${esc(i.text)}</label>`).join('')}</div>
     <div class="ms-bulk"><button data-ms-bulk="all">${tr('selectAll')}</button><button data-ms-bulk="none">${tr('clearAll')}</button></div>${extra}</div></details>`);
@@ -2308,38 +2308,52 @@ const plCustom = () => {
 };
 const plCustomOf = (k) => k.startsWith('cf:') && plCustom().find((f) => f.name === k.slice(3));
 const plFilterKeys = () => [...PL_FILTERS, ...plCustom().map((f) => `cf:${f.name}`)];
-// Does a Project field value match the filter? Text: contains; Date / Number: "from..to" (either end may be empty); others: equal ('-' = unset)
+// Text and Date / Number fields are typed in; every other filter is a multiSelect whose pl.f value is the list of hidden values
+const plTyped = (k) => ['TEXT', 'DATE', 'NUMBER'].includes(plCustomOf(k)?.type);
+// Status, open/closed and Project fields exist only for issues on GitHub
+const plLiveKey = (k) => k === 'st' || k === 'state' || k.startsWith('cf:');
+// Values of a node for a multiSelect filter (NONE = unset)
+function plValuesOf(k, n, g) {
+  const one = (v) => [v === undefined || v === null || v === '' ? NONE : String(v)];
+  if (k === 'repo') return [n.repo || pl.doc.plan.repo];
+  if (k === 'as') return n.assignees.length ? n.assignees : [NONE];
+  if (k === 'st') return one(g?.status);
+  if (k === 'state') return [!g || g.state === 'OPEN' ? 'OPEN' : 'CLOSED'];
+  if (k.startsWith('cf:')) return one(g?.fields?.[k.slice(3)]);
+  return plVals(n, k).length ? plVals(n, k) : [NONE];
+}
+// Choices of a multiSelect filter as [value, label]
+function plOptsOf(k) {
+  const nodes = plAll().map(({ n }) => n);
+  const unset = [NONE, tr('unset')];
+  const sorted = (vs) => [...new Set(vs.filter(Boolean))].sort();
+  if (k === 'repo') return sorted([pl.doc.plan.repo, ...nodes.map((n) => n.repo)]).map((r) => [r, r.split('/')[1]]);
+  if (k === 'as') return [...sorted(nodes.flatMap((n) => n.assignees)).map((a) => [a, a]), unset];
+  if (k === 'st') return [...(pl.ranges?.statuses || []).map((x) => [x, x]), unset];
+  if (k === 'state') return [['OPEN', 'Open'], ['CLOSED', 'Closed']];
+  if (k.startsWith('cf:')) return [...(plCustomOf(k)?.options || []).map((o) => [o, o]), unset];
+  return [...sorted(nodes.flatMap((n) => plVals(n, k))).map((v) => [v, v]), unset];
+}
+// Does a typed Project field value match? Text: contains; Date / Number: "from..to" (either end may be empty)
 function plMatch(f, v, want) {
-  if (want === '-') return v === undefined;
   if (v === undefined) return false;
   if (f.type === 'TEXT') return String(v).toLowerCase().includes(want.toLowerCase());
-  if (f.type === 'DATE' || f.type === 'NUMBER') {
-    const [a, b] = want.split('..');
-    const num = (x) => (f.type === 'NUMBER' ? Number(x) : x);
-    return (!a || num(v) >= num(a)) && (!b || num(v) <= num(b));
-  }
-  return String(v) === want;
+  const [a, b] = want.split('..');
+  const num = (x) => (f.type === 'NUMBER' ? Number(x) : x);
+  return (!a || num(v) >= num(a)) && (!b || num(v) <= num(b));
 }
 // When filtering, a Map of matching issues ('hit') and ancestors with matching descendants ('dim'). null if no filter
-// Status and open/closed only look at issues that exist on GitHub (Draft issues lack them, so not used for plans with no issues yet)
+// Live filters only apply once the plan has issues on GitHub (Draft issues lack the values)
 function plKeep() {
   const w = plWindow();
   const f = pl.f;
   const iss = plHasIssues();
-  const st = iss && f.st;
-  const state = iss && f.state;
-  const xf = PL_FIELDS.filter((k) => f[k]);
-  // Project field values exist only for issues on GitHub
-  const cf = iss ? plCustom().filter((x) => f[`cf:${x.name}`]) : [];
-  if (!w && !f.repo && !f.as && !st && !state && !xf.length && !cf.length) return null;
-  const repo = pl.doc.plan.repo;
+  const keys = plFilterKeys().filter((k) => f[k]?.length && (iss || !plLiveKey(k)));
+  if (!w && !keys.length) return null;
   const hit = (n) => {
     const g = plLive(n);
-    return plInWindow(n, w) && (!f.repo || (n.repo || repo) === f.repo)
-      && (!f.as || (f.as === '-' ? !n.assignees.length : n.assignees.includes(f.as)))
-      && (!st || g?.status === st) && (!state || (state === 'OPEN' ? !g || g.state === 'OPEN' : g?.state === 'CLOSED'))
-      && xf.every((k) => (f[k] === '-' ? !plVals(n, k).length : plVals(n, k).includes(f[k])))
-      && cf.every((x) => plMatch(x, g?.fields?.[x.name], f[`cf:${x.name}`]));
+    return plInWindow(n, w) && keys.every((k) => (plTyped(k) ? plMatch(plCustomOf(k), g?.fields?.[k.slice(3)], f[k])
+      : plValuesOf(k, n, g).some((v) => !f[k].includes(v))));
   };
   const keep = new Map();
   const walk = (n) => {
@@ -2515,7 +2529,7 @@ const plIdx = (d) => (Date.parse(d) - Date.parse(pl.range.from)) / 86400000;
 const plSpan = (n) => (n.start || n.end) && { start: n.start || n.end, end: n.end || n.start };
 const plMd = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
 
-const plFiltering = () => Object.values(pl.f).some(Boolean);
+const plFiltering = () => Object.values(pl.f).some((v) => v?.length);
 // Ask for the date and sprint fields before anything else on a project where they were never chosen
 // (not when the Project could not be read: the roadmap still works, just without syncing those fields)
 const plSetupOpen = () => !!pl.ranges?.readable && pl.ranges.project === plProject() && (pl.fieldSetup || !pl.ranges.chosen);
@@ -2634,43 +2648,31 @@ function plFilterHtml() {
   const viewSec = (extra = '') => `<details class="side-fold side-view side-sec"${sideViewOpen() ? ' open' : ''}><summary><span class="ms-label">${tr('sideView')}</span></summary>
     <div class="board-filters"><span class="seg"><button data-pl-view="timeline"${md ? '' : ' class="primary"'}>${tr('pl.timeline')}</button><button data-pl-view="md"${md ? ' class="primary"' : ''}>Markdown</button></span>${extra}</div></details>`;
   if (md) return live + viewSec();
-  const { plan } = pl.doc;
-  const nodes = plAll().map(({ n }) => n);
-  const repos = [...new Set([plan.repo, ...nodes.map((n) => n.repo)].filter(Boolean))];
-  const people = [...new Set(nodes.flatMap((n) => n.assignees))].sort();
   const iss = plHasIssues();
   const f = pl.f;
-  // Also list values not in the current plan when filtering by them (otherwise it looks like "All" while every row disappears)
-  const sel = (key, opts0, off) => {
-    const opts = f[key] && !opts0.some(([v]) => v === f[key]) ? [[f[key], f[key]], ...opts0] : opts0;
-    return `<select data-pl-filter="${key}"${off ? ' disabled' : ''}><option value="">${tr('all')}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${f[key] === v && !off ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-  };
   // Showing everything at first is too much, so show only ones added with "+"
-  const shown = (k) => pl.fx.has(k) || f[k];
+  const shown = (k) => pl.fx.has(k) || f[k]?.length;
   const label = (k) => ({ repo: tr('repo'), as: tr('sp.assignee'), st: 'Status', state: 'Open / Closed' })[k] || (plCustomOf(k) ? esc(plCustomOf(k).name) : plFieldLabel(k));
-  // Text: contains. Date / Number: from - to. Select / Iteration: one option
+  // Text: contains. Date / Number: from - to. Everything else: multiSelect (unchecked = hidden)
   const control = (k) => {
-    const x = plCustomOf(k);
-    if (!x) return sel(k, opts(k), ['st', 'state'].includes(k) && !iss);
-    const off = iss ? '' : ' disabled';
-    if (x.type === 'TEXT') return `<input data-pl-filter="${esc(k)}" value="${esc(f[k] || '')}" placeholder="${esc(tr('pl.contains'))}"${off}>`;
-    if (x.type === 'DATE' || x.type === 'NUMBER') {
-      const [a = '', b = ''] = (f[k] || '').split('..');
-      const type = x.type === 'DATE' ? 'date' : 'number';
-      return `<span class="pl-range"><input type="${type}" data-pl-frange="${esc(k)}" value="${esc(a)}"${off}><input type="${type}" data-pl-frange="${esc(k)}" value="${esc(b)}"${off}></span>`;
+    const off = !iss && plLiveKey(k);
+    if (!plTyped(k)) {
+      const hid = off ? [] : f[k] || [];
+      const opts = plOptsOf(k);
+      const on = opts.filter(([v]) => !hid.includes(v));
+      const summary = on.length === opts.length ? tr('all') : on.length ? esc(on.map(([, l]) => l).join(', ')) : tr('none');
+      return multiSelect(`plf:${k}`, label(k), summary, opts.map(([v, l]) => ({ value: v, text: l, disabled: off })), (v) => !hid.includes(v));
     }
-    return sel(k, [...x.options.map((o) => [o, o]), ['-', tr('unset')]], !iss);
+    const dis = off ? ' disabled' : '';
+    if (plCustomOf(k).type === 'TEXT') return field(label(k), `<input data-pl-filter="${esc(k)}" value="${esc(f[k] || '')}" placeholder="${esc(tr('pl.contains'))}"${dis}>`);
+    const [a = '', b = ''] = (f[k] || '').split('..');
+    const type = plCustomOf(k).type === 'DATE' ? 'date' : 'number';
+    return field(label(k), `<span class="pl-range"><input type="${type}" data-pl-frange="${esc(k)}" value="${esc(a)}"${dis}><input type="${type}" data-pl-frange="${esc(k)}" value="${esc(b)}"${dis}></span>`);
   };
-  const opts = (k) => ({
-    repo: () => repos.map((r) => [r, r.split('/')[1]]),
-    as: () => [...people.map((a) => [a, a]), ['-', tr('unset')]],
-    st: () => (pl.ranges?.statuses || []).map((x) => [x, x]),
-    state: () => [['OPEN', 'Open'], ['CLOSED', 'Closed']],
-  })[k]?.() || [...[...new Set(nodes.flatMap((n) => plVals(n, k)))].sort().map((v) => [v, v]), ['-', tr('unset')]];
   const rest = plFilterKeys().filter((k) => !shown(k));
   return `${live}${viewSec(`<button data-pl-display>${tr('cardDisplay')}</button>`)}
     <details class="side-fold side-filter side-sec"${sideFilterOpen ? ' open' : ''}><summary><span class="ms-label">${tr('filter')}</span><span class="side-dot"></span></summary>
-    <div class="board-filters">${plFilterKeys().filter(shown).map((k) => `<div class="pl-xf">${field(label(k), control(k))}<button data-pl-fdel="${esc(k)}" title="${esc(tr('pl.removeField'))}">×</button></div>`).join('')}
+    <div class="board-filters">${plFilterKeys().filter(shown).map((k) => `<div class="pl-xf">${control(k)}<button data-pl-fdel="${esc(k)}" title="${esc(tr('pl.removeField'))}">×</button></div>`).join('')}
     ${rest.length ? `<div class="pl-addf"><button data-pl-fadd aria-expanded="${pl.filterMenu}">+</button>${pl.filterMenu ? `<div class="pop">${rest.map((k) => `<button data-pl-fadd-pick="${esc(k)}" title="${label(k)}">${label(k)}</button>`).join('')}</div>` : ''}</div>` : ''}</div></details>`;
 }
 
@@ -2913,6 +2915,13 @@ $('#plan').addEventListener('click', (ev) => {
   if (t.closest('[data-pl-bulk-apply]')) return plApplyBulk();
   if (t.closest('[data-pl-bulk-clear]')) { pl.sel.clear(); pl.bulk = null; return plRefresh(['bulk', 'body', 'detail']); }
   // "Select all / Clear all" for assignees and labels
+  const fBulk = t.closest('[data-ms^="plf:"] [data-ms-bulk]');
+  if (fBulk) {
+    const k = fBulk.closest('[data-ms]').dataset.ms.slice(4);
+    pl.f[k] = fBulk.dataset.msBulk === 'all' ? [] : plOptsOf(k).map(([v]) => v);
+    $('#plan .pl-side').classList.toggle('filtering', plFiltering());
+    return plRefresh(['filter', 'body']);
+  }
   const bulkMs = t.closest('[data-ms^="pl-"] [data-ms-bulk]');
   if (bulkMs) {
     const key = bulkMs.closest('[data-ms]').dataset.ms;
@@ -2975,6 +2984,14 @@ $('#plan').addEventListener('change', (ev) => {
   if (n && (f === 'milestone' || f === 'sprint')) { n[f] = t.value || null; return plEdited(['head', 'body']); }
   const b = t.dataset.plB;
   if (b) { pl.bulk[b] = t.value; return; }
+  const fms = t.closest('[data-ms^="plf:"]');
+  if (fms && t.matches('[data-ms-value]')) {
+    const k = fms.dataset.ms.slice(4);
+    const hid = pl.f[k] || [];
+    pl.f[k] = t.checked ? hid.filter((x) => x !== t.dataset.msValue) : [...hid, t.dataset.msValue];
+    $('#plan .pl-side').classList.toggle('filtering', plFiltering());
+    return plRefresh(['filter', 'body']);
+  }
   const ms = t.closest('[data-ms^="pl-"]');
   if (ms && t.matches('[data-ms-value]')) {
     const key = ms.dataset.ms;
