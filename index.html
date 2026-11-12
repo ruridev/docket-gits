@@ -312,9 +312,6 @@
   .pl-side .seg button { flex: 1; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
   /* Part where only the content is redrawn. No frame of its own; content sits directly in the sidebar */
   .pl-side-part { display: contents; }
-  #plan .pl-side { overflow-y: auto; }
-  /* overflow-y: auto だと横にはみ出す .ms-pop が切れるので、サイドバーの幅に収める */
-  #plan .pl-side .ms-pop { min-width: 0; right: 0; }
   #plan .pl-list { flex: 1 1 120px; min-height: 120px; }
   /* Section dividers extend to the frame edges, and headings are stronger than item labels to show the hierarchy */
   .side-sec { border-top: 1px solid var(--border); margin: 6px -10px 0; padding: 12px 10px 0; }
@@ -2668,8 +2665,11 @@ function plFilterHtml() {
       const hid = off ? [] : f[k] || [];
       const opts = plOptsOf(k);
       const on = opts.filter(([v]) => !hid.includes(v));
-      const summary = on.length === opts.length ? tr('all') : on.length ? esc(on.map(([, l]) => l).join(', ')) : tr('none');
-      return multiSelect(`plf:${k}`, label(k), summary, opts.map(([v, l]) => ({ value: v, text: l, disabled: off })), (v) => !hid.includes(v));
+      // Assignees show avatars like the board's author filter
+      const img = (v) => (k === 'as' && v !== NONE ? plAvatar(v) : undefined);
+      const summary = on.length === opts.length ? tr('all') : !on.length ? tr('none')
+        : k === 'as' && on.every(([v]) => v !== NONE) ? plAvatars(on.map(([v]) => v)) : esc(on.map(([, l]) => l).join(', '));
+      return multiSelect(`plf:${k}`, label(k), summary, opts.map(([v, l]) => ({ value: v, text: l, img: img(v), disabled: off })), (v) => !hid.includes(v));
     }
     const dis = off ? ' disabled' : '';
     if (plCustomOf(k).type === 'TEXT') return field(label(k), `<input data-pl-filter="${esc(k)}" value="${esc(f[k] || '')}" placeholder="${esc(tr('pl.contains'))}"${dis}>`);
