@@ -748,7 +748,7 @@ test('isAgentRun: false for a live process that is not claude', () => {
   assert.equal(isAgentRun(2 ** 22 + 12345), false);
 });
 
-test('isAgentRun: true only for claude (stream-json) started by the review board; other claude runs by the user are not stopped', () => {
+test('isAgentRun: true only for claude (stream-json) started by docket-gits; other claude runs by the user are not stopped', () => {
   const { spawn } = require('node:child_process');
   const run = (...args) => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'claude', ...args]);
   const ours = run('-p', 'x', '--output-format', 'stream-json');

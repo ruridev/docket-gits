@@ -23,8 +23,10 @@ Everything runs on your machine. There are no dependencies to install, and state
    ```bash
    git clone https://github.com/ruridev/docket-gits.git
    cd docket-gits
-   node server.js
+   npm start
    ```
+
+   There are no dependencies, so there is no `npm install`.
 
 2. Open http://localhost:4649 and create your account (see [Signing in](#signing-in)).
 3. Read the notice about the risks and agree to it. Nothing that starts `claude` or `codex` works until you do.
@@ -37,7 +39,7 @@ Everything runs on your machine. There are no dependencies to install, and state
 | --- | --- | --- |
 | `PORT` | `4649` | Port to listen on |
 | `DOCKET_DATA` | `./data` | Where settings, state and logs are stored (created with mode 0700) |
-| `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`) |
+| `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`); the default is the docket portal. Set `"'self'"` if you don't use docket |
 
 If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
 
@@ -45,9 +47,11 @@ If you start the server without a login shell (from launchd, for example), `gh` 
 
 The first time you open docket-gits, it asks you to create an account: a name and a password of 8 characters or more. There is one account and no email, because nothing is ever sent out and the account only guards this app on this PC. From then on every API call needs the signed-in session.
 
+- Creating the account needs a setup code. While there is no account, the server prints a link with the code when it starts (`Create the account: http://localhost:4649/?setup=...`), and the code is also in `data/setup-code` (readable by your user only). Opening the link fills in the code; the code is removed once the account exists.
 - The account is kept in `data/auth.json` (0600): a scrypt hash of the password and the secret that signs the session cookie. A session lasts 30 days and survives restarts.
-- Forgot the password? Run `node server.js --reset-password` in this folder. It removes only the account; your data stays, and the next visit asks you to create the account again.
-- Create the account right after the first start: until then, any program on this PC that can reach the port could create it first.
+- Browsers send `localhost` cookies to every port, so the cookie alone is not a session: signing in also gives the page an API token, kept in this browser's storage for this address only and sent with every API call. Another browser or a cleared storage asks you to sign in again.
+- **Sign out** ends every session of this account, in every browser.
+- Forgot the password? Run `node server.js --reset-password` in this folder. It removes only the account and prints a new setup code; your data stays.
 - docket, docket-gits and docket-jobs each have their own account. Inside the docket portal, each tool shows its own sign-in page the first time.
 
 ## How it works
@@ -164,7 +168,9 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **AI runs cost money.** Costs are shown per pull request and in total.
 - The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
 - Reviews and plans run with read-only tools (`readOnlyTools`). **Comment** starts a new session that never reads the pull request and, with Claude, may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
-- Only fix runs may edit files under `<working directory>/.claude/skills` without asking; other protected paths are denied, and review and post runs can't edit skills.
+- Fix runs may edit files under `<working directory>/.claude/skills` without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default): an instruction hidden in a comment could otherwise stay in a skill and steer later runs. Other protected paths are always denied, and review and post runs can't edit skills.
+- Every Claude run also denies `git log / diff / show --output` (it writes files), git commands that run other programs (`rebase --exec`, `submodule`, `bisect`, `filter-branch`, `difftool`, `mergetool`), adding remotes, pushing to a URL or deleting remote branches, and `gh repo create` / `fork`, `gh release`, `gh workflow`. Post runs may only POST the review: no other method and no body read from a file.
+- Codex runs get no deny list: reviews use Codex's read-only sandbox, and fix runs use the sandbox and approval settings in **Extra Codex args**.
 - Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).
 - `data/` is readable only by you (0700, files 0600).
 
@@ -176,7 +182,7 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 ## Development
 
 ```bash
-node --test
+npm test
 ```
 
 The whole app is `server.js` and `index.html`, with no build step.

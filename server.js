@@ -223,7 +223,7 @@ function searchQueries(mergedDays, now) {
   const from = now - mergedDays * 24 * 60 * 60 * 1000;
   const since = new Date(from - new Date(from).getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   return { open: `${base} is:open`, merged: `${base} is:merged merged:>=${since}`, withMerged: mergedDays > 0, mine: 'is:pr archived:false author:@me is:open',
-    // ponytail: only checks the 50 most recently updated. Old Done cards come back only via a new request
+    // NOTE: only checks the 50 most recently updated. Old Done cards come back only via a new request
     reviewed: 'is:pr archived:false reviewed-by:@me is:open sort:updated-desc' };
 }
 
@@ -340,7 +340,7 @@ function pendingThreads(node, login, appliedAt = 0) {
 
 // PR-level comments (Conversation comments, review bodies) have no resolved state, so
 // anything others wrote after my last PR-level comment counts as unaddressed
-// ponytail: replying to just one clears all earlier ones. Store per-comment state locally if that's needed
+// NOTE: replying to just one clears all earlier ones. Store per-comment state locally if that's needed
 function pendingComments(node, login) {
   const all = [
     ...(node.comments?.nodes || []).map((c) => ({ ...c, at: c.createdAt })),
@@ -433,7 +433,7 @@ function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.en.review
   return `${head}
 
 ---
-(Non-interactive run from the local review board)
+(Non-interactive run from docket-gits)
 - Pull request: ${pr.url}
 - You cannot ask the user anything. Do not post to the pull request or approve it yet; stop at the preview.
 - When the review is done, end the final answer with the findings you would post, in the format below. If there are none, make findings an empty array.
@@ -453,7 +453,7 @@ const NO_DUPLICATE = 'Before you start, check the existing reviews, comments and
 // A post starts a fresh session that has not read the pull request, so it only sees the findings the user approved.
 // Finding text was written by an AI that read untrusted PR content, so it is passed as escaped data
 function buildPostPrompt(pr, findings, decisions, approve, humanRead, icon = DEFAULT_CONFIG.disagreeIcon) {
-  return `The user decided on each finding of an AI review on the review board. Post one review to pull request ${pr.url} as described below. This is the user's approval to post; no further confirmation is needed.
+  return `The user decided on each finding of an AI review in docket-gits. Post one review to pull request ${pr.url} as described below. This is the user's approval to post; no further confirmation is needed.
 
 ## Approve
 ${approve ? 'Yes (event: APPROVE)' : 'No (event: COMMENT)'}
@@ -543,7 +543,7 @@ function buildFixPlanPrompt(pr, mapping, triage, fixPrompt = DEFAULT_PROMPTS.en.
   return `${head}
 
 ---
-(Non-interactive run from the local review board)
+(Non-interactive run from docket-gits)
 - Pull request: ${pr.url}
 - You cannot ask the user anything. In this run, only fetch and classify the comments. Do not check out the branch, change code, commit, push or reply yet (this run is read-only; read the code with \`gh pr diff\` or \`gh api\`).
 - ${AUTHOR_ONLY(pr)}
@@ -567,7 +567,7 @@ ${lines.join('\n')}
 }
 
 function buildFixApplyPrompt(pr, items, decisions, icon = DEFAULT_CONFIG.agreeIcon) {
-  return `On the review board, the user decided on the plan for each comment. Following the decisions below, carry out the fix, commit, push and reply steps of the skill (or the first instructions) for pull request ${pr.url}. This is the user's approval at the confirmation gate; no further confirmation is needed.
+  return `In docket-gits, the user decided on the plan for each comment. Following the decisions below, carry out the fix, commit, push and reply steps of the skill (or the first instructions) for pull request ${pr.url}. This is the user's approval at the confirmation gate; no further confirmation is needed.
 
 ## Decisions
 ${decisionLines(items, decisions)}
@@ -597,7 +597,7 @@ ${decisionLines(items, decisions)}
 // Self-review: post the summary plus agreed findings to the PR -> fix and push -> reply to the posted findings
 // Post the summary even with 0 agreed findings, to leave a record of the self-review on the PR
 function buildSelfApplyPrompt(pr, findings, decisions, summary, icon = DEFAULT_CONFIG.agreeIcon) {
-  return `On the review board, the user decided on each finding of a self-review. Do the following for pull request ${pr.url}. This is the user's approval to post and push; no further confirmation is needed.
+  return `In docket-gits, the user decided on each finding of a self-review. Do the following for pull request ${pr.url}. This is the user's approval to post and push; no further confirmation is needed.
 
 ## Self-review summary
 ${summary?.trim() || '(none)'}
@@ -621,7 +621,7 @@ ${decisionLines(findings, decisions)}
 
 // Skip the decision dialog and treat the user's own PR comments as instructions
 function buildCommentApplyPrompt(pr) {
-  return `The user gave their decisions on the plan in comments on pull request ${pr.url}, not on the review board. Fetch the pull request's review threads and comments, take the last comment written by the pull request author (the user, @${prAuthor(pr)}) as the instructions, and carry out the fix, commit, push and reply steps of the skill (or the first instructions). This is the user's approval at the confirmation gate; no further confirmation is needed.
+  return `The user gave their decisions on the plan in comments on pull request ${pr.url}, not in docket-gits. Fetch the pull request's review threads and comments, take the last comment written by the pull request author (the user, @${prAuthor(pr)}) as the instructions, and carry out the fix, commit, push and reply steps of the skill (or the first instructions). This is the user's approval at the confirmation gate; no further confirmation is needed.
 
 ## Rules
 - ${AUTHOR_ONLY(pr)} Check the author of each fetched comment before using it.
@@ -917,7 +917,7 @@ function refreshFromGitHub() {
   return (refreshing ||= fetchFromGitHub().finally(() => (refreshing = null)));
 }
 
-// ponytail: fetch one page only, no paging. Show a notice in the UI if over the limit (page with after if that happens)
+// NOTE: fetch one page only, no paging. Show a notice in the UI if over the limit (page with after if that happens)
 // GitHub search sometimes returns fewer nodes than issueCount, so only check when the page is full
 const SEARCH_LIMITS = { open: 100, merged: 100, mine: 50 };
 function isTruncated(data) {

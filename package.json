@@ -1,0 +1,19 @@
+{
+  "name": "docket-gits",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruridev/docket-gits.git"
+  },
+  "description": "Review GitHub pull requests with an AI agent, deciding on each finding yourself.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
