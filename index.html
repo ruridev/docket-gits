@@ -319,7 +319,7 @@
   .pl-side-top .ms-label, .pl-side .ms-label.side-sec, .side-fold > summary .ms-label { font-size: 12px; font-weight: 700; color: var(--text); }
   .board-filters { display: flex; flex-direction: column; gap: 10px; }
   .board-filters .ms > summary { max-width: none; }
-  .board-filters [data-approved], .board-filters [data-merged], .board-filters [data-bf] { width: 100%; }
+  .board-filters [data-approved], .board-filters [data-merged] { width: 100%; }
   #board-side:not(.closed) .pl-rail, #board-side.closed .pl-side-top .ms-label, #board-side.closed > :not(.pl-side-top, .pl-rail) { display: none; }
   .pl-side.filtering .pl-rail { color: var(--accent); font-weight: 600; }
   .pl-dir { font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; overflow-wrap: anywhere; }
@@ -1178,13 +1178,13 @@ function render() {
   const q = document.activeElement?.matches('#repo-filter [data-ms-q]') && document.activeElement;
   const qAt = q && [q.closest('[data-ms]').dataset.ms, q.selectionStart, q.selectionEnd];
   // Showing everything at first is too much, so show only ones added with "+" and ones with an active filter
-  const extra = boardFilters(all);
+  const extra = valueFilters(all);
   const filters = [
     ['repos', tr('repo'), repoSelect, repos.some((r) => hidden.includes(r))],
     ...(mine ? [] : [['authors', tr('author'), authorSelect, hiddenAuthors.length]]),
     ['approved', tr('approved'), approvedSeg, approved],
     ...(mine ? [] : [['merged', tr('merged'), mergedSeg, merged]]),
-    ...extra.map((f) => [f.key, f.label, field(f.label, bfSelect(f.key, f.value, f.options)), f.value]),
+    ...extra.map((f) => [f.kind, f.label, f.html, f.active]),
   ];
   const added = boardFx[view()];
   const shownF = (x) => added.has(x[0]) || x[3];
@@ -1199,11 +1199,11 @@ function render() {
   $('#board-view-sec').open = !!laneEdit || sideViewOpen(); // Do not collapse while editing lanes, since the save / cancel buttons are there
   const sideClosed = plGet('board-side') === '0' && !laneEdit;
   $('#board-side').classList.toggle('closed', sideClosed);
-  $('#board-side').classList.toggle('filtering', !!(approved || merged || hiddenAuthors.length || repos.some((r) => hidden.includes(r)) || extra.some((f) => f.value)));
+  $('#board-side').classList.toggle('filtering', !!(approved || merged || hiddenAuthors.length || repos.some((r) => hidden.includes(r)) || extra.some((f) => f.active)));
   $('#board-fold').textContent = sideClosed ? '›' : '‹';
   const prs = all.filter((p) => isArchived(p) === archiveView && !hidden.includes(p.pr.repo) && !hiddenAuthors.includes(p.pr.author?.login)
     && (approved === 'only' ? isApproved(p) : approved === 'exclude' ? !isApproved(p) : true)
-    && extra.every((f) => !f.value || f.test(p.pr, f.value))
+    && extra.every((f) => BOARD_VALUES[f.kind](p.pr).some((v) => !f.hid.includes(v)))
     && (merged === 'only' ? isMerged(p) : merged === 'exclude' ? !isMerged(p) : true)).sort((a, b) => new Date(b.pr.updatedAt) - new Date(a.pr.updatedAt));
   $('#edit-lanes').hidden = !!laneEdit;
   $('#stack-order').classList.toggle('primary', stackOrder);
@@ -1416,21 +1416,24 @@ let sideFilterOpen = false;
 const sideViewOpen = () => plGet('side-view') !== '0';
 // Items added via "+" in the reviewing / being-reviewed filters (per tab)
 const boardFx = { review: new Set(), receive: new Set() };
-// Filters added with "+" on the review boards, from what GitHub gives every pull request. Saved per tab
-const bfKey = (k) => `docket-bf:${view()}:${k}`;
-const bfGet = (k) => { try { return localStorage.getItem(bfKey(k)) || ''; } catch { return ''; } };
-const bfSelect = (k, value, options) => `<select data-bf="${k}"><option value="">${tr('all')}</option>${options.map(([v, l]) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
-function boardFilters(all) {
-  const prs = all.map((p) => p.pr);
-  const values = (get) => [...new Set(prs.flatMap(get).filter(Boolean))].sort();
-  const pick = (get) => [...values(get).map((v) => [v, v]), ['-', tr('unset')]];
-  const has = (list, v) => (v === '-' ? !list.length : list.includes(v));
-  const defs = [
-    { key: 'labels', options: pick((pr) => pr.labels.map((l) => l.name)), test: (pr, v) => has(pr.labels.map((l) => l.name), v) },
-    { key: 'milestone', options: pick((pr) => pr.milestone), test: (pr, v) => has([pr.milestone].filter(Boolean), v) },
-  ];
-
-  return defs.map((d) => ({ ...d, label: tr(`bf.${d.key}`), value: bfGet(d.key) }));
+// Label and milestone filters, picked like repositories and authors: a PR is shown if any of its values is checked
+// (NONE stands for "no label" / "no milestone"). Saved per tab, as the values to hide
+const NONE = '-';
+const BOARD_VALUES = {
+  labels: (pr) => (pr.labels.length ? pr.labels.map((l) => l.name) : [NONE]),
+  milestone: (pr) => [pr.milestone || NONE],
+};
+const filterValues = (kind, pr) => (kind === 'repos' ? [pr.repo] : kind === 'authors' ? [pr.author?.login] : BOARD_VALUES[kind](pr));
+function valueFilters(all) {
+  return Object.keys(BOARD_VALUES).map((kind) => {
+    const hid = hiddenOf(kind, view());
+    const vals = [...new Set(all.flatMap((p) => BOARD_VALUES[kind](p.pr)))].sort((a, b) => (a === NONE) - (b === NONE) || a.localeCompare(b));
+    const on = vals.filter((v) => !hid.includes(v));
+    const text = (v) => (v === NONE ? tr('unset') : v);
+    const label = tr(`bf.${kind}`);
+    const summary = on.length === vals.length ? tr('all') : on.length ? esc(on.map(text).join(', ')) : tr('none');
+    return { kind, label, hid, html: multiSelect(kind, label, summary, vals.map((v) => ({ value: v, text: text(v) })), (v) => !hid.includes(v)), active: vals.some((v) => hid.includes(v)) };
+  });
 }
 let boardFilterMenu = false;
 document.addEventListener('toggle', (ev) => {
@@ -3414,11 +3417,7 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
   if (del) {
     boardFx[view()].delete(del);
     // Merged falls back to exclude when nothing is saved, so save "All" when clearing
-    try { del === 'merged' ? localStorage.setItem('docket-merged:review', '') : localStorage.removeItem(del === 'approved' ? `docket-approved:${view()}` : ['repos', 'authors'].includes(del) ? hiddenKey(del, view()) : bfKey(del)); } catch {}
-    return render();
-  }
-  if (ev.type === 'change' && ev.target.dataset.bf) {
-    try { localStorage.setItem(bfKey(ev.target.dataset.bf), ev.target.value); } catch {}
+    try { del === 'merged' ? localStorage.setItem('docket-merged:review', '') : localStorage.removeItem(del === 'approved' ? `docket-approved:${view()}` : hiddenKey(del, view())); } catch {}
     return render();
   }
   const seg = ev.type === 'click' && ev.target.closest('[data-approved], [data-merged]');
@@ -3435,8 +3434,7 @@ $('#repo-filter').onclick = $('#repo-filter').onchange = (ev) => {
   if (!r && !bulk) return;
   const kind = ev.target.closest('[data-ms]').dataset.ms;
   const hidden = hiddenOf(kind, view());
-  const value = (p) => (kind === 'repos' ? p.pr.repo : p.pr.author?.login);
-  const next = bulk === 'all' ? [] : bulk === 'none' ? [...new Set((view() === 'receive' ? board.mine : board.prs).map(value))]
+  const next = bulk === 'all' ? [] : bulk === 'none' ? [...new Set((view() === 'receive' ? board.mine : board.prs).flatMap((p) => filterValues(kind, p.pr)))]
     : ev.target.checked ? hidden.filter((x) => x !== r) : [...hidden, r];
   try { localStorage.setItem(hiddenKey(kind, view()), JSON.stringify(next)); } catch {}
   render();
