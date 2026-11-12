@@ -168,7 +168,6 @@ const PR_FRAGMENT = `fragment pr on PullRequest {
       repository { nameWithOwner }
       author { login avatarUrl }
       milestone { title }
-      assignees(first: 10) { nodes { login } }
       labels(first: 10) { nodes { name color } }
       closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
       latestReviews(first: 20) { nodes { state author { login avatarUrl } } }
@@ -262,7 +261,6 @@ function normalizePr(node) {
     requested: node.reviewRequests.nodes.map((r) => r.requestedReviewer).filter((r) => r && r.login),
     // For the board filters (older cached PRs may lack these)
     milestone: node.milestone?.title || null,
-    assignees: (node.assignees?.nodes || []).map((a) => a.login),
   };
 }
 

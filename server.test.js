@@ -1125,10 +1125,8 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
 
 test('normalizePr: keeps what the board filters need, and tolerates PRs fetched before those fields existed', () => {
   const { normalizePr } = require('./server');
-  const full = normalizePr({ ...node(1), milestone: { title: 'v2' }, assignees: { nodes: [{ login: 'bob' }] } });
-  assert.deepEqual([full.milestone, full.assignees], ['v2', ['bob']]);
-  const old = normalizePr(node(2));
-  assert.deepEqual([old.milestone, old.assignees], [null, []]);
+  assert.equal(normalizePr({ ...node(1), milestone: { title: 'v2' } }).milestone, 'v2');
+  assert.equal(normalizePr(node(2)).milestone, null);
 });
 
 test('staleIds / withDetails: details are fetched only for new or updated PRs, and rebuilt in search order', () => {
