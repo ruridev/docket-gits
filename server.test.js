@@ -1243,3 +1243,10 @@ test('claudeArgs: tools are fixed per run; skills add their own with allowed-too
 test('settings: claude args and read-only tools can no longer be saved', () => {
   assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
 });
+
+test('postTools: the reviews endpoint is allowed whether the method flag comes before or after the path', () => {
+  const rules = postTools({ repo: 'o/r', number: 7 }).split(',');
+  for (const r of ['Bash(gh api repos/o/r/pulls/7/reviews*)', 'Bash(gh api -X POST repos/o/r/pulls/7/reviews*)', 'Bash(gh api --method POST repos/o/r/pulls/7/reviews*)']) assert.ok(rules.includes(r), r);
+  assert.ok(rules.every((r) => r.includes('repos/o/r/pulls/7/reviews')));
+  assert.match(buildPostPrompt({ url: 'u', repo: 'o/r', number: 7 }, [], {}, true, false), /right after `gh api`/);
+});

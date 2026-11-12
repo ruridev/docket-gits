@@ -468,7 +468,7 @@ ${postLines(findings, decisions)}
 - Disagree without a reason: do not post.
 - Out of scope: do not post.
 - If there is nothing to post, no Approve and no code-read statement, post nothing.
-- Post with \`gh api repos/${pr.repo}/pulls/${pr.number}/reviews\` as one review (body and event; line findings go in comments with path, line and side: RIGHT). If a line is not in the diff and the post fails, put that finding in the review body with its file name and line number.
+- Post with \`gh api repos/${pr.repo}/pulls/${pr.number}/reviews -X POST ...\` as one review: put the path right after \`gh api\` and the flags after it. Run each command on its own, without pipes or shell variables (body and event; line findings go in comments with path, line and side: RIGHT). If a line is not in the diff and the post fails, put that finding in the review body with its file name and line number.
 - Before posting, list the existing reviews with \`gh api repos/${pr.repo}/pulls/${pr.number}/reviews\` and do not post again what a previous run already posted.
 - Only \`gh api\` on this pull request's reviews is allowed in this run. Do not read the pull request or run other commands.
 - When done, end the final answer with the block below. If posting failed, set posted to false and put the reason in error.
@@ -490,7 +490,8 @@ function postLines(items, decisions) {
 }
 
 // Only the reviews endpoint of this one pull request: no git, no other gh commands, no file access
-const postTools = (pr) => `Bash(gh api repos/${pr.repo}/pulls/${pr.number}/reviews*)`;
+// Rules match from the start of the command, so allow the method flag before the path too (gh api -X POST <path>)
+const postTools = (pr) => ['', '-X POST ', '--method POST '].map((f) => `Bash(gh api ${f}repos/${pr.repo}/pulls/${pr.number}/reviews*)`).join(',');
 
 // Numbers alone can be mixed up if renumbered, so include the finding summary too
 function decisionLines(items, decisions) {
