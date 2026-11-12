@@ -9,7 +9,7 @@ const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, sn
 const { createAuth } = require('./auth');
 
 const PORT = Number(process.env.PORT || 4649);
-const DATA_DIR = process.env.DOCKET_DATA || path.join(__dirname, 'data');
+const DATA_DIR = path.resolve(process.env.DOCKET_DATA || path.join(__dirname, 'data'));
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
@@ -27,6 +27,8 @@ const DEFAULT_CONFIG = {
   codexArgs: '--approve-for-me',
   claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Grep,Glob,Write,Edit,Agent,Bash(gh:*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(ls:*)',
   // Tools for runs that must not change anything (review, self-review, fix plan). Empty = use claudeArgs as is
+  // Fix runs may edit <working directory>/.claude/skills without asking (off: those edits are denied)
+  skillEdits: false,
   readOnlyTools: 'Read,Grep,Glob,Agent,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git status:*)',
   // Empty = claude's default. Subagents use this model too
   model: '',
@@ -709,16 +711,28 @@ function dropFlags(args, takes, drop = () => true) {
 // Denied on every Claude run, whatever the extra args say. PR text is untrusted, so block the plain ways
 // to read the GitHub token or other credentials (including this app's session secret and .env files),
 // to run arbitrary commands through git/gh config, to send requests to another host with gh api,
-// and the gh / git commands that cannot be undone or publish data (force-push, merge, repo delete, secrets, gists).
-// ponytail: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal
+// and the gh / git commands that cannot be undone or publish data (force-push, merge, repo delete, secrets, gists),
+// write files from a "read" command (git log / diff / show --output), run commands through git
+// (rebase --exec, submodule foreach, bisect run, filter-branch, difftool, mergetool), push to another remote,
+// delete remote branches, or create repositories, releases and workflow runs.
+// NOTE: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal
 const ALWAYS_DENY = ['Bash(gh auth *)', 'Bash(gh alias *)', 'Bash(gh extension *)', 'Bash(gh config *)', 'Bash(git config *)', 'Bash(git credential *)', 'Bash(git -c *)',
   'Bash(gh api --hostname*)', 'Bash(gh api * --hostname*)',
+  'Bash(git * --output*)', 'Bash(git * --exec*)', 'Bash(git rebase * -x*)', 'Bash(git submodule *)', 'Bash(git bisect *)', 'Bash(git filter-branch*)',
+  'Bash(git difftool*)', 'Bash(git mergetool*)', 'Bash(git remote add*)', 'Bash(git remote set-url*)',
   'Bash(git push --force*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(git push * -f*)', 'Bash(git push * +*)',
-  'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh repo edit*)', 'Bash(gh secret*)', 'Bash(gh variable*)', 'Bash(gh gist*)',
+  'Bash(git push *://*)', 'Bash(git push *@*)', 'Bash(git push * --delete*)', 'Bash(git push * -d *)',
+  'Bash(git push --delete*)', 'Bash(git push -d *)', 'Bash(git push --mirror*)', 'Bash(git push * --mirror*)', 'Bash(git push --all*)', 'Bash(git push * --all*)',
+  'Bash(git push --prune*)', 'Bash(git push * --prune*)',
+  'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh repo edit*)', 'Bash(gh repo create*)', 'Bash(gh repo fork*)', 'Bash(gh repo archive*)', 'Bash(gh repo rename*)',
+  'Bash(gh secret*)', 'Bash(gh variable*)', 'Bash(gh gist*)', 'Bash(gh release*)', 'Bash(gh workflow*)', 'Bash(gh run rerun*)', 'Bash(gh run cancel*)', 'Bash(gh run delete*)', 'Bash(gh ruleset*)',
   'Read(~/.ssh/**)', 'Read(~/.aws/**)', 'Read(~/.config/gh/**)', 'Read(~/.netrc)', `Read(/${DATA_DIR}/**)`, 'Read(**/.env*)'];
 const FILE_EDITS = ['Write', 'Edit', 'NotebookEdit'];
 // gh api sends POST / PATCH / DELETE with any of these flags, so read-only runs refuse them
 const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '--input'].flatMap((f) => [`Bash(gh api ${f}*)`, `Bash(gh api * ${f}*)`]);
+// Post runs need POST with a JSON body, but not other methods or a body read from a local file
+const POST_DENY = ['-X DELETE', '-XDELETE', '--method DELETE', '--method=DELETE', '-X PUT', '-XPUT', '--method PUT', '--method=PUT', '-X PATCH', '-XPATCH', '--method PATCH', '--method=PATCH',
+  '--input /', '--input ~', '--input .', '--input=', '-F *=@', '--field *=@'].map((f) => `Bash(gh api * ${f}*)`);
 
 // Claude args for a run. mode: 'read' (review / self-review / fix plan), 'post' (posts a review, edits no files)
 // or 'apply' (fixes, push, replies). Read-only runs replace the permission mode and allowed tools with readOnlyTools,
@@ -732,7 +746,7 @@ function claudeArgs(cfg, mode = 'apply', postOnly = '') {
   if (tools) {
     args = [...dropFlags(args, { '--permission-mode': 1, '--allowedTools': many, '--allowed-tools': many, '--dangerously-skip-permissions': 0 }), '--allowedTools', tools];
   }
-  const deny = [...own, ...(mode === 'apply' ? [] : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...ALWAYS_DENY];
+  const deny = [...own, ...(mode === 'apply' ? [] : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
   return [...args, '--disallowedTools', deny.filter(Boolean).join(',')];
 }
 
@@ -1846,9 +1860,9 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
     try {
       const model = modelOptions(config);
       const instruction = withOutputLang(prompt, lang);
-      // Only fix runs may edit skills: review and post runs read other people's PRs
+      // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = readOnly ? 'read' : post ? 'post' : 'apply';
-      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' ? permissionArgs(cwd) : []), ...claudeArgs(config, mode, post)];
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(config, mode, post)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
@@ -2242,16 +2256,22 @@ const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
 // The sign-in page and its files. Serve only fixed files (never build paths)
 const LOGIN_FILES = { '/login.css': 'text/css; charset=utf-8', '/login.js': 'text/javascript; charset=utf-8' };
 
+// Scripts only from this server: the page's inline <script> blocks are allowed by hash. Images may come from
+// anywhere (avatars, images in PR text); images cannot run code
+const CSP = `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors ${FRAME_ANCESTORS}`;
+const scriptHashes = (html) => [...String(html).matchAll(/<script>([\s\S]*?)<\/script>/g)]
+  .map((m) => `'sha256-${require('node:crypto').createHash('sha256').update(m[1]).digest('base64')}'`).join(' ');
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  res.setHeader('Content-Security-Policy', `frame-ancestors ${FRAME_ANCESTORS}`);
+  res.setHeader('Content-Security-Policy', `${CSP}; script-src 'self'`);
   // DNS rebinding protection
   if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'forbidden host' });
 
   if (req.method === 'GET' && url.pathname === '/') {
     // Read before sending headers so we can return 500 if it fails. Signed out, the page is the sign-in page
     const html = fs.readFileSync(path.join(__dirname, auth.user(req) ? 'index.html' : 'login.html'));
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': `${CSP}; script-src ${['\'self\'', scriptHashes(html)].join(' ').trim()}` });
     return res.end(html);
   }
   if (req.method === 'GET' && LOGIN_FILES[url.pathname]) {

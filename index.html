@@ -313,6 +313,8 @@
   /* Part where only the content is redrawn. No frame of its own; content sits directly in the sidebar */
   .pl-side-part { display: contents; }
   #plan .pl-side { overflow-y: auto; }
+  /* overflow-y: auto だと横にはみ出す .ms-pop が切れるので、サイドバーの幅に収める */
+  #plan .pl-side .ms-pop { min-width: 0; right: 0; }
   #plan .pl-list { flex: 1 1 120px; min-height: 120px; }
   /* Section dividers extend to the frame edges, and headings are stronger than item labels to show the hierarchy */
   .side-sec { border-top: 1px solid var(--border); margin: 6px -10px 0; padding: 12px 10px 0; }
@@ -670,7 +672,7 @@ const I18N = {
     's.uiLang': '画面の言語', 's.outLang': 'AI の出力言語', 's.outLang.title': 'AI が PR に書くコメント・返信や、ボードに出す指摘の言語', 's.authorLangs': 'PR 作成者ごとのコメント言語 (1 行 1 人)', 's.authorLangs.hint': '「login 言語」の形式 (言語は ja / ko / en)。他の人の PR に投稿するコメントだけに使い、書いていない人は出力言語',
     's.agreeIcon': '同意した意見のアイコン', 's.agreeIcon.title': '同意した指摘に理由を書いたとき、返信に添える自分の意見の頭に付けるアイコン',
     's.disagreeIcon': '同意しない意見のアイコン', 's.disagreeIcon.title': '同意しない指摘に理由を書いて投稿するとき、自分の意見の頭に付けるアイコン',
-    's.model': 'モデル', 's.model.title': '空なら claude の既定。サブエージェントも同じモデルで動きます', 's.claudeArgs': 'claude 追加引数', 's.readOnlyTools': '読み取り専用ツール', 's.readOnlyTools.help': 'レビュー・セルフレビュー・AI の対応計画は何も変更しない実行です。このときは追加引数の --permission-mode と --allowedTools を外し、ここに書いたツールだけを許可します (Write / Edit は禁止)。空にすると追加引数をそのまま使います。',
+    's.model': 'モデル', 's.model.title': '空なら claude の既定。サブエージェントも同じモデルで動きます', 's.claudeArgs': 'claude 追加引数', 's.skillEdits': '修正実行での .claude/skills の編集を許可', 's.skillEdits.title': 'オンにすると、修正実行が作業フォルダーの .claude/skills を確認なしで編集できます。PR のコメントに書かれた指示がスキルに残り、次の実行に影響することがあります', 's.readOnlyTools': '読み取り専用ツール', 's.readOnlyTools.help': 'レビュー・セルフレビュー・AI の対応計画は何も変更しない実行です。このときは追加引数の --permission-mode と --allowedTools を外し、ここに書いたツールだけを許可します (Write / Edit は禁止)。空にすると追加引数をそのまま使います。',
     's.mergedDays': 'マージ済み PR の表示日数', 's.doneKeep': '完了の表示日数', 's.doneKeep.title': '投稿・スキップした日からこの日数が過ぎると、レビュー依頼が外れた PR を完了から消します', 's.refresh': '画面の更新間隔 (秒)', 's.poll': 'GitHub の取得間隔 (分)',
     's.pollHours': 'GitHub を自動取得する時間帯 (時)', 's.pollHours.title': 'この時間帯の外では GitHub を自動取得しません (手動の更新は可)。開始と終了が同じなら終日',
     's.concurrent': '同時実行数',
@@ -762,7 +764,7 @@ const I18N = {
     's.uiLang': '화면 언어', 's.outLang': 'AI 출력 언어', 's.outLang.title': 'AI가 PR에 쓰는 코멘트·답글과 보드에 표시하는 리뷰 의견의 언어', 's.authorLangs': 'PR 작성자별 코멘트 언어 (한 줄에 한 명)', 's.authorLangs.hint': '「login 언어」 형식 (언어는 ja / ko / en). 다른 사람 PR에 투고하는 코멘트에만 쓰고, 적지 않은 사람은 출력 언어',
     's.agreeIcon': '동의 의견 아이콘', 's.agreeIcon.title': '동의한 의견에 이유를 썼을 때 답글에 덧붙이는 내 의견 앞에 붙이는 아이콘',
     's.disagreeIcon': '동의 안 함 의견 아이콘', 's.disagreeIcon.title': '동의하지 않은 의견에 이유를 써서 게시할 때 내 의견 앞에 붙이는 아이콘',
-    's.model': '모델', 's.model.title': '비우면 claude 기본값. 서브에이전트도 같은 모델로 동작합니다', 's.claudeArgs': 'claude 추가 인자', 's.readOnlyTools': '읽기 전용 도구', 's.readOnlyTools.help': '리뷰·셀프 리뷰·AI 대응 계획은 아무것도 바꾸지 않는 실행입니다. 이때는 추가 인자의 --permission-mode 와 --allowedTools 를 빼고, 여기에 쓴 도구만 허용합니다 (Write / Edit 는 금지). 비우면 추가 인자를 그대로 사용합니다.',
+    's.model': '모델', 's.model.title': '비우면 claude 기본값. 서브에이전트도 같은 모델로 동작합니다', 's.claudeArgs': 'claude 추가 인자', 's.skillEdits': '수정 실행에서 .claude/skills 편집 허용', 's.skillEdits.title': '켜면 수정 실행이 작업 폴더의 .claude/skills를 묻지 않고 편집할 수 있습니다. PR 코멘트에 적힌 지시가 스킬에 남아 다음 실행에 영향을 줄 수 있습니다', 's.readOnlyTools': '읽기 전용 도구', 's.readOnlyTools.help': '리뷰·셀프 리뷰·AI 대응 계획은 아무것도 바꾸지 않는 실행입니다. 이때는 추가 인자의 --permission-mode 와 --allowedTools 를 빼고, 여기에 쓴 도구만 허용합니다 (Write / Edit 는 금지). 비우면 추가 인자를 그대로 사용합니다.',
     's.mergedDays': '머지된 PR 표시 일수', 's.doneKeep': '완료 표시 일수', 's.doneKeep.title': '투고·스킵한 날부터 이 일수가 지나면, 리뷰 의뢰가 빠진 PR을 완료에서 지웁니다', 's.refresh': '화면 갱신 간격(초)', 's.poll': 'GitHub 가져오기 간격(분)',
     's.pollHours': 'GitHub 자동 가져오기 시간대(시)', 's.pollHours.title': '이 시간대 밖에서는 GitHub를 자동으로 가져오지 않습니다(수동 갱신은 가능). 시작과 끝이 같으면 하루 종일',
     's.concurrent': '동시 실행 수',
@@ -854,7 +856,7 @@ const I18N = {
     's.uiLang': 'Display language', 's.outLang': 'Output language', 's.outLang.title': 'Language the AI uses for PR comments, replies and the findings shown on the board', 's.authorLangs': 'Comment language per PR author (one per line)', 's.authorLangs.hint': 'Format: "login language" (ja / ko / en). Used only for comments posted on other people\'s PRs; anyone not listed gets the output language',
     's.agreeIcon': 'Agree icon', 's.agreeIcon.title': 'Icon placed before your own opinion in the reply when an agreed finding has a reason',
     's.disagreeIcon': 'Disagree icon', 's.disagreeIcon.title': 'Icon placed before your own opinion when a disagreed finding is posted with a reason',
-    's.model': 'Model', 's.model.title': "Empty uses claude's default. Subagents run on the same model", 's.claudeArgs': 'Extra claude args', 's.readOnlyTools': 'Read-only tools', 's.readOnlyTools.help': 'Review, self-review and AI plans must not change anything. For these runs --permission-mode and --allowedTools are removed from the extra args and only the tools listed here are allowed (Write / Edit are denied). Empty uses the extra args as they are.',
+    's.model': 'Model', 's.model.title': "Empty uses claude's default. Subagents run on the same model", 's.claudeArgs': 'Extra claude args', 's.skillEdits': 'Let fix runs edit .claude/skills', 's.skillEdits.title': 'When on, fix runs may edit .claude/skills in the working directory without asking. Instructions hidden in PR comments can then stay in a skill and affect later runs', 's.readOnlyTools': 'Read-only tools', 's.readOnlyTools.help': 'Review, self-review and AI plans must not change anything. For these runs --permission-mode and --allowedTools are removed from the extra args and only the tools listed here are allowed (Write / Edit are denied). Empty uses the extra args as they are.',
     's.mergedDays': 'Days to show merged PRs', 's.doneKeep': 'Days to show done PRs', 's.doneKeep.title': 'PRs no longer requesting your review leave Done this many days after you posted or skipped', 's.refresh': 'Screen refresh interval (s)', 's.poll': 'GitHub fetch interval (min)',
     's.pollHours': 'GitHub auto-fetch hours', 's.pollHours.title': "GitHub isn't fetched automatically outside these hours (manual refresh still works). Same start and end means all day",
     's.concurrent': 'Max concurrent runs',
@@ -1930,6 +1932,7 @@ async function openSettings() {
           <div class="form-row"><label>${tr('s.claudeArgs')}</label><input data-cfg="claudeArgs" value="${esc(cfg.claudeArgs)}"></div>
           <div class="form-row"><label>${tr('s.readOnlyTools')}</label><input data-cfg="readOnlyTools" value="${esc(cfg.readOnlyTools ?? '')}"></div>
           <p class="muted">${tr('s.readOnlyTools.help')}</p>
+          <div class="form-row"><label title="${esc(tr('s.skillEdits.title'))}"><input type="checkbox" data-cfg="skillEdits" ${cfg.skillEdits ? 'checked' : ''}> ${tr('s.skillEdits')}</label></div>
 ` : `
           <div class="form-row"><label>${tr('s.model')}</label><input data-cfg="codexModel" value="${esc(cfg.codexModel || '')}" placeholder="${esc(tr('defaultParen'))}"></div>
           <div class="form-row"><label>effort</label><select data-cfg="codexEffort">${['', 'low', 'medium', 'high', 'xhigh'].map((v) => `<option value="${v}" ${(cfg.codexEffort || '') === v ? 'selected' : ''}>${v || tr('defaultParen')}</option>`).join('')}</select></div>
@@ -1958,12 +1961,12 @@ async function openSettings() {
   const PANES = ['agent-run', 'agent-targets', 'agent-prompts', 'agent-claude', 'agent-codex', 'agent-roadmap', 'refresh', 'lang', 'theme', 'terms'];
   // Settings restored by "Reset all to defaults" (terms and UI language are handled separately)
   const PANE_KEYS = {
-    agent: ['workdir', 'provider', 'model', 'effort', 'claudeArgs', 'readOnlyTools', 'codexModel', 'codexEffort', 'codexArgs', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
+    agent: ['workdir', 'provider', 'model', 'effort', 'claudeArgs', 'readOnlyTools', 'skillEdits', 'codexModel', 'codexEffort', 'codexArgs', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
     'agent-run': ['provider', 'maxConcurrent', 'logKeepDays'],
     'agent-targets': ['workdir', 'repos', 'authors', 'mergedDays', 'doneKeepDays'],
     'agent-prompts': ['reviewPrompt', 'fixPrompt'],
     'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir'],
-    'agent-claude': ['model', 'effort', 'claudeArgs', 'readOnlyTools'],
+    'agent-claude': ['model', 'effort', 'claudeArgs', 'readOnlyTools', 'skillEdits'],
     'agent-codex': ['codexModel', 'codexEffort', 'codexArgs'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
     lang: ['outputLang', 'authorLangs', 'agreeIcon', 'disagreeIcon'],
@@ -2101,7 +2104,7 @@ async function openSettings() {
       // Pick only "login language" lines. Drop lines whose language is not ja / ko / en
       cfg.authorLangs = Object.fromEntries(t.value.split('\n').map((s) => s.trim().split(/\s+/)).filter(([a, l]) => a && LANGS[l]));
     } else if (t.dataset.cfg === 'authors' || t.dataset.cfg === 'projects') cfg[t.dataset.cfg] = t.value.split('\n').map((s) => s.trim()).filter(Boolean);
-    else if (t.dataset.cfg) cfg[t.dataset.cfg] = t.type === 'number' ? Number(t.value) : t.value;
+    else if (t.dataset.cfg) cfg[t.dataset.cfg] = t.type === 'number' ? Number(t.value) : t.type === 'checkbox' ? t.checked : t.value;
     if (t.dataset.cfg === 'logKeepDays') dlg.querySelector('[data-logs-clear="old"]').textContent = tr('logs.clearOld', { n: t.value });
     if (t.dataset.repo) {
       const mapping = cfg.repos[t.dataset.repo];
@@ -2126,7 +2129,7 @@ async function openSettings() {
         const data = JSON.parse(await file.text());
         const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
         // A shared file must not change what runs or where: agent args, tools and local folders stay as they are
-        const LOCAL = ['claudeArgs', 'codexArgs', 'readOnlyTools', 'workdir', 'plansDir'];
+        const LOCAL = ['claudeArgs', 'codexArgs', 'readOnlyTools', 'skillEdits', 'workdir', 'plansDir'];
         const imported = data.config && typeof data.config === 'object' ? data.config : {};
         skipped = Object.keys(imported).filter((k) => LOCAL.includes(k));
         for (const [k, v] of Object.entries(imported)) if (k in board.defaults && k !== 'consentVersion' && !LOCAL.includes(k) && kind(v) === kind(board.defaults[k])) cfg[k] = v;

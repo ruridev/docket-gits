@@ -1022,6 +1022,9 @@ test('claudeArgs: every run denies secrets; read-only runs also deny edits and g
   assert.deepEqual(denied(apply), ['WebFetch', ...ALWAYS_DENY]);
   for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)', 'Read(**/.env*)',
     'Bash(gh api * --hostname*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh secret*)', 'Bash(gh gist*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
+  // Read commands that write files, commands that run other programs, pushes elsewhere and branch deletion
+  for (const rule of ['Bash(git * --output*)', 'Bash(git * --exec*)', 'Bash(git submodule *)', 'Bash(git bisect *)', 'Bash(git remote add*)',
+    'Bash(git push *://*)', 'Bash(git push *@*)', 'Bash(git push * --delete*)', 'Bash(gh repo create*)', 'Bash(gh release*)', 'Bash(gh workflow*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
   // The data folder (session secret, logs) is denied by absolute path: Read(//abs/path/**)
   assert.ok(ALWAYS_DENY.some((r) => /^Read\(\/\/.+\/\*\*\)$/.test(r)));
 
@@ -1032,6 +1035,8 @@ test('claudeArgs: every run denies secrets; read-only runs also deny edits and g
   assert.deepEqual(postArgs.slice(0, 4), ['--model', 'x', '--allowedTools', tool]);
   const post = denied(postArgs);
   assert.ok(['Write', 'Edit', 'NotebookEdit', ...ALWAYS_DENY].every((r) => post.includes(r)));
+  for (const rule of ['Bash(gh api * -X DELETE*)', 'Bash(gh api * --method PUT*)', 'Bash(gh api * --input /*)', 'Bash(gh api * --input ~*)', 'Bash(gh api * -F *=@*)']) assert.ok(post.includes(rule), rule);
+  assert.ok(!post.includes('Bash(gh api * --input*)'), 'posts may still send a JSON body on stdin');
 
   const read = claudeArgs(cfg, 'read');
   assert.deepEqual(read.slice(0, 4), ['--model', 'x', '--allowedTools', 'Read,Bash(git log:*)']);
@@ -1115,9 +1120,19 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
     assert.equal(fs.statSync(path.join(data, 'config.json')).mode & 0o777, 0o600);
     const page = await fetch(`http://localhost:${port}/`);
     assert.equal(page.status, 200);
-    assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'self' http://localhost:4600 http://127.0.0.1:4600");
+    const csp = page.headers.get('content-security-policy');
+    assert.match(csp, /frame-ancestors 'self' http:\/\/localhost:4600 http:\/\/127\.0\.0\.1:4600/);
+    assert.match(csp, /script-src 'self'$/);
+    assert.match(csp, /object-src 'none'/);
     assert.equal(page.headers.get('x-frame-options'), null);
-    assert.equal((await call('/api/logs')).headers.get('content-security-policy')?.startsWith('frame-ancestors'), true);
+    assert.match((await call('/api/logs')).headers.get('content-security-policy'), /frame-ancestors/);
+    // Signed in, the app's inline scripts are allowed by hash and nothing else inline is
+    const app = await call('/');
+    const html = await app.text();
+    const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${require('node:crypto').createHash('sha256').update(m[1]).digest('base64')}'`);
+    assert.ok(hashes.length > 0);
+    assert.ok(app.headers.get('content-security-policy').endsWith(`script-src 'self' ${hashes.join(' ')}`));
+    assert.doesNotMatch(app.headers.get('content-security-policy'), /unsafe-inline'[^;]*;\s*script|script-src[^;]*unsafe/);
   } finally {
     child.kill();
   }
