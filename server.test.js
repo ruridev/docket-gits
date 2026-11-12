@@ -259,7 +259,30 @@ test('pathSettings: passes the server PATH via --settings so env.PATH in user se
 
 test('childEnv: drops env vars of the parent Claude Code session, keeps the rest', () => {
   const env = childEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'x', CLAUDE_PID: '1', CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
-  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h' });
+  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/bin', HOME: '/h',
+    GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/dev/null' });
+});
+
+test('childEnv: turns git hooks off after config the parent already passes on', () => {
+  const env = childEnv({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'user.name', GIT_CONFIG_VALUE_0: 'a' });
+  assert.equal(env.GIT_CONFIG_COUNT, '2');
+  assert.equal(env.GIT_CONFIG_KEY_0, 'user.name');
+  assert.equal(env.GIT_CONFIG_KEY_1, 'core.hooksPath');
+  assert.equal(env.GIT_CONFIG_VALUE_1, '/dev/null');
+});
+
+test('childEnv: git really skips hooks with that env', () => {
+  const { execFileSync } = require('node:child_process');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-hooks-'));
+  const git = (...a) => execFileSync('git', a, { cwd: dir, env: childEnv({ ...process.env, GIT_AUTHOR_NAME: 'a', GIT_AUTHOR_EMAIL: 'a@a', GIT_COMMITTER_NAME: 'a', GIT_COMMITTER_EMAIL: 'a@a' }), stdio: 'pipe' });
+  git('init', '-q');
+  fs.mkdirSync(path.join(dir, '.husky'));
+  fs.writeFileSync(path.join(dir, '.husky', 'pre-commit'), '#!/bin/sh\ntouch ran\n', { mode: 0o755 });
+  git('config', 'core.hooksPath', '.husky');
+  git('commit', '-q', '--allow-empty', '-m', 'x');
+  assert.ok(!fs.existsSync(path.join(dir, 'ran')));
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('searchQueries: limits merged PRs to the given days, skips them at 0 days', () => {
@@ -1021,7 +1044,10 @@ test('claudeArgs: every run denies secrets; read-only runs also deny edits and g
   const apply = claudeArgs(cfg);
   assert.deepEqual(apply.slice(0, -2), kept);
   assert.equal(apply.filter((a) => a === '--disallowedTools').length, 1);
-  assert.deepEqual(denied(apply), ['WebFetch', ...ALWAYS_DENY]);
+  assert.deepEqual(denied(apply), ['WebFetch', 'Bash(gh pr review *--approve*)', 'Bash(gh pr review -a*)', 'Bash(gh pr review * -a*)', 'Bash(gh api *APPROVE*)', ...ALWAYS_DENY]);
+  // Pushes to the default branch, gh api access settings and PUT / DELETE, and other credential files
+  for (const rule of ['Bash(git push * main)', 'Bash(git push *:main*)', 'Bash(git push * master)', 'Bash(gh api *collaborators*)', 'Bash(gh api */hooks*)', 'Bash(gh api */keys*)',
+    'Bash(gh api * -X DELETE*)', 'Bash(gh api * --method=PUT*)', 'Bash(gh issue delete*)', 'Read(~/.git-credentials)', 'Read(~/.codex/**)', 'Read(~/.npmrc)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
   for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)', 'Read(**/.env*)',
     'Bash(gh api * --hostname*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh secret*)', 'Bash(gh gist*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
   // Read commands that write files, commands that run other programs, pushes elsewhere and branch deletion
@@ -1037,6 +1063,7 @@ test('claudeArgs: every run denies secrets; read-only runs also deny edits and g
   assert.deepEqual(postArgs.slice(0, 4), ['--model', 'x', '--allowedTools', tool]);
   const post = denied(postArgs);
   assert.ok(['Write', 'Edit', 'NotebookEdit', ...ALWAYS_DENY].every((r) => post.includes(r)));
+  assert.ok(!post.includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
   for (const rule of ['Bash(gh api * -X DELETE*)', 'Bash(gh api * --method PUT*)', 'Bash(gh api * --input /*)', 'Bash(gh api * --input ~*)', 'Bash(gh api * -F *=@*)']) assert.ok(post.includes(rule), rule);
   assert.ok(!post.includes('Bash(gh api * --input*)'), 'posts may still send a JSON body on stdin');
 
@@ -1201,6 +1228,11 @@ test('claudeArgs: {owner-name} and the other PR placeholders in the tool lists a
 test('default tools: gh api is limited to the PR owner\'s repositories and no run allows every gh command', () => {
   const { DEFAULT_CONFIG } = require('./server');
   assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(gh:*)'));
+  // jq and ls take any path, so they could read credential files the Read denies cover
+  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(jq:*)'));
+  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(ls:*)'));
+  // Fetches all day unless the user picks hours
+  assert.equal(DEFAULT_CONFIG.pollStartHour, DEFAULT_CONFIG.pollEndHour);
   assert.ok(!DEFAULT_CONFIG.readOnlyTools.includes('Bash(gh api:*)'));
   assert.ok(DEFAULT_CONFIG.claudeArgs.includes('Bash(gh api repos/{owner-name}/*)'));
   // The list has spaces, so it must stay one argument

@@ -25,7 +25,7 @@ const DEFAULT_CONFIG = {
   codexModel: '',
   codexEffort: '',
   codexArgs: '--approve-for-me',
-  claudeArgs: '--permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Write,Edit,Agent,Bash(gh pr:*),Bash(gh issue:*),Bash(gh api repos/{owner-name}/*),Bash(git:*),Bash(jq:*),Bash(mkdir:*),Bash(ls:*)"',
+  claudeArgs: '--permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Write,Edit,Agent,Bash(gh pr:*),Bash(gh issue:*),Bash(gh api repos/{owner-name}/*),Bash(git:*),Bash(mkdir:*)"',
   // Tools for runs that must not change anything (review, self-review, fix plan). Empty = use claudeArgs as is
   // In both, {owner-name}, {full-repo-name}, {pr-number} etc. are filled with the run's pull request
   // Fix runs may edit <working directory>/.claude/skills without asking (off: those edits are denied)
@@ -36,8 +36,8 @@ const DEFAULT_CONFIG = {
   effort: '',
   pollMinutes: 5,
   // Fetch from GitHub automatically only during these hours (start <= hour < end). Same value = all day
-  pollStartHour: 9,
-  pollEndHour: 19,
+  pollStartHour: 0,
+  pollEndHour: 0,
   // How often the browser refetches /api/board
   refreshSeconds: 5,
   // How many days to keep showing merged PRs that still have my review request (0 hides them)
@@ -667,7 +667,11 @@ function extractTagJson(text, tag) {
 // When the server is started inside a Claude Code session, inheriting the parent's env vars
 // gets claude rejected as nested, so strip them (keep CLAUDE_CONFIG_DIR and Bedrock / Vertex endpoints; they are user settings)
 function childEnv(env) {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_USE_')));
+  const out = Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('CLAUDE') || k === 'CLAUDE_CONFIG_DIR' || k.startsWith('CLAUDE_CODE_USE_')));
+  // No git hooks in agent runs: a fix run could write a hook script (e.g. .husky/pre-commit) and then commit to run it.
+  // Command-line level config (GIT_CONFIG_COUNT) wins over the repository's core.hooksPath
+  const n = Number(out.GIT_CONFIG_COUNT) || 0;
+  return { ...out, GIT_CONFIG_COUNT: String(n + 1), [`GIT_CONFIG_KEY_${n}`]: 'core.hooksPath', [`GIT_CONFIG_VALUE_${n}`]: '/dev/null' };
 }
 
 // env.PATH in ~/.claude/settings.json replaces the server's whole PATH, losing pnpm/node and breaking pre-commit hooks, so override it with --settings
@@ -726,13 +730,23 @@ const ALWAYS_DENY = ['Bash(gh auth *)', 'Bash(gh alias *)', 'Bash(gh extension *
   'Bash(git push *://*)', 'Bash(git push *@*)', 'Bash(git push * --delete*)', 'Bash(git push * -d *)',
   'Bash(git push --delete*)', 'Bash(git push -d *)', 'Bash(git push --mirror*)', 'Bash(git push * --mirror*)', 'Bash(git push --all*)', 'Bash(git push * --all*)',
   'Bash(git push --prune*)', 'Bash(git push * --prune*)',
+  // The default branch: fixes go to the pull request branch or a new one
+  'Bash(git push * main)', 'Bash(git push * main *)', 'Bash(git push * master)', 'Bash(git push * master *)',
+  'Bash(git push *:main*)', 'Bash(git push *:master*)', 'Bash(git push *:refs/heads/main*)', 'Bash(git push *:refs/heads/master*)',
+  // gh api under the owner's repositories: no access settings, webhooks, deploy keys or invitations, and no PUT / DELETE
+  'Bash(gh api *collaborators*)', 'Bash(gh api */hooks*)', 'Bash(gh api */keys*)', 'Bash(gh api *invitations*)', 'Bash(gh api */protection*)',
+  ...['-X DELETE', '-XDELETE', '--method DELETE', '--method=DELETE', '-X PUT', '-XPUT', '--method PUT', '--method=PUT'].map((f) => `Bash(gh api * ${f}*)`),
+  'Bash(gh issue delete*)', 'Bash(gh issue transfer*)',
   'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh repo edit*)', 'Bash(gh repo create*)', 'Bash(gh repo fork*)', 'Bash(gh repo archive*)', 'Bash(gh repo rename*)',
   'Bash(gh secret*)', 'Bash(gh variable*)', 'Bash(gh gist*)', 'Bash(gh release*)', 'Bash(gh workflow*)', 'Bash(gh run rerun*)', 'Bash(gh run cancel*)', 'Bash(gh run delete*)', 'Bash(gh ruleset*)',
   'Read(~/.ssh/**)', 'Read(~/.aws/**)', 'Read(~/.config/gh/**)', 'Read(~/.netrc)', `Read(/${DATA_DIR}/**)`, 'Read(**/.env*)',
+  'Read(~/.git-credentials)', 'Read(~/.claude/.credentials.json)', 'Read(~/.codex/**)', 'Read(~/.npmrc)', 'Read(~/.docker/**)', 'Read(~/.kube/**)', 'Read(~/.gnupg/**)',
   // Hooks and config under .git run code on the next git command
   // (Edit rules cover every file-editing tool)
   'Edit(**/.git/**)'];
 const FILE_EDITS = ['Write', 'Edit', 'NotebookEdit'];
+// Fix runs read comments anyone can write: they must not approve pull requests (post runs may, when the user chose to)
+const APPLY_DENY = ['Bash(gh pr review *--approve*)', 'Bash(gh pr review -a*)', 'Bash(gh pr review * -a*)', 'Bash(gh api *APPROVE*)'];
 // gh api sends POST / PATCH / DELETE with any of these flags, so read-only runs refuse them
 const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '--input'].flatMap((f) => [`Bash(gh api ${f}*)`, `Bash(gh api * ${f}*)`]);
 // Post runs need POST with a JSON body, but not other methods or a body read from a local file
@@ -753,7 +767,7 @@ function claudeArgs(cfg, mode = 'apply', postOnly = '', pr = null) {
   if (tools) {
     args = [...dropFlags(args, { '--permission-mode': 1, '--allowedTools': many, '--allowed-tools': many, '--dangerously-skip-permissions': 0 }), '--allowedTools', tools];
   }
-  const deny = [...own, ...(mode === 'apply' ? [] : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
+  const deny = [...own, ...(mode === 'apply' ? APPLY_DENY : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
   return [...args, '--disallowedTools', deny.filter(Boolean).join(',')];
 }
 
