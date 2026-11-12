@@ -7,11 +7,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
-// Creates the account on a fresh server and returns the API headers with its session.
-async function signUp(port) {
-  const res = await fetch(`http://localhost:${port}/api/auth/setup`, { method: 'POST', headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'alice', password: 'correct horse' }) });
+// Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
+// the session cookie and its token.
+async function signUp(port, data) {
+  const code = fs.readFileSync(path.join(data, 'setup-code'), 'utf8').trim();
+  const res = await fetch(`http://localhost:${port}/api/auth/setup`, { method: 'POST', headers: { 'X-Docket': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'alice', password: 'correct horse', code }) });
   assert.equal(res.status, 200);
-  return { 'X-Docket': '1', Cookie: res.headers.get('set-cookie').split(';')[0] };
+  return { 'X-Docket': (await res.json()).token, Cookie: res.headers.get('set-cookie').split(';')[0] };
 }
 
 const node = (number, repo = 'acme/api') => ({
@@ -875,7 +877,7 @@ test('GET /: returns 500 when index.html cannot be read, and the server stays up
       child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve());
       child.on('exit', (code) => reject(new Error(`server exited: ${code}`)));
     });
-    const headers = await signUp(port);
+    const headers = await signUp(port, path.join(dir, 'data'));
     const get = (p) => fetch(`http://localhost:${port}${p}`, { headers }).then((r) => r.status);
     assert.equal(await get('/'), 500);
     assert.equal(await get('/api/logs'), 200);
@@ -932,7 +934,7 @@ test('GitHub fetch: on a permission error for some nodes (gh exits with failure)
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
   try {
     await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve()));
-    const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: await signUp(port) }).then((r) => r.json());
+    const board = await fetch(`http://localhost:${port}/api/board?refresh=1`, { headers: await signUp(port, path.join(dir, 'data')) }).then((r) => r.json());
     assert.deepEqual(board.prs.map((p) => p.key), ['acme/api#1']);
     assert.match(board.fetchError, /SAML/);
   } finally {
@@ -1101,7 +1103,7 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
     assert.equal(fs.statSync(data).mode & 0o777, 0o700);
     assert.equal((await fetch(`http://localhost:${port}/api/logs`, { headers: { 'X-Docket': '1' } })).status, 401);
     assert.match(await (await fetch(`http://localhost:${port}/`)).text(), /login\.js/);
-    const session = await signUp(port);
+    const session = await signUp(port, data);
     const call = (p, body, headers = session) => fetch(`http://localhost:${port}${p}`, { method: body ? 'POST' : 'GET', headers, body: body && JSON.stringify(body) });
     assert.equal((await call('/api/logs', undefined, {})).status, 403);
     assert.equal((await call('/api/logs', undefined, { 'X-Docket': '1', Cookie: 'docket_gits_session=YWxpY2U.9999999999999.forged' })).status, 401);

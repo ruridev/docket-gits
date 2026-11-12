@@ -14,7 +14,7 @@ const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
-const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session' });
+const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session', header: 'x-docket' });
 // The docket portal embeds this app in an iframe. X-Frame-Options can't allow-list, so use CSP only
 const FRAME_ANCESTORS = process.env.DOCKET_FRAME_ANCESTORS || "'self' http://localhost:4600 http://127.0.0.1:4600";
 
@@ -2293,11 +2293,11 @@ async function handle(req, res) {
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
   // CSRF protection from other sites (custom headers need a preflight, which fails since CORS isn't allowed)
-  if (req.headers['x-docket'] !== '1') return send(res, 403, { error: 'missing header' });
+  if (!req.headers['x-docket']) return send(res, 403, { error: 'missing header' });
   // Every other API call needs the owner's session (see auth.js)
   const signIn = await auth.route(req, res, url.pathname, () => readBody(req));
   if (signIn) return send(res, signIn.status, signIn.body);
-  if (!auth.user(req)) return send(res, 401, { error: 'signin' });
+  if (!auth.apiUser(req)) return send(res, 401, { error: 'signin' });
 
   if (req.method === 'GET' && url.pathname === '/api/board') {
     const now = Date.now();
@@ -2491,11 +2491,16 @@ function main() {
   http
     // If it threw after sending, calling writeHead again would crash the server with an unhandled rejection
     .createServer((req, res) => handle(req, res).catch((e) => (res.headersSent ? res.end() : e.status ? send(res, e.status, { error: e.message }) : (console.error(e), send(res, 500, { error: 'Internal error' })))))
-    .listen(PORT, '127.0.0.1', () => console.log(`docket-gits: http://localhost:${PORT}`));
+    .listen(PORT, '127.0.0.1', () => {
+      // Make the setup code before announcing the server, so it exists once the address is printed
+      const code = !auth.hasAccount() && auth.setupCode();
+      console.log(`docket-gits: http://localhost:${PORT}`);
+      if (code) console.log(`Create the account: http://localhost:${PORT}/?setup=${code}`);
+    });
 }
 
 if (require.main === module && process.argv.includes('--reset-password')) {
-  console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
+  console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
 module.exports = { repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
