@@ -992,12 +992,13 @@ async function cached(key, refresh, fn) {
 
 const filterQuery = (field, title) => `${JSON.stringify(field)}:${JSON.stringify(title)}`;
 
+// v2: the cached value carries the filterable field list (older entries lack it)
 async function projectMeta(url, refresh) {
   const p = parseProjectUrl(url);
   if (!p) throw E('projectUrlInvalid', { url });
   const range = { past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) };
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  return cached(`meta:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
+  return cached(`meta:v2:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
     const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title url fields(first: 50) { nodes {
       ... on ProjectV2FieldCommon { name dataType }
       ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
@@ -1337,7 +1338,7 @@ async function planLive(url, file, refresh) {
   if (!nodes.length) return { issues: {}, fetchedAt: null };
   const keys = nodes.map((n) => fullKey(plan, n)).sort();
   let pulled = null;
-  const live = await cached(`plan-live:${url}:${keys.join(',')}`, refresh, async () => {
+  const live = await cached(`plan-live:v2:${url}:${keys.join(',')}`, refresh, async () => {
     const { meta, issues, failed } = await remoteIssues(url, plan, nodes);
     pulled = await pullPlan(url, file, meta, issues);
     // Don't cache if anything was unreadable (cached checks partial and skips saving)
@@ -1359,7 +1360,7 @@ async function saveFieldChoice(url, body) {
   config = { ...config, projectFields: { ...config.projectFields, [url]: choice } };
   writeJson(CONFIG_FILE, config);
   unsyncFields(url, ['sprint', 'start', 'end'].filter((k) => (before[k] || null) !== choice[k]));
-  for (const prefix of [`meta:${url}:`, `plan-fields:v2:${url}`, `plan-live:${url}:`]) dropCached(prefix);
+  for (const prefix of [`meta:v2:${url}:`, `plan-fields:v2:${url}`, `plan-live:v2:${url}:`]) dropCached(prefix);
 }
 
 // A newly linked field has no synced value yet: clear it from the last-synced snapshots, so plan values show as
@@ -1553,7 +1554,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     committed = git(cwd, ['add', '--', name]) !== null && git(cwd, ['commit', '-q', '-m', `Apply plan "${plan.title || name}" to GitHub`, '--', name]) !== null;
   }
   // Drop the cache so stale values don't revert what was just applied
-  dropCached(`plan-live:${url}:`);
+  dropCached(`plan-live:v2:${url}:`);
   return { created, updated, committed, warnings, doc: planDoc(url, file) };
 }
 
