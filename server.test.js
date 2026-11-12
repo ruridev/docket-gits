@@ -1120,3 +1120,16 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
     child.kill();
   }
 });
+
+test('normalizePr: keeps what the board filters need, and tolerates PRs fetched before those fields existed', () => {
+  const { normalizePr } = require('./server');
+  const full = normalizePr({
+    ...node(1), additions: 40, deletions: 70, mergeable: 'CONFLICTING', milestone: { title: 'v2' },
+    assignees: { nodes: [{ login: 'bob' }] }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'ERROR' } } }] },
+  });
+  assert.deepEqual([full.size, full.conflict, full.milestone, full.assignees, full.ci], [110, true, 'v2', ['bob'], 'failure']);
+  const ci = (state) => normalizePr({ ...node(1), commits: { nodes: [{ commit: { statusCheckRollup: state && { state } } }] } }).ci;
+  assert.deepEqual(['SUCCESS', 'FAILURE', 'PENDING', 'EXPECTED', null].map(ci), ['success', 'failure', 'pending', 'pending', null]);
+  const old = normalizePr(node(2));
+  assert.deepEqual([old.size, old.conflict, old.milestone, old.assignees, old.ci], [0, false, null, [], null]);
+});

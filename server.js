@@ -169,8 +169,11 @@ const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boole
   } } }
 }
 fragment pr on PullRequest {
-      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName
+      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName additions deletions mergeable
       repository { nameWithOwner }
+      milestone { title }
+      assignees(first: 10) { nodes { login } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       author { login avatarUrl }
       labels(first: 10) { nodes { name color } }
       closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
@@ -227,7 +230,19 @@ function normalizePr(node) {
     issues: node.closingIssuesReferences.nodes.map((i) => ({ ...i, repo: i.repository.nameWithOwner })),
     reviews: node.latestReviews.nodes.map((r) => ({ state: r.state, login: r.author?.login, avatarUrl: r.author?.avatarUrl })),
     requested: node.reviewRequests.nodes.map((r) => r.requestedReviewer).filter((r) => r && r.login),
+    // For the board filters (older cached PRs may lack these)
+    size: (node.additions || 0) + (node.deletions || 0),
+    conflict: node.mergeable === 'CONFLICTING',
+    milestone: node.milestone?.title || null,
+    assignees: (node.assignees?.nodes || []).map((a) => a.login),
+    ci: ciState(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state),
   };
+}
+
+// Combined check state of the head commit: success / failure / pending, or null without checks
+function ciState(state) {
+  if (!state) return null;
+  return state === 'SUCCESS' ? 'success' : ['FAILURE', 'ERROR'].includes(state) ? 'failure' : 'pending';
 }
 
 // Threads I started: unresolved with my comment last = waiting on the author, otherwise = addressed
@@ -2399,4 +2414,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { normalizePr, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
