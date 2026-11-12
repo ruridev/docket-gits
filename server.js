@@ -779,18 +779,25 @@ function dropFlags(args, takes, drop = () => true) {
 // NOTE: deny rules match the command text Claude writes (not `sh -c ...` or a full path), so they narrow, not seal
 const ALWAYS_DENY = ['Bash(gh auth *)', 'Bash(gh alias *)', 'Bash(gh extension *)', 'Bash(gh config *)', 'Bash(git config *)', 'Bash(git credential *)', 'Bash(git -c *)',
   'Bash(gh api --hostname*)', 'Bash(gh api * --hostname*)', 'Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)',
-  'Bash(git * --output*)', 'Bash(git * --exec*)', 'Bash(git rebase * -x*)', 'Bash(git submodule *)', 'Bash(git bisect *)', 'Bash(git filter-branch*)',
+  'Bash(git * --output*)', 'Bash(git * --exe*)', 'Bash(git rebase * -x*)', 'Bash(git submodule *)', 'Bash(git bisect *)', 'Bash(git filter-branch*)',
   'Bash(git difftool*)', 'Bash(git mergetool*)', 'Bash(git remote add*)', 'Bash(git remote set-url*)',
+  // Options that run a program on the remote side (git also takes them abbreviated: --upl, --rece, --exe),
+  // config set another way, and commands that start programs or schedule jobs
+  'Bash(git * --upl*)', 'Bash(git * --rece*)', 'Bash(git --config-env*)', 'Bash(git * --config-env*)', 'Bash(git -C * -c *)',
+  'Bash(git clone*)', 'Bash(git ls-remote*)', 'Bash(git grep*)', 'Bash(git maintenance*)', 'Bash(git instaweb*)',
   'Bash(git push --force*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(git push * -f*)', 'Bash(git push * +*)',
   'Bash(git push *://*)', 'Bash(git push *@*)', 'Bash(git push * --delete*)', 'Bash(git push * -d *)',
   'Bash(git push --delete*)', 'Bash(git push -d *)', 'Bash(git push --mirror*)', 'Bash(git push * --mirror*)', 'Bash(git push --all*)', 'Bash(git push * --all*)',
   'Bash(git push --prune*)', 'Bash(git push * --prune*)',
+  // Deleting with an empty source (git push origin :branch). Not ":*" at the end: Claude reads that as a prefix rule
+  'Bash(git push * :**)',
   // The default branch: fixes go to the pull request branch or a new one
   'Bash(git push * main)', 'Bash(git push * main *)', 'Bash(git push * master)', 'Bash(git push * master *)',
   'Bash(git push *:main*)', 'Bash(git push *:master*)', 'Bash(git push *:refs/heads/main*)', 'Bash(git push *:refs/heads/master*)',
-  // gh api under the owner's repositories: no access settings, webhooks, deploy keys or invitations, and no PUT / DELETE
-  'Bash(gh api *collaborators*)', 'Bash(gh api */hooks*)', 'Bash(gh api */keys*)', 'Bash(gh api *invitations*)', 'Bash(gh api */protection*)',
-  ...['-X DELETE', '-XDELETE', '--method DELETE', '--method=DELETE', '-X PUT', '-XPUT', '--method PUT', '--method=PUT'].map((f) => `Bash(gh api * ${f}*)`),
+  // gh api under the owner's repositories: no access settings, webhooks, deploy keys, invitations or workflow dispatches,
+  // and no PUT / PATCH / DELETE (PATCH changes repository settings, for example private=false)
+  'Bash(gh api *collaborators*)', 'Bash(gh api */hooks*)', 'Bash(gh api */keys*)', 'Bash(gh api *invitations*)', 'Bash(gh api */protection*)', 'Bash(gh api */dispatches*)',
+  ...['DELETE', 'PUT', 'PATCH'].flatMap((m) => [`-X ${m}`, `-X${m}`, `--method ${m}`, `--method=${m}`]).flatMap((f) => [`Bash(gh api ${f}*)`, `Bash(gh api * ${f}*)`]),
   'Bash(gh issue delete*)', 'Bash(gh issue transfer*)',
   'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh repo edit*)', 'Bash(gh repo create*)', 'Bash(gh repo fork*)', 'Bash(gh repo archive*)', 'Bash(gh repo rename*)',
   'Bash(gh secret*)', 'Bash(gh variable*)', 'Bash(gh gist*)', 'Bash(gh release*)', 'Bash(gh workflow*)', 'Bash(gh run rerun*)', 'Bash(gh run cancel*)', 'Bash(gh run delete*)', 'Bash(gh ruleset*)',

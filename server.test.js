@@ -1244,6 +1244,53 @@ test('settings: claude args and read-only tools can no longer be saved', () => {
   assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
 });
 
+// Mirrors how Claude matches a Bash rule: a rule ending in ":*" is a prefix, every other "*" matches anything
+const ruleMatches = (rule, cmd) => {
+  const m = /^Bash\((.*)\)$/.exec(rule);
+  if (!m) return false;
+  if (m[1].endsWith(':*')) { const p = m[1].slice(0, -2); return cmd === p || cmd.startsWith(`${p} `); }
+  let re = m[1].split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  if (re.endsWith(' .*') && m[1].split('*').length === 2) re = `${re.slice(0, -3)}( .*)?`; // "git status *" also matches "git status"
+  return new RegExp(`^${re}$`, 's').test(cmd);
+};
+const rulesOf = (args, flag) => args[args.indexOf(flag) + 1].split(',');
+const permits = (args, cmd) => rulesOf(args, '--allowedTools').some((r) => ruleMatches(r, cmd)) && !rulesOf(args, '--disallowedTools').some((r) => ruleMatches(r, cmd));
+
+test('claudeArgs: the commands each run needs still pass, and the ones that escape the fence do not', () => {
+  const { claudeArgs } = require('./server');
+  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
+  const apply = claudeArgs('apply', '', pr);
+  const read = claudeArgs('read', '', pr);
+  const post = claudeArgs('post', postTools(pr), pr);
+  const ok = {
+    apply: ['git status', 'git diff', 'git diff --unified=0 HEAD', 'git log --oneline -5', 'git add -A', 'git commit -m "Fix the null check"',
+      'git fetch origin', 'git fetch origin main', 'git checkout -b fix-null', 'git switch feature-x', 'git rebase origin/main', 'git merge origin/main',
+      'git push', 'git push origin feature-x', 'git push -u origin fix/null', 'git push origin HEAD:feature-x', 'git rev-parse HEAD',
+      'gh pr view 5', 'gh pr diff 5', 'gh pr comment https://github.com/acme/api/pull/5 --body "Fixed in abc123"', 'gh pr checks 5',
+      'gh api repos/acme/api/pulls/5/comments', 'gh api repos/acme/api/pulls/5/comments --paginate --jq .[]', 'gh api repos/acme/api/pulls/5/comments/9/replies -f body="Fixed in abc123"',
+      'gh api repos/acme/api/actions/runs/1/jobs', 'mkdir -p tmp'],
+    read: ['gh pr view 5', 'gh pr diff 5', 'gh pr checks 5', 'git log --oneline -5', 'git diff main...HEAD', 'git show HEAD', 'git status',
+      'gh api repos/acme/api/pulls/5/comments', 'gh api repos/acme/api/contents/README.md'],
+    post: ['gh api repos/acme/api/pulls/5/reviews', 'gh api repos/acme/api/pulls/5/reviews -X POST --input -', 'gh api -X POST repos/acme/api/pulls/5/reviews -f event=APPROVE -f body=LGTM',
+      'gh api --method POST repos/acme/api/pulls/5/reviews -f event=COMMENT'],
+  };
+  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of ok[mode]) assert.ok(permits(args, cmd), `${mode} should allow: ${cmd}`);
+  // Every gh / git command a fix run's prompt tells the agent to run must pass the fix run's rules
+  const { applyRun } = require('./server');
+  const { prompt } = applyRun({ pr: { ...pr, author: { login: 'alice' } }, mode: 'fix', findings: [], cwd: '/tmp/api' }, {});
+  const told = [...prompt.matchAll(/`((?:gh|git) [^`]+)`/g)].map((m) => m[1]).filter((c) => c.split(' ').length > 2); // skip bare mentions such as `gh api`
+  assert.ok(told.some((c) => c.includes('--paginate')), 'the prompt has the retry queries');
+  for (const cmd of told) assert.ok(permits(apply, cmd), `fix prompt command should pass: ${cmd}`);
+
+  const bad = ["git fetch --upload-pack='sh -c x' origin", 'git fetch origin --upl=x', 'git pull --upload-pack=x origin main', "git push --receive-pack='sh -c x' origin",
+    'git push --rece=x origin', 'git rebase --exe x main', 'git ls-remote -u x origin', 'git clone -u x https://github.com/acme/api', 'git grep -Ox foo', 'git grep -nOx foo',
+    'git grep --open-files-in-pager=x foo', 'git --config-env=core.sshCommand=X fetch', 'git -C . -c core.sshCommand=x fetch', 'git maintenance start', 'git instaweb --httpd=x',
+    'git push origin :feature-x', 'git push origin :refs/heads/feature-x', 'gh api repos/acme/api -X PATCH -f private=false', 'gh api repos/acme/api --method=PATCH -f archived=true',
+    'gh api -X PATCH repos/acme/api -f default_branch=x', 'gh api -X DELETE repos/acme/api/git/refs/heads/x', 'gh api repos/acme/api/dispatches -f event_type=x',
+    'gh api repos/acme/api/actions/workflows/ci.yml/dispatches -f ref=main', 'git push --force origin x', 'git push origin main', 'gh pr merge 5'];
+  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of bad) assert.ok(!permits(args, cmd), `${mode} should block: ${cmd}`);
+});
+
 test('postTools: the reviews endpoint is allowed whether the method flag comes before or after the path', () => {
   const rules = postTools({ repo: 'o/r', number: 7 }).split(',');
   for (const r of ['Bash(gh api repos/o/r/pulls/7/reviews*)', 'Bash(gh api -X POST repos/o/r/pulls/7/reviews*)', 'Bash(gh api --method POST repos/o/r/pulls/7/reviews*)']) assert.ok(rules.includes(r), r);
