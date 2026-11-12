@@ -1035,49 +1035,6 @@ test('permissionArgs: passes permission-mcp.js to claude as the permission promp
   assert.deepEqual(args.slice(2), ['--permission-prompt-tool', 'mcp__docket__approve']);
 });
 
-test('claudeArgs: every run denies secrets; read-only runs also deny edits and gh api writes; posts deny edits', () => {
-  const { claudeArgs, ALWAYS_DENY } = require('./server');
-  const cfg = { claudeArgs: '--permission-mode acceptEdits --allowedTools Read,Write Bash(gh:*) --model x --allowedTools=Edit --dangerously-skip-permissions --disallowedTools WebFetch', readOnlyTools: 'Read,Bash(git log:*)' };
-  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
-  const kept = ['--permission-mode', 'acceptEdits', '--allowedTools', 'Read,Write', 'Bash(gh:*)', '--model', 'x', '--allowedTools=Edit', '--dangerously-skip-permissions'];
-
-  const apply = claudeArgs(cfg);
-  assert.deepEqual(apply.slice(0, -2), kept);
-  assert.equal(apply.filter((a) => a === '--disallowedTools').length, 1);
-  assert.deepEqual(denied(apply), ['WebFetch', 'Bash(gh pr review *--approve*)', 'Bash(gh pr review -a*)', 'Bash(gh pr review * -a*)', 'Bash(gh api *APPROVE*)', ...ALWAYS_DENY]);
-  // Pushes to the default branch, gh api access settings and PUT / DELETE, and other credential files
-  for (const rule of ['Bash(git push * main)', 'Bash(git push *:main*)', 'Bash(git push * master)', 'Bash(gh api *collaborators*)', 'Bash(gh api */hooks*)', 'Bash(gh api */keys*)',
-    'Bash(gh api * -X DELETE*)', 'Bash(gh api * --method=PUT*)', 'Bash(gh issue delete*)', 'Read(~/.git-credentials)', 'Read(~/.codex/**)', 'Read(~/.npmrc)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
-  for (const rule of ['Bash(gh auth *)', 'Bash(git credential *)', 'Bash(git -c *)', 'Read(~/.ssh/**)', 'Read(~/.config/gh/**)', 'Read(**/.env*)',
-    'Bash(gh api * --hostname*)', 'Bash(git push * --force*)', 'Bash(git push -f*)', 'Bash(gh pr merge*)', 'Bash(gh repo delete*)', 'Bash(gh secret*)', 'Bash(gh gist*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
-  // Read commands that write files, commands that run other programs, pushes elsewhere and branch deletion
-  for (const rule of ['Bash(git * --output*)', 'Bash(git * --exec*)', 'Bash(git submodule *)', 'Bash(git bisect *)', 'Bash(git remote add*)',
-    'Bash(git push *://*)', 'Bash(git push *@*)', 'Bash(git push * --delete*)', 'Bash(gh repo create*)', 'Bash(gh release*)', 'Bash(gh workflow*)']) assert.ok(ALWAYS_DENY.includes(rule), rule);
-  // The data folder (session secret, logs) is denied by absolute path: Read(//abs/path/**)
-  assert.ok(ALWAYS_DENY.some((r) => /^Read\(\/\/.+\/\*\*\)$/.test(r)));
-
-  // Posts drop the permission mode and allowed tools, and allow only the reviews endpoint of that PR
-  const tool = postTools({ repo: 'o/r', number: 7 });
-  assert.equal(tool, 'Bash(gh api repos/o/r/pulls/7/reviews*)');
-  const postArgs = claudeArgs(cfg, 'post', tool);
-  assert.deepEqual(postArgs.slice(0, 4), ['--model', 'x', '--allowedTools', tool]);
-  const post = denied(postArgs);
-  assert.ok(['Write', 'Edit', 'NotebookEdit', ...ALWAYS_DENY].every((r) => post.includes(r)));
-  assert.ok(!post.includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
-  for (const rule of ['Bash(gh api * -X DELETE*)', 'Bash(gh api * --method PUT*)', 'Bash(gh api * --input /*)', 'Bash(gh api * --input ~*)', 'Bash(gh api * -F *=@*)']) assert.ok(post.includes(rule), rule);
-  assert.ok(!post.includes('Bash(gh api * --input*)'), 'posts may still send a JSON body on stdin');
-
-  const read = claudeArgs(cfg, 'read');
-  assert.deepEqual(read.slice(0, 4), ['--model', 'x', '--allowedTools', 'Read,Bash(git log:*)']);
-  const readDenied = denied(read);
-  for (const rule of ['Write', 'Edit', 'Bash(gh api -f*)', 'Bash(gh api * -f*)', 'Bash(gh api * -X*)', 'Bash(gh api * --method*)', 'Bash(gh api * --input*)', 'Bash(gh api * --raw-field*)']) assert.ok(readDenied.includes(rule), rule);
-
-  // Empty readOnlyTools keeps the args, but the denies still apply
-  const loose = claudeArgs({ ...cfg, readOnlyTools: ' ' }, 'read');
-  assert.deepEqual(loose.slice(0, -2), kept);
-  assert.ok(denied(loose).includes('Bash(gh api * -f*)'));
-});
-
 test('codexOptions: read-only runs drop auto-approval and network overrides and use the read-only sandbox', () => {
   const { codexOptions } = require('./server');
   const cfg = { codexArgs: '--approve-for-me --full-auto -c sandbox_workspace_write.network_access=true -c model_verbosity=low -s danger-full-access --dangerously-bypass-approvals-and-sandbox' };
@@ -1206,42 +1163,6 @@ test('fieldMutation: sets and clears several Project fields of one item in one r
   assert.deepEqual(vars, { project: 'P', item: 'I', f0: 'F1', v0: '2026-11-05', f1: 'F2', f2: 'F3', v2: 'it1' });
 });
 
-test('claudeArgs: runs cannot send gh api requests off GitHub, read files outside the repo with git, or edit .git', () => {
-  const { claudeArgs } = require('./server');
-  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
-  for (const mode of ['apply', 'read', 'post']) {
-    const rules = denied(claudeArgs({ claudeArgs: '', readOnlyTools: 'Read' }, mode, 'Bash(gh api repos/o/r/pulls/1/reviews*)'));
-    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)']) assert.ok(rules.includes(rule), `${mode}: ${rule}`);
-  }
-});
-
-test('claudeArgs: {owner-name} and the other PR placeholders in the tool lists are filled for the run', () => {
-  const { claudeArgs } = require('./server');
-  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
-  const cfg = { claudeArgs: '--allowedTools "Bash(gh api repos/{owner-name}/*)"', readOnlyTools: 'Bash(gh api repos/{full-repo-name}/pulls/{pr-number}*)' };
-  assert.deepEqual(claudeArgs(cfg, 'apply', '', pr).slice(0, 2), ['--allowedTools', 'Bash(gh api repos/acme/*)']);
-  assert.deepEqual(claudeArgs(cfg, 'read', '', pr).slice(0, 2), ['--allowedTools', 'Bash(gh api repos/acme/api/pulls/5*)']);
-  // Without a PR the placeholder stays, so the rule matches nothing
-  assert.deepEqual(claudeArgs(cfg, 'apply').slice(0, 2), ['--allowedTools', 'Bash(gh api repos/{owner-name}/*)']);
-});
-
-test('default tools: gh api is limited to the PR owner\'s repositories and no run allows every gh command', () => {
-  const { DEFAULT_CONFIG } = require('./server');
-  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(gh:*)'));
-  // jq and ls take any path, so they could read credential files the Read denies cover
-  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(jq:*)'));
-  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(ls:*)'));
-  // Fetches all day unless the user picks hours
-  assert.equal(DEFAULT_CONFIG.pollStartHour, DEFAULT_CONFIG.pollEndHour);
-  assert.ok(!DEFAULT_CONFIG.readOnlyTools.includes('Bash(gh api:*)'));
-  assert.ok(DEFAULT_CONFIG.claudeArgs.includes('Bash(gh api repos/{owner-name}/*)'));
-  // The list has spaces, so it must stay one argument
-  const { claudeArgs } = require('./server');
-  const args = claudeArgs(DEFAULT_CONFIG, 'apply', '', { repo: 'acme/api', number: 1, url: 'u' });
-  assert.ok(args[args.indexOf('--allowedTools') + 1].split(',').includes('Bash(gh api repos/acme/*)'));
-  assert.ok(DEFAULT_CONFIG.readOnlyTools.includes('Bash(gh api repos/{owner-name}/*)'));
-});
-
 const { applyRun, latestAuthorComment } = require('./server');
 
 test('applyRun: fix runs start a fresh session that only sees the approved plan, not the PR comments', () => {
@@ -1283,4 +1204,42 @@ test('latestAuthorComment: picks the newest non-empty comment by the PR author o
   ].map((c) => JSON.stringify(c)).join('\n');
   assert.equal(latestAuthorComment([lines, ''], 'me'), 'new');
   assert.equal(latestAuthorComment([''], 'me'), null);
+});
+
+test('claudeArgs: tools are fixed per run; skills add their own with allowed-tools, and saved claude args are gone', () => {
+  const { claudeArgs, ALWAYS_DENY, APPLY_DENY, DEFAULT_CONFIG } = require('./server');
+  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
+  const allowed = (args) => args[args.indexOf('--allowedTools') + 1].split(',');
+  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
+  assert.ok(!('claudeArgs' in DEFAULT_CONFIG) && !('readOnlyTools' in DEFAULT_CONFIG));
+
+  const apply = claudeArgs('apply', '', pr);
+  assert.deepEqual(apply.slice(0, 2), ['--permission-mode', 'acceptEdits']);
+  for (const t of ['Write', 'Edit', 'Bash(git:*)', 'Bash(gh pr:*)', 'Bash(gh api repos/acme/*)', 'Bash(gh api /repos/acme/*)']) assert.ok(allowed(apply).includes(t), t);
+  // No tool that takes any path or runs every gh command
+  for (const t of ['Bash(gh:*)', 'Bash(jq:*)', 'Bash(ls:*)', 'Bash(cat:*)']) assert.ok(!allowed(apply).includes(t), t);
+  assert.deepEqual(denied(apply), [...APPLY_DENY, ...ALWAYS_DENY]);
+
+  // Read runs: no edits and nothing that writes to GitHub, even when the skill allows Bash(gh *) or Bash(git *)
+  const read = claudeArgs('read', '', pr);
+  assert.ok(!read.includes('--permission-mode'));
+  assert.ok(!allowed(read).includes('Write') && allowed(read).includes('Bash(gh pr diff:*)'));
+  for (const rule of ['Write', 'Edit', 'Bash(gh api * -f*)', 'Bash(gh api * --input*)', 'Bash(gh pr comment*)', 'Bash(gh pr review*)', 'Bash(gh pr create*)', 'Bash(gh pr edit*)',
+    'Bash(gh pr close*)', 'Bash(gh issue create*)', 'Bash(gh issue comment*)', 'Bash(gh issue edit*)', 'Bash(gh label*)', 'Bash(git push*)', 'Bash(git commit*)', ...ALWAYS_DENY]) assert.ok(denied(read).includes(rule), rule);
+
+  // Posts: only the reviews endpoint of that PR
+  const tool = postTools({ repo: 'o/r', number: 7 });
+  const post = claudeArgs('post', tool);
+  assert.deepEqual(post.slice(0, 2), ['--allowedTools', tool]);
+  assert.ok(['Write', 'Edit', 'Bash(gh api * -X DELETE*)', 'Bash(gh api * --input /*)', ...ALWAYS_DENY].every((r) => denied(post).includes(r)));
+  assert.ok(!denied(post).includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
+  for (const mode of ['apply', 'read', 'post']) {
+    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)', 'Read(~/.ssh/**)']) assert.ok(denied(claudeArgs(mode, tool)).includes(rule), `${mode}: ${rule}`);
+  }
+  // Without a PR the placeholder stays, so the rule matches nothing
+  assert.ok(allowed(claudeArgs('apply')).includes('Bash(gh api repos/{owner-name}/*)'));
+});
+
+test('settings: claude args and read-only tools can no longer be saved', () => {
+  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
 });

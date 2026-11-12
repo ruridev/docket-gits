@@ -25,12 +25,8 @@ const DEFAULT_CONFIG = {
   codexModel: '',
   codexEffort: '',
   codexArgs: '--approve-for-me',
-  claudeArgs: '--permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Write,Edit,Agent,Bash(gh pr:*),Bash(gh issue:*),Bash(gh api repos/{owner-name}/*),Bash(git:*),Bash(mkdir:*)"',
-  // Tools for runs that must not change anything (review, self-review, fix plan). Empty = use claudeArgs as is
-  // In both, {owner-name}, {full-repo-name}, {pr-number} etc. are filled with the run's pull request
   // Fix runs may edit <working directory>/.claude/skills without asking (off: those edits are denied)
   skillEdits: false,
-  readOnlyTools: 'Read,Grep,Glob,Agent,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api repos/{owner-name}/*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git status:*)',
   // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',
@@ -803,22 +799,27 @@ const GH_API_WRITES = ['-X', '--method', '-f', '-F', '--field', '--raw-field', '
 const POST_DENY = ['-X DELETE', '-XDELETE', '--method DELETE', '--method=DELETE', '-X PUT', '-XPUT', '--method PUT', '--method=PUT', '-X PATCH', '-XPATCH', '--method PATCH', '--method=PATCH',
   '--input /', '--input ~', '--input .', '--input=', '-F *=@', '--field *=@'].map((f) => `Bash(gh api * ${f}*)`);
 
+// Tools docket-gits allows on its own. A skill adds the commands it needs with allowed-tools in its
+// SKILL.md frontmatter (Claude applies those while the skill runs); the deny lists below still win.
+// {owner-name} and the other fillTemplate placeholders are filled with the run's pull request
+const APPLY_TOOLS = 'Read,Grep,Glob,Write,Edit,Agent,Bash(gh pr:*),Bash(gh issue:*),Bash(gh api repos/{owner-name}/*),Bash(gh api /repos/{owner-name}/*),Bash(git:*),Bash(mkdir:*)';
+const READ_TOOLS = 'Read,Grep,Glob,Agent,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh api repos/{owner-name}/*),Bash(gh api /repos/{owner-name}/*),Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(git status:*)';
+// Read runs read content anyone can write, so nothing in them may write to GitHub or commit,
+// whatever a skill allows (for example Bash(gh *) or Bash(git *))
+const READ_DENY = [
+  ...['comment', 'review', 'create', 'edit', 'merge', 'close', 'reopen', 'ready', 'lock', 'unlock', 'update-branch'].map((c) => `Bash(gh pr ${c}*)`),
+  ...['create', 'comment', 'edit', 'close', 'reopen', 'delete', 'transfer', 'lock', 'unlock', 'pin', 'unpin', 'develop'].map((c) => `Bash(gh issue ${c}*)`),
+  'Bash(gh label*)', 'Bash(gh project*)', 'Bash(gh repo sync*)', 'Bash(gh cache delete*)', 'Bash(git push*)', 'Bash(git commit*)',
+];
+
 // Claude args for a run. mode: 'read' (review / self-review / fix plan), 'post' (posts a review, edits no files)
-// or 'apply' (fixes, push, replies). Read-only runs replace the permission mode and allowed tools with readOnlyTools,
-// post runs with postTools (only the reviews endpoint of that pull request).
-// {owner-name} and the other fillTemplate placeholders in the tool lists are filled with pr (left as is without one).
-// The user's own --disallowedTools are merged into one flag with the denies above
-function claudeArgs(cfg, mode = 'apply', postOnly = '', pr = null) {
-  const many = Infinity;
-  const own = [];
-  const fill = (s) => (pr && s ? fillTemplate(s, pr) : s || '');
-  let args = dropFlags(splitArgs(fill(cfg.claudeArgs)), { '--disallowedTools': many, '--disallowed-tools': many }, (_, value) => { own.push(value); return true; });
-  const tools = mode === 'post' ? postOnly : mode === 'read' ? fill(cfg.readOnlyTools).trim() : '';
-  if (tools) {
-    args = [...dropFlags(args, { '--permission-mode': 1, '--allowedTools': many, '--allowed-tools': many, '--dangerously-skip-permissions': 0 }), '--allowedTools', tools];
-  }
-  const deny = [...own, ...(mode === 'apply' ? APPLY_DENY : FILE_EDITS), ...(mode === 'read' ? GH_API_WRITES : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
-  return [...args, '--disallowedTools', deny.filter(Boolean).join(',')];
+// or 'apply' (fixes, push, replies). Post runs allow only postTools (the reviews endpoint of that pull request)
+function claudeArgs(mode = 'apply', postOnly = '', pr = null) {
+  const fill = (s) => (pr ? fillTemplate(s, pr) : s);
+  const head = mode === 'apply' ? ['--permission-mode', 'acceptEdits', '--allowedTools', fill(APPLY_TOOLS)]
+    : ['--allowedTools', mode === 'post' ? postOnly : fill(READ_TOOLS)];
+  const deny = [...(mode === 'apply' ? APPLY_DENY : FILE_EDITS), ...(mode === 'read' ? [...GH_API_WRITES, ...READ_DENY] : []), ...(mode === 'post' ? POST_DENY : []), ...ALWAYS_DENY];
+  return [...head, '--disallowedTools', deny.join(',')];
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -1933,7 +1934,7 @@ function runAgent(prompt, { key, cwd, resume, logName, provider = 'claude', lang
       const instruction = withOutputLang(prompt, lang);
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = readOnly ? 'read' : post ? 'post' : 'apply';
-      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(config, mode, post, pr)];
+      const args = provider === 'codex' ? codexOptions(config, instruction, resume, readOnly) : ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...pathSettings(process.env), ...(mode === 'apply' && config.skillEdits ? permissionArgs(cwd) : []), ...claudeArgs(mode, post, pr)];
       if (resume && provider === 'claude') args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
@@ -2522,7 +2523,9 @@ function main() {
   // Settings, state and logs are private to this user
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   fs.chmodSync(DATA_DIR, 0o700);
-  config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+  // claudeArgs / readOnlyTools were settings before skills listed their own tools: drop them
+  const { claudeArgs: _args, readOnlyTools: _tools, ...saved } = readJson(CONFIG_FILE, {});
+  config = { ...DEFAULT_CONFIG, ...saved };
   if (!validProvider(config.provider)) config.provider = 'claude';
   state = { mine: {}, ...readJson(STATE_FILE, { prs: {} }) };
   // Jobs whose claude already started keep running in their own process group, so collect their results
@@ -2577,4 +2580,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { APPLY_DENY, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
