@@ -922,7 +922,7 @@ test('killRun: does not throw for an already exited process (so cancel can resto
 test('GitHub fetch: on a permission error for some nodes (gh exits with failure), applies the PRs it got and reports the error', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
   const pr = { ...node(1), id: 'PR_1' };
-  const list = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [{ id: 'PR_1', url: pr.url, updatedAt: pr.updatedAt, mergeable: 'MERGEABLE' }, null] }, mine: { issueCount: 0, nodes: [] } };
+  const list = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [{ id: 'PR_1', url: pr.url, updatedAt: pr.updatedAt }, null] }, mine: { issueCount: 0, nodes: [] } };
   const errors = [{ message: 'Resource protected by organization SAML enforcement.' }];
   fs.writeFileSync(path.join(dir, 'list.json'), `${JSON.stringify({ data: list, errors })}\n`);
   fs.writeFileSync(path.join(dir, 'detail.json'), `${JSON.stringify({ data: { n: [pr] } })}\n`);
@@ -1125,23 +1125,23 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
 
 test('normalizePr: keeps what the board filters need, and tolerates PRs fetched before those fields existed', () => {
   const { normalizePr } = require('./server');
-  const full = normalizePr({ ...node(1), additions: 40, deletions: 70, mergeable: 'CONFLICTING', milestone: { title: 'v2' }, assignees: { nodes: [{ login: 'bob' }] } });
-  assert.deepEqual([full.size, full.conflict, full.milestone, full.assignees], [110, true, 'v2', ['bob']]);
+  const full = normalizePr({ ...node(1), milestone: { title: 'v2' }, assignees: { nodes: [{ login: 'bob' }] } });
+  assert.deepEqual([full.milestone, full.assignees], ['v2', ['bob']]);
   const old = normalizePr(node(2));
-  assert.deepEqual([old.size, old.conflict, old.milestone, old.assignees], [0, false, null, []]);
+  assert.deepEqual([old.milestone, old.assignees], [null, []]);
 });
 
 test('staleIds / withDetails: details are fetched only for new or updated PRs, and rebuilt in search order', () => {
   const { staleIds, withDetails } = require('./server');
   const now = Date.parse('2026-11-12T12:00:00Z');
   const cache = new Map([['open:A', { updatedAt: 't1', at: now - 60000, node: { id: 'A', number: 1, mergeable: 'UNKNOWN' } }], ['open:B', { updatedAt: 't1', at: now, node: { id: 'B', number: 2 } }], ['mine:C', { updatedAt: 't1', at: now, node: { id: 'C' } }]]);
-  const items = [{ id: 'B', updatedAt: 't2', mergeable: 'MERGEABLE' }, { id: 'A', updatedAt: 't1', mergeable: 'CONFLICTING' }, { id: 'C', updatedAt: 't1' }, null];
+  const items = [{ id: 'B', updatedAt: 't2' }, { id: 'A', updatedAt: 't1' }, { id: 'C', updatedAt: 't1' }, null];
   // B changed, C is cached only for another search
   assert.deepEqual(staleIds(items, cache, 'open', now), ['B', 'C']);
   // Details over an hour old are read again even if the PR did not change
   assert.deepEqual(staleIds(items, cache, 'open', now + 60 * 60 * 1000), ['B', 'A', 'C']);
-  // In search order, with the list's (newer) mergeable; a PR without details is left out
-  assert.deepEqual(withDetails(items, cache, 'open').map((n) => [n.id, n.mergeable]), [['B', 'MERGEABLE'], ['A', 'CONFLICTING']]);
+  // In search order; a PR without details is left out
+  assert.deepEqual(withDetails(items, cache, 'open').map((n) => n.id), ['B', 'A']);
 });
 
 test('detailQuery: asks only for the given ids, with the fields of that search', () => {

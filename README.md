@@ -75,7 +75,7 @@ The board lists open pull requests matching `user-review-requested:@me` (request
 
 You can drag cards between lanes. Dragging to **Done** skips the pull request, and dragging from **Done** to **Reviewing** reviews it again.
 
-On both boards, **+** in the sidebar adds filters: repository, author, review state, merged, Draft, size (lines changed), days without updates, labels, base branch, conflicts, linked issue, milestone and assignees. Each tab keeps its own filters in this browser.
+On both boards, **+** in the sidebar adds filters: repository, author, approved, merged, labels, milestone and assignees. Each tab keeps its own filters in this browser.
 
 ### Get reviewed
 

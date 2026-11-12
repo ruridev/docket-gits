@@ -154,7 +154,6 @@ const DONE_KEEP_MS = doneKeepMs();
 // The board fetch has two steps. LIST_QUERY returns only ids and update times of the PRs each search finds
 // (searches are what take time, so this stays well under GitHub's time limit). Full details are fetched only
 // for PRs that are new or updated since the last fetch (detailQuery), and kept in detailCache.
-// mergeable is in the list: a base branch change can add a conflict without updating the PR
 const LIST_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!, $reviewed: String!) {
   viewer { login avatarUrl }
   open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...item } }
@@ -162,10 +161,10 @@ const LIST_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean
   mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...item } }
   reviewed: search(query: $reviewed, type: ISSUE, first: 50) { nodes { ...item } }
 }
-fragment item on PullRequest { id url updatedAt mergeable }`;
+fragment item on PullRequest { id url updatedAt }`;
 
 const PR_FRAGMENT = `fragment pr on PullRequest {
-      id number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName additions deletions
+      id number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName
       repository { nameWithOwner }
       author { login avatarUrl }
       milestone { title }
@@ -212,13 +211,9 @@ function staleIds(items, cache, group, now = Date.now()) {
   }).map((it) => it.id);
 }
 
-// The search result with full details from the cache, in search order (the list's mergeable is the newer one).
-// A PR without details is left out
+// The search result with full details from the cache, in search order. A PR without details is left out
 function withDetails(items, cache, group) {
-  return items.flatMap((it) => {
-    const c = it?.id && cache.get(`${group}:${it.id}`);
-    return c ? [{ ...c.node, mergeable: it.mergeable }] : [];
-  });
+  return items.map((it) => it?.id && cache.get(`${group}:${it.id}`)?.node).filter(Boolean);
 }
 
 function searchQueries(mergedDays, now) {
@@ -266,8 +261,6 @@ function normalizePr(node) {
     reviews: node.latestReviews.nodes.map((r) => ({ state: r.state, login: r.author?.login, avatarUrl: r.author?.avatarUrl })),
     requested: node.reviewRequests.nodes.map((r) => r.requestedReviewer).filter((r) => r && r.login),
     // For the board filters (older cached PRs may lack these)
-    size: (node.additions || 0) + (node.deletions || 0),
-    conflict: node.mergeable === 'CONFLICTING',
     milestone: node.milestone?.title || null,
     assignees: (node.assignees?.nodes || []).map((a) => a.login),
   };
