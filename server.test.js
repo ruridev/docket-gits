@@ -1178,3 +1178,34 @@ test('fieldMutation: sets and clears several Project fields of one item in one r
     + 's2: updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f2, value: { iterationId: $v2 } }) { clientMutationId } }');
   assert.deepEqual(vars, { project: 'P', item: 'I', f0: 'F1', v0: '2026-11-05', f1: 'F2', f2: 'F3', v2: 'it1' });
 });
+
+test('claudeArgs: runs cannot send gh api requests off GitHub, read files outside the repo with git, or edit .git', () => {
+  const { claudeArgs } = require('./server');
+  const denied = (args) => args[args.indexOf('--disallowedTools') + 1].split(',');
+  for (const mode of ['apply', 'read', 'post']) {
+    const rules = denied(claudeArgs({ claudeArgs: '', readOnlyTools: 'Read' }, mode, 'Bash(gh api repos/o/r/pulls/1/reviews*)'));
+    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)']) assert.ok(rules.includes(rule), `${mode}: ${rule}`);
+  }
+});
+
+test('claudeArgs: {owner-name} and the other PR placeholders in the tool lists are filled for the run', () => {
+  const { claudeArgs } = require('./server');
+  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
+  const cfg = { claudeArgs: '--allowedTools "Bash(gh api repos/{owner-name}/*)"', readOnlyTools: 'Bash(gh api repos/{full-repo-name}/pulls/{pr-number}*)' };
+  assert.deepEqual(claudeArgs(cfg, 'apply', '', pr).slice(0, 2), ['--allowedTools', 'Bash(gh api repos/acme/*)']);
+  assert.deepEqual(claudeArgs(cfg, 'read', '', pr).slice(0, 2), ['--allowedTools', 'Bash(gh api repos/acme/api/pulls/5*)']);
+  // Without a PR the placeholder stays, so the rule matches nothing
+  assert.deepEqual(claudeArgs(cfg, 'apply').slice(0, 2), ['--allowedTools', 'Bash(gh api repos/{owner-name}/*)']);
+});
+
+test('default tools: gh api is limited to the PR owner\'s repositories and no run allows every gh command', () => {
+  const { DEFAULT_CONFIG } = require('./server');
+  assert.ok(!DEFAULT_CONFIG.claudeArgs.includes('Bash(gh:*)'));
+  assert.ok(!DEFAULT_CONFIG.readOnlyTools.includes('Bash(gh api:*)'));
+  assert.ok(DEFAULT_CONFIG.claudeArgs.includes('Bash(gh api repos/{owner-name}/*)'));
+  // The list has spaces, so it must stay one argument
+  const { claudeArgs } = require('./server');
+  const args = claudeArgs(DEFAULT_CONFIG, 'apply', '', { repo: 'acme/api', number: 1, url: 'u' });
+  assert.ok(args[args.indexOf('--allowedTools') + 1].split(',').includes('Bash(gh api repos/acme/*)'));
+  assert.ok(DEFAULT_CONFIG.readOnlyTools.includes('Bash(gh api repos/{owner-name}/*)'));
+});

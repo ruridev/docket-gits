@@ -135,7 +135,7 @@ All settings are in **Settings**, from the account menu at the top right. They a
 - **Language**: display language (English / 日本語 / 한국어), the language the AI writes in, a language per pull request author, and the agree / disagree marks.
 - **Theme** and **Terms** (lane names).
 
-Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}` and `{full-repo-name}`, for example `{pr-number} --repo {repo-name}`.
+Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}` and `{full-repo-name}`, for example `{pr-number} --repo {repo-name}`. The same placeholders work in **Extra claude args** and **Read-only tools**, filled with the pull request of each run: the defaults allow `gh api` only under `repos/{owner-name}/`.
 
 ### Claude or Codex
 
@@ -147,6 +147,7 @@ Pick the default tool under **Execution & logs**. The arrow next to each button 
 - Posting a review starts a new session: `--permission-mode` and `--allowedTools` are removed, and only `gh api` on that pull request's reviews is allowed. Applying fixes uses the full args.
 - Every Claude run denies reading credentials (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.netrc`, `.env*` files and this app's `data/`), `gh api --hostname`, force-push, `gh pr merge`, `gh repo delete` / `edit`, `gh secret`, `gh variable` and `gh gist`.
 - Every Claude run denies `gh auth`, `gh alias`, `gh extension`, `gh config`, `git config`, `git credential`, `git -c` and reading `~/.ssh`, `~/.aws`, `~/.config/gh` and `~/.netrc`, on top of your own `--disallowedTools`.
+- Every Claude run also denies `gh api` with a full URL or `..` in the path, `git ... --no-index` (it reads files outside the repository) and writing under `.git/` (hooks and config run code later).
 - Codex runs with `codex exec --json`, by default with `--approve-for-me` and no network access. Its output has no price, so its cost is shown as unavailable.
 
 ### Several GitHub accounts
@@ -170,6 +171,7 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - Reviews and plans run with read-only tools (`readOnlyTools`). **Comment** starts a new session that never reads the pull request and, with Claude, may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
 - Fix runs may edit files under `<working directory>/.claude/skills` without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default): an instruction hidden in a comment could otherwise stay in a skill and steer later runs. Other protected paths are always denied, and review and post runs can't edit skills.
 - Every Claude run also denies `git log / diff / show --output` (it writes files), git commands that run other programs (`rebase --exec`, `submodule`, `bisect`, `filter-branch`, `difftool`, `mergetool`), adding remotes, pushing to a URL or deleting remote branches, and `gh repo create` / `fork`, `gh release`, `gh workflow`. Post runs may only POST the review: no other method and no body read from a file.
+- **Fix runs read comments that anyone can write.** They can push, reply and create issues and pull requests, so an injected instruction could try to do that somewhere else. The default tools keep `gh api` inside the pull request owner's repositories, but `gh pr` / `gh issue` still accept `--repo`. To limit the damage, give `gh` a [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for only the repositories you review, and protect your default branches. If you saved **Extra claude args** or **Read-only tools** before, check that they don't allow `Bash(gh:*)` or `Bash(gh api:*)`.
 - Codex runs get no deny list: reviews use Codex's read-only sandbox, and fix runs use the sandbox and approval settings in **Extra Codex args**.
 - Importing `docket-settings.json` never changes agent args, `readOnlyTools` or local folders (working directories, plan folder).
 - `data/` is readable only by you (0700, files 0600).
