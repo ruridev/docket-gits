@@ -1,6 +1,6 @@
 # docket-gits
 
-docket-gits is a local web app for code review with an AI agent. It collects the GitHub pull requests waiting on you into a kanban board, lets [Claude Code](https://claude.com/claude-code) or [Codex CLI](https://developers.openai.com/codex/cli) do the review, and posts to GitHub only what you agreed to, one finding at a time.
+docket-gits is a local web app for code review with an AI agent. It collects the GitHub pull requests waiting on you into a kanban board, lets [Claude Code](https://claude.com/claude-code) do the review, and posts to GitHub only what you agreed to, one finding at a time.
 
 - **Review**: pull requests where your review is requested. The AI reviews; you agree or disagree with each finding before anything is posted.
 - **Get reviewed**: your own open pull requests. Run a self-review, or triage the comments you received and let the AI plan, fix, push and reply.
@@ -14,7 +14,7 @@ Everything runs on your machine. There are no dependencies to install, and state
 - Node.js 22 or later
 - macOS or Linux (Windows is not supported)
 - [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`
-- `claude` (Claude Code) or `codex` (Codex CLI), logged in
+- `claude` (Claude Code), logged in
 
 ## Getting started
 
@@ -29,10 +29,10 @@ Everything runs on your machine. There are no dependencies to install, and state
    There are no dependencies, so there is no `npm install`.
 
 2. Open http://localhost:4649 and create your account (see [Signing in](#signing-in)).
-3. Read the notice about the risks and agree to it. Nothing that starts `claude` or `codex` works until you do.
+3. Read the notice about the risks and agree to it. Nothing that starts `claude` works until you do.
 4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
    - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.
-   - **Claude settings** / **Codex settings**: pick a review skill per repository, or use the built-in review prompt.
+   - **Claude settings**: pick a review skill per repository, or use the built-in review prompt.
 5. Press **Refresh** in the left sidebar. Review requests show up under **Requested**.
 
 | Environment variable | Default | |
@@ -73,7 +73,7 @@ flowchart LR
    - **Agree**: it is posted. A reason you add is reflected in the text.
    - **Disagree with a reason**: your reason is posted as your own opinion, marked with `🙅💭`.
    - **Disagree without a reason**: nothing is posted.
-3. **Comment** starts a new AI session that sees only the findings and your decisions, not the pull request, and posts them as one review. That session may run only `gh api` on the reviews of that pull request (Claude); Codex runs it with your `codexArgs`.
+3. **Comment** starts a new AI session that sees only the findings and your decisions, not the pull request, and posts them as one review. That session may run only `gh api` on the reviews of that pull request.
 
 The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes by default while the page is open (you can limit it to certain hours in **Settings → Refresh**) (and right away when you come back to it), and the **Refresh** button fetches at any time. Each fetch lists the pull requests first and reads full details only for those updated since the last fetch. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
 
@@ -126,10 +126,10 @@ Description
 
 All settings are in **Settings**, from the account menu at the top right. They are saved when you press **Save**, and can be exported to and imported from `docket-settings.json`.
 
-- **Execution & logs**: default AI tool, how many runs at once (2), how long to keep logs (30 days).
+- **Execution & logs**: how many runs at once (2), how long to keep logs (30 days).
 - **Work targets**: working directory, repositories (each can have its own working directory), pull request authors to show, how long merged and done pull requests stay on the board.
 - **Shared prompts**: the built-in review and address-comments prompts, for repositories without a skill of their own.
-- **Claude settings** / **Codex settings**: model, effort, extra arguments, and the skills per repository for review, self-review and addressing comments.
+- **Claude settings**: model, effort, and the skills per repository for review, self-review and addressing comments.
 - **Roadmap**: GitHub Projects, iterations and periods to list, plan folder.
 - **Refresh**: how often the screen and GitHub are refreshed, and during which hours.
 - **Language**: display language (English / 日本語 / 한국어), the language the AI writes in, a language per pull request author, and the agree / disagree marks.
@@ -137,12 +137,10 @@ All settings are in **Settings**, from the account menu at the top right. They a
 
 Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}` and `{full-repo-name}`, for example `{pr-number} --repo {repo-name}`.
 
-### Claude or Codex
+### Claude
 
-Pick the default tool under **Execution & logs**. The arrow next to each button runs the other tool once. A card keeps the tool it started with until it is done.
-
-- Claude skills are read from `.claude/skills`, Codex skills from `.agents/skills` and `.codex/skills`. Each tool has its own skill settings, and a tool that is not set up is disabled.
-- **The commands a skill needs belong to the skill.** For Claude, list them under `allowed-tools` in the skill's `SKILL.md` frontmatter; Claude allows them while the skill runs, also in docket-gits' non-interactive runs. Anyone who uses the same skill gets the same commands, with no docket-gits setting. Allow narrow forms, for example `Bash(bin/rspec:*)` or `Bash(git -C * log:*)`, rather than `Bash(git *)`:
+- Skills are read from `.claude/skills` in the working directories and your home directory.
+- **The commands a skill needs belong to the skill.** List them under `allowed-tools` in the skill's `SKILL.md` frontmatter; Claude allows them while the skill runs, also in docket-gits' non-interactive runs. Anyone who uses the same skill gets the same commands, with no docket-gits setting. Allow narrow forms, for example `Bash(bin/rspec:*)` or `Bash(git -C * log:*)`, rather than `Bash(git *)`:
 
   ```yaml
   ---
@@ -152,15 +150,13 @@ Pick the default tool under **Execution & logs**. The arrow next to each button 
   ---
   ```
 
-- For Codex, which has no per-skill tool list, allow commands with [rules files](https://learn.chatgpt.com/docs/agent-configuration/rules): `<repository>/.codex/rules/*.rules` (read when you trust the project) or `~/.codex/rules/*.rules`. The rules you approved in the Codex TUI (`~/.codex/rules/default.rules`) apply to docket-gits' Codex runs too. **Extra Codex args** sets the sandbox and approval mode.
 - **A run with your own skill gets only that skill's `allowed-tools`.** docket-gits adds no tools of its own, so list everything the skill's steps and docket-gits' instructions use: at least `gh pr view` / `diff`, `gh api repos/*` and `git log` / `diff` / `show` / `status` for reviews and plans, and file edits, `git`, `gh pr` and `gh api repos/*` for fixes. The bundled skills below are a starting point.
 - Runs that use the configured prompt instead of a skill take their tools from the plugin in `plugin/`, which docket-gits loads into its Claude runs with `--plugin-dir` (nothing is installed in `~/.claude`): `plugin/skills/read/SKILL.md` for review, self-review and **Have the AI plan** (reading tools, `gh pr view` / `diff` / `checks`, `gh api repos/*`, `git log` / `diff` / `show` / `status`) and `plugin/skills/apply/SKILL.md` for fix runs (file edits, `git`, `mkdir`, `gh pr`, `gh issue`, `gh api repos/*`, with `--permission-mode acceptEdits`). Only docket-gits can start these skills (`disable-model-invocation`), so a review run can't call the fix skill to get its tools.
-- Review, self-review and **Have the AI plan** are meant to change nothing, whatever the skill allows. For these Claude runs docket-gits denies Write / Edit, `gh api` with a write flag (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`), commands that write to GitHub (`gh pr comment` / `review` / `create` / `edit` / `merge` / `close`…, `gh issue create` / `comment` / `edit` / `close`…, `gh label`, `gh project`) and `git push` / `commit`. Codex runs them with `--sandbox read-only`.
+- Review, self-review and **Have the AI plan** are meant to change nothing, whatever the skill allows. For these runs docket-gits denies Write / Edit, `gh api` with a write flag (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`), commands that write to GitHub (`gh pr comment` / `review` / `create` / `edit` / `merge` / `close`…, `gh issue create` / `comment` / `edit` / `close`…, `gh label`, `gh project`) and `git push` / `commit`.
 - Posting a review starts a new session that may only call `gh api` on that pull request's reviews.
 - Every Claude run denies reading credentials (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.netrc`, `.env*` files and this app's `data/`), `gh api --hostname`, force-push, `gh pr merge`, `gh repo delete` / `edit`, `gh secret`, `gh variable` and `gh gist`.
 - Every Claude run denies `gh auth`, `gh alias`, `gh extension`, `gh config`, `git config`, `git credential`, `git -c` and reading `~/.ssh`, `~/.aws`, `~/.config/gh` and `~/.netrc`.
 - Every Claude run also denies `gh api` with a full URL or `..` in the path, `git ... --no-index` (it reads files outside the repository) and writing under `.git/` (hooks and config run code later).
-- Codex runs with `codex exec --json`, by default with `--approve-for-me` and no network access. Its output has no price, so its cost is shown as unavailable.
 
 ### Several GitHub accounts
 
@@ -180,12 +176,11 @@ docket-gits runs an AI agent that can execute commands without asking you each t
 - **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
 - **AI runs cost money.** Costs are shown per pull request and in total.
 - The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
-- Reviews and plans can't edit files or write to GitHub, whatever a skill allows (see [Claude or Codex](#claude-or-codex)). **Comment** starts a new session that never reads the pull request and, with Claude, may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
+- Reviews and plans can't edit files or write to GitHub, whatever a skill allows (see [Claude](#claude)). **Comment** starts a new session that never reads the pull request and may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
 - Fix runs may edit files under `<working directory>/.claude/skills` without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default): an instruction hidden in a comment could otherwise stay in a skill and steer later runs. Other protected paths are always denied, and review and post runs can't edit skills.
 - Every Claude run also denies `git log / diff / show --output` (it writes files), git commands and options that run other programs (`rebase --exec`, `--upload-pack`, `--receive-pack`, `--config-env`, `submodule`, `bisect`, `filter-branch`, `difftool`, `mergetool`, `grep -O`, `maintenance`, `instaweb`), `git clone` and `git ls-remote`, adding remotes, pushing to a URL, to `main` / `master` or deleting remote branches (`--delete` or `origin :branch`), `gh repo create` / `fork`, `gh release`, `gh workflow`, `gh issue delete` / `transfer`, and `gh api` with `PUT` / `PATCH` / `DELETE` or on collaborators, webhooks, deploy keys, invitations, branch protection and workflow dispatches. Reading other credential files (`~/.git-credentials`, `~/.codex`, `~/.npmrc`, `~/.docker`, `~/.kube`, `~/.gnupg`) is denied too. Post runs may only POST the review: no other method and no body read from a file.
 - **Comments that anyone can write are read only by read-only runs** (review, self-review, fix plan). A fix run, which can edit, push and reply, starts a new session that never reads the pull request's comments: it gets only the plan you approved in docket-gits (or, with **Follow PR comments**, your own last comment, which docket-gits fetches by your login) and the code. It checks its own earlier work with queries filtered to your login. The plan was written by an AI that read the comments, so read it before you approve it. This rests on the agent following its instructions, and a skill you set may still tell it to fetch comments, so the limits below stay in place. The code of the repository is also input: only configure repositories whose code you trust. Fix runs may not approve pull requests, and agent runs never run git hooks (`core.hooksPath` is set to `/dev/null`), so a hook script written by the agent can't run on commit; your own pre-commit hooks don't run on its commits either. The bundled tools allow `gh api` under `repos/`, and `gh pr` / `gh issue` accept `--repo`, so a run can reach any repository your `gh` token can. To limit the damage, give `gh` a [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for only the repositories you review, and protect your default branches. Skills' `allowed-tools` widen what runs can do: avoid `Bash(gh *)`, `Bash(jq *)`, `Bash(cat *)` and `Bash(ls *)` there, since they reach other repositories or take any path, so they can read files the deny list protects.
-- Codex runs get no deny list: reviews use Codex's read-only sandbox, and fix runs use the sandbox and approval settings in **Extra Codex args**.
-- Importing `docket-settings.json` never changes Codex args, skill edits or local folders (working directories, plan folder). **Extra claude args** and **Read-only tools** were removed: saved values are ignored and dropped on the next save.
+- Importing `docket-settings.json` never changes skill edits or local folders (working directories, plan folder). **Extra claude args** and **Read-only tools** were removed: saved values are ignored and dropped on the next save.
 - `data/` is readable only by you (0700, files 0600).
 
 ## Related

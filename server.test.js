@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -182,11 +182,6 @@ test('extractTagJson: takes JSON from the last tag, allowing code fences', () =>
   assert.deepEqual(extractTagJson(text, 'x'), { a: 1 });
   assert.equal(extractTagJson('なし', 'x'), null);
   assert.equal(extractTagJson('<x>壊れた</x>', 'x'), null);
-});
-
-test('splitArgs: handles quoted arguments', () => {
-  assert.deepEqual(splitArgs('--a b,c "d e" \'f\''), ['--a', 'b,c', 'd e', 'f']);
-  assert.deepEqual(splitArgs(''), []);
 });
 
 test('canDecideAll: false unless every comment is agree/disagree', () => {
@@ -776,19 +771,12 @@ test('isAgentRun: true only for claude (stream-json) started by docket-gits; oth
   const run = (...args) => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'claude', ...args]);
   const ours = run('-p', 'x', '--output-format', 'stream-json');
   const other = run('--resume');
-  const codex = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'codex', 'exec', '--json']);
-  const interactive = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)', 'codex']);
   try {
     assert.equal(isAgentRun(ours.pid), true);
     assert.equal(isAgentRun(other.pid), false);
-    assert.equal(isAgentRun(codex.pid, 'codex'), true);
-    assert.equal(isAgentRun(codex.pid), false);
-    assert.equal(isAgentRun(interactive.pid, 'codex'), false);
   } finally {
     ours.kill();
     other.kill();
-    codex.kill();
-    interactive.kill();
   }
 });
 
@@ -1035,16 +1023,6 @@ test('permissionArgs: passes permission-mcp.js to claude as the permission promp
   assert.deepEqual(args.slice(2), ['--permission-prompt-tool', 'mcp__docket__approve']);
 });
 
-test('codexOptions: read-only runs drop auto-approval and network overrides and use the read-only sandbox', () => {
-  const { codexOptions } = require('./server');
-  const cfg = { codexArgs: '--approve-for-me --full-auto -c sandbox_workspace_write.network_access=true -c model_verbosity=low -s danger-full-access --dangerously-bypass-approvals-and-sandbox' };
-  const args = codexOptions(cfg, 'p', null, true);
-  assert.deepEqual(args.slice(0, args.indexOf('--json')), ['-c', 'model_verbosity=low', 'exec', '--sandbox', 'read-only']);
-  assert.deepEqual(codexOptions(cfg, 'p', 'th', true).slice(2, 6), ['exec', '--sandbox', 'read-only', 'resume']);
-  assert.ok(codexOptions(cfg, 'p').includes('--approve-for-me'));
-  assert.ok(!codexOptions(cfg, 'p').includes('read-only'));
-});
-
 test('cwdError: refuses empty, home and /, accepts a project folder', () => {
   const { cwdError } = require('./server');
   assert.equal(cwdError('').code, 'workdirMissing');
@@ -1168,7 +1146,7 @@ const { applyRun, latestAuthorComment } = require('./server');
 test('applyRun: fix runs start a fresh session that only sees the approved plan, not the PR comments', () => {
   const pr = { repo: 'acme/api', number: 3, url: 'https://x/3', author: { login: 'me' } };
   const findings = [{ no: 1, category: 'fix', author: 'bob', url: 'https://x/c1', path: 'a.js', line: 4, comment: 'Returns null', plan: 'Return [] instead', reply: 'Fixed' }];
-  const entry = { pr, mode: 'fix', findings, cwd: '/w', sessionId: 'old', provider: 'claude' };
+  const entry = { pr, mode: 'fix', findings, cwd: '/w', sessionId: 'old' };
   const { prompt, opts } = applyRun(entry, { 1: { verdict: 'agree' } });
   assert.equal(opts.resume, undefined);
   assert.match(prompt, /Return \[\] instead/);
@@ -1263,13 +1241,12 @@ test('bundled skills: only docket-gits can start them, and runs without a skill 
   assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8')).name, 'docket-gits');
   const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
   assert.match(buildReviewPrompt(pr, { skill: PROMPT_SKILL }, 'Review it'), /^\/docket-gits:read\nReview it/);
-  assert.match(buildReviewPrompt(pr, { skill: PROMPT_SKILL }, 'Review it', 'codex'), /^Review it/);
   assert.match(buildReviewPrompt(pr, { skill: 'my-review', args: '{pr-number}' }, ''), /^\/my-review 5/);
   assert.match(buildFixPlanPrompt(pr, { fixSkill: PROMPT_SKILL }, [], 'Plan it'), /^\/docket-gits:read\nPlan it/);
 });
 
-test('settings: claude args and read-only tools can no longer be saved', () => {
-  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', codexArgs: '--approve-for-me' }), { codexArgs: '--approve-for-me' });
+test('settings: claude args, read-only tools and the removed Codex settings can no longer be saved', () => {
+  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', provider: 'codex', codexModel: 'm', codexEffort: 'high', codexArgs: '--approve-for-me' }), {});
 });
 
 test('claudeArgs: the commands each run needs still pass, and the ones that escape the fence do not', () => {
@@ -1334,4 +1311,122 @@ test('buildReviewPrompt: names the base branch and asks to state only what was c
 test('buildPostPrompt: drops parts of the summary that are unconfirmed or contradict the decisions', () => {
   const prompt = buildPostPrompt({ url: 'u', repo: 'o/r', number: 7 }, [], {}, true, true, 'x', 'ok');
   assert.match(prompt, /Leave out of the body anything in the summary that was not confirmed/);
+});
+
+test('repoTool: review falls back to the shared prompt when no skill is set; self-review and fixes stay unset', () => {
+  const { repoTool } = require('./server');
+  assert.equal(repoTool({ skill: 'my-review', cwd: '/repo' }).skill, 'my-review');
+  assert.equal(repoTool(undefined).skill, PROMPT_SKILL);
+  assert.equal(repoTool(undefined).fixSkill, undefined);
+});
+
+test('listSkills: finds skills under .claude/skills of the given folders', (t) => {
+  const { listSkills } = require('./server');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-skill-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, '.claude', 'skills', 'example', 'SKILL.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'review instructions');
+  fs.mkdirSync(path.join(dir, '.claude', 'skills', 'no-skill-file'));
+  assert.ok(listSkills([dir]).includes('example'));
+  assert.ok(!listSkills([dir]).includes('no-skill-file'));
+});
+
+test('HTTP flow: review, post, self-review, apply and fix plan run claude, and legacy Codex settings are dropped', { timeout: 20000 }, async (t) => {
+  const { spawn } = require('node:child_process');
+  const { once } = require('node:events');
+  fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+  const dir = fs.mkdtempSync(path.join(__dirname, 'data', 'test-flow-'));
+  const preload = path.join(dir, 'mock.cjs');
+  // Only the claude subprocess is simulated. Exercise the real server, queue, state and HTTP handlers.
+  const agentScript = `
+    const fs = require('node:fs');
+    const { command, args, calls } = JSON.parse(process.argv[1]);
+    fs.appendFileSync(calls, JSON.stringify({ command, args }) + '\\n');
+    const prompt = args[args.indexOf('-p') + 1];
+    const result = prompt.includes('<docket-posted>') ? '<docket-posted>{"posted":true}</docket-posted>'
+      : prompt.includes('<docket-applied>') ? '<docket-applied>{"done":true}</docket-applied>'
+      : prompt.includes('<docket-fix-plan>') ? '<docket-fix-plan>{"items":[]}</docket-fix-plan>'
+      : '<docket-findings>{"findings":[]}</docket-findings>';
+    console.log(JSON.stringify({ type: 'result', result, session_id: 'claude-session' }));
+  `;
+  fs.writeFileSync(preload, `
+    const cp = require('node:child_process');
+    const original = cp.spawn;
+    cp.spawn = (command, args, options) => command === 'claude'
+      ? original(process.execPath, ['-e', ${JSON.stringify(agentScript)}, JSON.stringify({command,args,calls:${JSON.stringify(path.join(dir, 'calls.jsonl'))}})], options)
+      : original(command, args, options);
+    cp.execFile = (command, args, options, callback) => process.nextTick(() => callback(new Error('GitHub disabled in test')));
+  `);
+  const pr = { repo: 'acme/api', number: 1, url: 'https://github.com/acme/api/pull/1', reviews: [], requested: [], labels: [], issues: [], author: {} };
+  const mineKey = 'mine:acme/api#1';
+  const mapping = { skill: '(prompt)', selfSkill: '(prompt)', fixSkill: '(prompt)' };
+  // Settings and cards saved while Codex was supported still load
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ consentVersion: 2, provider: 'codex', codexModel: 'm', codexEffort: 'high', codexArgs: '--approve-for-me', workdir: dir, repos: { 'acme/api': mapping } }));
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ prs: { 'acme/api#1': { status: 'requested', provider: 'codex', pr } }, mine: { [mineKey]: { status: 'idle', provider: 'codex', pr, threads: [{ no: 1, url: 'https://github.com/acme/api/pull/1#discussion_r1', comment: 'fix this', author: 'reviewer' }] } } }));
+  const port = await new Promise((resolve) => {
+    const server = require('node:net').createServer().listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+  const child = spawn(process.execPath, ['--require', preload, path.join(__dirname, 'server.js')], { env: { ...process.env, DOCKET_DATA: dir, PORT: String(port) } });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit');
+      child.kill();
+      await exited;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const address = await new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.stdout.on('data', (chunk) => { const match = /docket-gits: (http:\/\/localhost:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
+    child.once('exit', () => reject(new Error(stderr)));
+  });
+  const headers = await signUp(new URL(address).port, dir);
+  const api = async (route, body, method = 'POST') => {
+    const response = await fetch(address + route, { method: body === undefined ? 'GET' : method, headers: { ...headers, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: response.status, data: await response.json() };
+  };
+  const wait = async (kind, status) => {
+    for (let i = 0; i < 100; i++) {
+      const { data } = await api('/api/board');
+      if (data[kind][0].status === status) return data[kind][0];
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    assert.fail(`Did not reach ${status}: ${stderr}`);
+  };
+  const { config } = (await api('/api/board')).data;
+  for (const key of ['provider', 'codexModel', 'codexEffort', 'codexArgs']) assert.ok(!(key in config), key);
+  assert.equal((await api('/api/review', { key: 'acme/api#1' })).status, 200);
+  await wait('prs', 'reviewed');
+  await api('/api/post', { key: 'acme/api#1', decisions: {}, humanRead: true });
+  await wait('prs', 'commented');
+  await api('/api/mine/run', { key: mineKey, mode: 'self' });
+  await wait('mine', 'planned');
+  await api('/api/mine/apply', { key: mineKey, decisions: {}, confirmed: true });
+  await wait('mine', 'idle');
+  await api('/api/mine/run', { key: mineKey, mode: 'fix', decisions: { 'https://github.com/acme/api/pull/1#discussion_r1': { verdict: 'agree' } } });
+  await wait('mine', 'planned');
+  const calls = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(calls.map((c) => c.command), ['claude', 'claude', 'claude', 'claude', 'claude']);
+  // Review, self-review and fix plan are read-only; posting allows only its tools; applying accepts edits.
+  // Posting and applying start a fresh session, since the review / plan session read the PR
+  const [review, post, self, apply, fix] = calls.map((c) => c.args);
+  for (const args of [review, self, fix]) assert.ok(!args.includes('--permission-mode') && !args.includes('--allowedTools'));
+  assert.ok(post.includes('--allowedTools'));
+  assert.ok(apply.includes('--permission-mode'));
+  for (const args of calls.map((c) => c.args)) assert.ok(!args.includes('--resume'));
+  const file = path.join(dir, '.claude', 'skills', 'docket-claude-review', 'SKILL.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'Review instructions');
+  await api('/api/config', { repos: { 'acme/api': { ...mapping, skill: 'docket-claude-review', args: 'CLAUDE-{pr-number}' } } }, 'PUT');
+  assert.ok((await api('/api/skills')).data.skills.includes('docket-claude-review'));
+  await api('/api/review', { key: 'acme/api#1' });
+  await wait('prs', 'reviewed');
+  const last = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).at(-1).args;
+  assert.match(last[last.indexOf('-p') + 1], /^\/docket-claude-review CLAUDE-1/);
 });
