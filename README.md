@@ -71,11 +71,11 @@ flowchart LR
    - **Disagree without a reason**: nothing is posted.
 3. **Comment** starts a new AI session that sees only the findings and your decisions, not the pull request, and posts them as one review. That session may run only `gh api` on the reviews of that pull request (Claude); Codex runs it with your `codexArgs`.
 
-The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes between 9:00 and 19:00 by default, and the **Refresh** button fetches at any time. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
+The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes between 9:00 and 19:00 by default while the page is open (and right away when you come back to it), and the **Refresh** button fetches at any time. Each fetch lists the pull requests first and reads full details only for those updated since the last fetch. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
 
 You can drag cards between lanes. Dragging to **Done** skips the pull request, and dragging from **Done** to **Reviewing** reviews it again.
 
-On both boards, **+** in the sidebar adds filters: repository, author, review state, merged, Draft, CI result, size (lines changed), days without updates, labels, base branch, conflicts, linked issue, milestone and assignees. Each tab keeps its own filters in this browser.
+On both boards, **+** in the sidebar adds filters: repository, author, review state, merged, Draft, size (lines changed), days without updates, labels, base branch, conflicts, linked issue, milestone and assignees. Each tab keeps its own filters in this browser.
 
 ### Get reviewed
 

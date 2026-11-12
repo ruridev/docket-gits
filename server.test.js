@@ -921,11 +921,13 @@ test('killRun: does not throw for an already exited process (so cancel can resto
 
 test('GitHub fetch: on a permission error for some nodes (gh exits with failure), applies the PRs it got and reports the error', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  const data = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [node(1), null] }, mine: { issueCount: 0, nodes: [] } };
+  const pr = { ...node(1), id: 'PR_1' };
+  const list = { viewer: { login: 'me' }, open: { issueCount: 2, nodes: [{ id: 'PR_1', url: pr.url, updatedAt: pr.updatedAt, mergeable: 'MERGEABLE' }, null] }, mine: { issueCount: 0, nodes: [] } };
   const errors = [{ message: 'Resource protected by organization SAML enforcement.' }];
-  fs.writeFileSync(path.join(dir, 'out.json'), `${JSON.stringify({ data, errors })}\n`);
-  // Replace gh with a script that outputs partial data and exits with failure
-  fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\nwhile IFS= read -r l; do echo "$l"; done < ${path.join(dir, 'out.json')}\necho "gh: SAML" >&2\nexit 1\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(dir, 'list.json'), `${JSON.stringify({ data: list, errors })}\n`);
+  fs.writeFileSync(path.join(dir, 'detail.json'), `${JSON.stringify({ data: { n: [pr] } })}\n`);
+  // Replace gh with a script: the list has an unreadable PR and exits with failure, the details of the readable one follow
+  fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\ncase "$*" in *"nodes(ids"*) f=detail; s=0 ;; *) f=list; s=1 ;; esac\nwhile IFS= read -r l; do echo "$l"; done < ${dir}/$f.json\n[ $s = 1 ] && echo "gh: SAML" >&2\nexit $s\n`, { mode: 0o755 });
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: dir } });
   try {
@@ -1123,24 +1125,41 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
 
 test('normalizePr: keeps what the board filters need, and tolerates PRs fetched before those fields existed', () => {
   const { normalizePr } = require('./server');
-  const full = normalizePr({
-    ...node(1), additions: 40, deletions: 70, mergeable: 'CONFLICTING', milestone: { title: 'v2' },
-    assignees: { nodes: [{ login: 'bob' }] }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'ERROR' } } }] },
-  });
-  assert.deepEqual([full.size, full.conflict, full.milestone, full.assignees, full.ci], [110, true, 'v2', ['bob'], 'failure']);
-  const ci = (state) => normalizePr({ ...node(1), commits: { nodes: [{ commit: { statusCheckRollup: state && { state } } }] } }).ci;
-  assert.deepEqual(['SUCCESS', 'FAILURE', 'PENDING', 'EXPECTED', null].map(ci), ['success', 'failure', 'pending', 'pending', null]);
+  const full = normalizePr({ ...node(1), additions: 40, deletions: 70, mergeable: 'CONFLICTING', milestone: { title: 'v2' }, assignees: { nodes: [{ login: 'bob' }] } });
+  assert.deepEqual([full.size, full.conflict, full.milestone, full.assignees], [110, true, 'v2', ['bob']]);
   const old = normalizePr(node(2));
-  assert.deepEqual([old.size, old.conflict, old.milestone, old.assignees, old.ci], [0, false, null, [], null]);
+  assert.deepEqual([old.size, old.conflict, old.milestone, old.assignees], [0, false, null, []]);
 });
 
-test('withFilterValues: adds the second query values by URL; without them the nodes stay as they are', () => {
-  const { withFilterValues } = require('./server');
-  const a = node(1);
-  const b = node(2);
-  const data = { open: { nodes: [{ url: a.url, additions: 3, deletions: 4, mergeable: 'MERGEABLE' }, null] }, mine: { nodes: [] } };
-  const [x, y] = withFilterValues([a, b], data);
-  assert.deepEqual([x.additions, x.deletions, x.number], [3, 4, 1]);
-  assert.equal(y, b);
-  assert.deepEqual(withFilterValues([a, null], null), [a, null]);
+test('staleIds / withDetails: details are fetched only for new or updated PRs, and rebuilt in search order', () => {
+  const { staleIds, withDetails } = require('./server');
+  const now = Date.parse('2026-11-12T12:00:00Z');
+  const cache = new Map([['open:A', { updatedAt: 't1', at: now - 60000, node: { id: 'A', number: 1, mergeable: 'UNKNOWN' } }], ['open:B', { updatedAt: 't1', at: now, node: { id: 'B', number: 2 } }], ['mine:C', { updatedAt: 't1', at: now, node: { id: 'C' } }]]);
+  const items = [{ id: 'B', updatedAt: 't2', mergeable: 'MERGEABLE' }, { id: 'A', updatedAt: 't1', mergeable: 'CONFLICTING' }, { id: 'C', updatedAt: 't1' }, null];
+  // B changed, C is cached only for another search
+  assert.deepEqual(staleIds(items, cache, 'open', now), ['B', 'C']);
+  // Details over an hour old are read again even if the PR did not change
+  assert.deepEqual(staleIds(items, cache, 'open', now + 60 * 60 * 1000), ['B', 'A', 'C']);
+  // In search order, with the list's (newer) mergeable; a PR without details is left out
+  assert.deepEqual(withDetails(items, cache, 'open').map((n) => [n.id, n.mergeable]), [['B', 'MERGEABLE'], ['A', 'CONFLICTING']]);
+});
+
+test('detailQuery: asks only for the given ids, with the fields of that search', () => {
+  const { detailQuery, LIST_QUERY } = require('./server');
+  const q = detailQuery('mine', ['PR_a', 'PR_b']);
+  assert.match(q, /nodes\(ids: \["PR_a","PR_b"\]\)/);
+  assert.match(q, /reviewThreads/);
+  assert.doesNotMatch(detailQuery('open', ['x']), /reviewThreads/);
+  // The list itself stays light: no PR details in it
+  assert.doesNotMatch(LIST_QUERY, /reviewThreads|labels|author/);
+});
+
+test('fieldMutation: sets and clears several Project fields of one item in one request', () => {
+  const { fieldMutation } = require('./server');
+  const [q, vars] = fieldMutation('P', 'I', [{ field: { id: 'F1' }, v: '2026-11-05', type: 'Date', key: 'date' }, { field: { id: 'F2' } }, { field: { id: 'F3' }, v: 'it1', type: 'String', key: 'iterationId' }]);
+  assert.equal(q, 'mutation($project: ID!, $item: ID!, $f0: ID!, $v0: Date!, $f1: ID!, $f2: ID!, $v2: String!) { '
+    + 's0: updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f0, value: { date: $v0 } }) { clientMutationId } '
+    + 'c1: clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f1 }) { clientMutationId } '
+    + 's2: updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f2, value: { iterationId: $v2 } }) { clientMutationId } }');
+  assert.deepEqual(vars, { project: 'P', item: 'I', f0: 'F1', v0: '2026-11-05', f1: 'F2', f2: 'F3', v2: 'it1' });
 });

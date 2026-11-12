@@ -151,27 +151,25 @@ const RE_REQUEST_GRACE_MS = 2 * 60 * 1000;
 const doneKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.doneKeepDays) * 24 * 60 * 60 * 1000;
 const DONE_KEEP_MS = doneKeepMs();
 
-const SEARCH_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!, $reviewed: String!) {
+// The board fetch has two steps. LIST_QUERY returns only ids and update times of the PRs each search finds
+// (searches are what take time, so this stays well under GitHub's time limit). Full details are fetched only
+// for PRs that are new or updated since the last fetch (detailQuery), and kept in detailCache.
+// mergeable is in the list: a base branch change can add a conflict without updating the PR
+const LIST_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!, $reviewed: String!) {
   viewer { login avatarUrl }
-  open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...pr } }
-  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...pr } }
-  mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...pr ... on PullRequest {
-    reviewThreads(last: 100) { nodes { isResolved path line
-      root: comments(first: 1) { nodes { author { login } body url } }
-      comments(last: 1) { nodes { author { login } body url createdAt } } } }
-    comments(last: 50) { nodes { author { login } body url createdAt } }
-    reviews(last: 50) { nodes { author { login } body url submittedAt } }
-  } } }
-  reviewed: search(query: $reviewed, type: ISSUE, first: 50) { nodes { ...pr ... on PullRequest {
-    reviewThreads(last: 100) { nodes { isResolved
-      root: comments(first: 1) { nodes { author { login } } }
-      comments(last: 1) { nodes { author { login } } } } }
-  } } }
+  open: search(query: $open, type: ISSUE, first: 100) { issueCount nodes { ...item } }
+  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { issueCount nodes { ...item } }
+  mine: search(query: $mine, type: ISSUE, first: 50) { issueCount nodes { ...item } }
+  reviewed: search(query: $reviewed, type: ISSUE, first: 50) { nodes { ...item } }
 }
-fragment pr on PullRequest {
-      number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName
+fragment item on PullRequest { id url updatedAt mergeable }`;
+
+const PR_FRAGMENT = `fragment pr on PullRequest {
+      id number title url isDraft state mergedAt createdAt updatedAt baseRefName headRefName additions deletions
       repository { nameWithOwner }
       author { login avatarUrl }
+      milestone { title }
+      assignees(first: 10) { nodes { login } }
       labels(first: 10) { nodes { name color } }
       closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
       latestReviews(first: 20) { nodes { state author { login avatarUrl } } }
@@ -181,26 +179,46 @@ fragment pr on PullRequest {
       } } }
 }`;
 
-// Values used only by the board filters. Fetched in a second query that runs alongside SEARCH_QUERY:
-// in the same query, the check state and mergeability pushed it past GitHub's time limit (HTTP 502)
-const FILTER_QUERY = `query($open: String!, $merged: String!, $withMerged: Boolean!, $mine: String!) {
-  open: search(query: $open, type: ISSUE, first: 100) { nodes { ...extra } }
-  merged: search(query: $merged, type: ISSUE, first: 100) @include(if: $withMerged) { nodes { ...extra } }
-  mine: search(query: $mine, type: ISSUE, first: 50) { nodes { ...extra } }
-}
-fragment extra on PullRequest {
-  url additions deletions mergeable
-  milestone { title }
-  assignees(first: 10) { nodes { login } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-}`;
+// Fields fetched per search (my own PRs also need their threads and comments)
+const DETAIL_FIELDS = {
+  open: '...pr',
+  merged: '...pr',
+  mine: `...pr
+    reviewThreads(last: 100) { nodes { isResolved path line
+      root: comments(first: 1) { nodes { author { login } body url } }
+      comments(last: 1) { nodes { author { login } body url createdAt } } } }
+    comments(last: 50) { nodes { author { login } body url createdAt } }
+    reviews(last: 50) { nodes { author { login } body url submittedAt } }`,
+  reviewed: `...pr
+    reviewThreads(last: 100) { nodes { isResolved
+      root: comments(first: 1) { nodes { author { login } } }
+      comments(last: 1) { nodes { author { login } } } } }`,
+};
+const DETAIL_CHUNK = 50;
+const detailQuery = (group, ids) => `query { n: nodes(ids: ${JSON.stringify(ids)}) { ... on PullRequest { ${DETAIL_FIELDS[group]} } } }
+${PR_FRAGMENT}`;
+// group:id -> { updatedAt, at, node }. In memory only: after a restart the first fetch reads everything again.
+// Details older than an hour are read again, for changes that do not update the PR's update time
+const detailCache = new Map();
+const DETAIL_MAX_AGE_MS = 60 * 60 * 1000;
 
 // ---------- Pure functions (tested) ----------
 
-// Add the filter values (FILTER_QUERY result) to the search nodes, matched by URL
-function withFilterValues(nodes, data) {
-  const extra = new Map(['open', 'merged', 'mine'].flatMap((k) => data?.[k]?.nodes || []).filter((n) => n?.url).map((n) => [n.url, n]));
-  return nodes.map((n) => (n?.url && extra.has(n.url) ? { ...extra.get(n.url), ...n } : n));
+// Ids in a search result whose details are missing, older than the PR, or over an hour old (null nodes are PRs that couldn't be read)
+function staleIds(items, cache, group, now = Date.now()) {
+  return items.filter((it) => {
+    const c = it?.id && cache.get(`${group}:${it.id}`);
+    return it?.id && (!c || c.updatedAt !== it.updatedAt || now - c.at > DETAIL_MAX_AGE_MS);
+  }).map((it) => it.id);
+}
+
+// The search result with full details from the cache, in search order (the list's mergeable is the newer one).
+// A PR without details is left out
+function withDetails(items, cache, group) {
+  return items.flatMap((it) => {
+    const c = it?.id && cache.get(`${group}:${it.id}`);
+    return c ? [{ ...c.node, mergeable: it.mergeable }] : [];
+  });
 }
 
 function searchQueries(mergedDays, now) {
@@ -252,15 +270,9 @@ function normalizePr(node) {
     conflict: node.mergeable === 'CONFLICTING',
     milestone: node.milestone?.title || null,
     assignees: (node.assignees?.nodes || []).map((a) => a.login),
-    ci: ciState(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state),
   };
 }
 
-// Combined check state of the head commit: success / failure / pending, or null without checks
-function ciState(state) {
-  if (!state) return null;
-  return state === 'SUCCESS' ? 'success' : ['FAILURE', 'ERROR'].includes(state) ? 'failure' : 'pending';
-}
 
 // Threads I started: unresolved with my comment last = waiting on the author, otherwise = addressed
 function myThreadCounts(node, login) {
@@ -911,28 +923,34 @@ async function fetchFromGitHub() {
   const q = searchQueries(config.mergedDays, Date.now());
   // gh fails if some nodes are unreadable (e.g. PRs in SAML-protected orgs). Use what we got and show the error too
   let partialError = null;
-  const vars = ['-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`];
-  // The filter values are optional: if that query fails, the board still updates without them
-  const [out, filterOut] = await Promise.all([
-    gh(['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, ...vars, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
-      try {
-        if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
-      } catch {}
-      throw e;
-    }),
-    gh(['api', 'graphql', '-f', `query=${FILTER_QUERY}`, ...vars]).catch((e) => e.stdout || null),
-  ]);
+  const out = await gh(['api', 'graphql', '-f', `query=${LIST_QUERY}`, '-f', `open=${q.open}`, '-f', `merged=${q.merged}`, '-F', `withMerged=${q.withMerged}`, '-f', `mine=${q.mine}`, '-f', `reviewed=${q.reviewed}`]).catch((e) => {
+    try {
+      if (JSON.parse(e.stdout).data?.viewer) return (partialError = e.message), e.stdout;
+    } catch {}
+    throw e;
+  });
   const { data } = JSON.parse(out);
-  let filterData = null;
-  try { filterData = JSON.parse(filterOut).data; } catch {}
-  for (const k of ['open', 'merged', 'mine']) if (data[k]) data[k].nodes = withFilterValues(data[k].nodes, filterData);
+  const groups = Object.keys(DETAIL_FIELDS).filter((g) => data[g]);
+  // Details only for new or updated PRs, a few in each request so no single request gets slow
+  const jobs = groups.flatMap((g) => {
+    const ids = staleIds(data[g].nodes, detailCache, g);
+    return Array.from({ length: Math.ceil(ids.length / DETAIL_CHUNK) }, (_, i) => ghqlResult(detailQuery(g, ids.slice(i * DETAIL_CHUNK, (i + 1) * DETAIL_CHUNK))).then(({ data: d, failed, message }) => {
+      if (failed) partialError = message || partialError;
+      for (const node of d.n || []) if (node?.id) detailCache.set(`${g}:${node.id}`, { updatedAt: node.updatedAt, at: Date.now(), node });
+    }));
+  });
+  await Promise.all(jobs);
+  // Forget PRs no search returns any more
+  const seen = new Set(groups.flatMap((g) => data[g].nodes.filter((it) => it?.id).map((it) => `${g}:${it.id}`)));
+  for (const k of detailCache.keys()) if (!seen.has(k)) detailCache.delete(k);
+  state.truncated = isTruncated(data);
+  for (const g of groups) data[g].nodes = withDetails(data[g].nodes, detailCache, g);
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now(), (data.reviewed?.nodes || []).filter((n) => n?.number), data.viewer.login, doneKeepMs(config.doneKeepDays));
   // Only handle PRs from repos in the config, to keep personal repos etc. out (all PRs if none configured)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
   state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n?.number && registered(n)), data.viewer.login);
-  state.truncated = isTruncated(data);
   state.lastFetchedAt = Date.now();
   state.fetchError = partialError;
   saveState();
@@ -1032,20 +1050,24 @@ async function cached(key, refresh, fn) {
 
 const filterQuery = (field, title) => `${JSON.stringify(field)}:${JSON.stringify(title)}`;
 
-// v2: the cached value carries the filterable field list (older entries lack it)
+// One read of the Project for both the roadmap (fields, iterations with counts) and applying plans (field ids, repos).
+// v3: the cached value carries the filterable field list, field ids and repos (older entries lack them)
 async function projectMeta(url, refresh) {
   const p = parseProjectUrl(url);
   if (!p) throw E('projectUrlInvalid', { url });
   const range = { past: Math.max(0, Number(config.sprintPast) || 0), future: Math.max(0, Number(config.sprintFuture) || 0) };
   const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  return cached(`meta:v2:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
-    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title url fields(first: 50) { nodes {
-      ... on ProjectV2FieldCommon { name dataType }
+  return cached(`meta:v3:${url}:${range.past}:${range.future}:${today}`, refresh, async () => {
+    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title url repositories(first: 50) { nodes { nameWithOwner } } fields(first: 50) { nodes {
+      ... on ProjectV2FieldCommon { id name dataType }
       ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
       ... on ProjectV2SingleSelectField { options { name } }
     } } } } }`, { login: p.login, number: p.number });
     const project = data[p.owner].projectV2;
     const fields = detectFields(project.fields.nodes, fieldChoice(url) || {});
+    const fieldIds = Object.fromEntries(project.fields.nodes.filter((f) => f.id).map((f) => [f.name, f.id]));
+    // Only unfinished iterations can be chosen in plans
+    const openIterations = fields.iterations.filter((i) => !i.completed).sort((a, b) => a.startDate.localeCompare(b.startDate)).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate }));
     // Fetch per-sprint counts in one query via aliases
     // Future sprints are filtered by count, so count all of them first
     fields.iterations = pickIterations(fields.iterations, today, { past: range.past, future: Infinity });
@@ -1056,7 +1078,7 @@ async function projectMeta(url, refresh) {
       fields.iterations.forEach((it, i) => (it.count = counts[p.owner].projectV2[`c${i}`].totalCount));
     }
     fields.iterations = pickIterations(fields.iterations, today, range);
-    return { url, id: project.id, title: project.title, ...fields };
+    return { url, id: project.id, title: project.title, ...fields, fieldIds, openIterations, repos: project.repositories.nodes.map((r) => r.nameWithOwner) };
   });
 }
 
@@ -1400,7 +1422,7 @@ async function saveFieldChoice(url, body) {
   config = { ...config, projectFields: { ...config.projectFields, [url]: choice } };
   writeJson(CONFIG_FILE, config);
   unsyncFields(url, ['sprint', 'start', 'end'].filter((k) => (before[k] || null) !== choice[k]));
-  for (const prefix of [`meta:v2:${url}:`, `plan-fields:v2:${url}`, `plan-live:v2:${url}:`]) dropCached(prefix);
+  for (const prefix of [`meta:v3:${url}:`, `plan-live:v2:${url}:`]) dropCached(prefix);
 }
 
 // A newly linked field has no synced value yet: clear it from the last-synced snapshots, so plan values show as
@@ -1438,27 +1460,25 @@ async function planRanges(url, refresh) {
   return { unit, title: meta?.title || null, readable: !!meta, chosen: !!fieldChoice(url), choice, fields: meta?.fields || [], statuses: meta?.statuses || [], sprints: (meta?.iterations || []).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })), periods: periodWindows(today, unit, range) };
 }
 
+// One GraphQL request that sets or clears several Project fields of one item. ops: { field, v, type, key } to set, { field } to clear
+function fieldMutation(project, item, ops) {
+  const vars = { project, item };
+  const parts = ops.map((op, i) => {
+    vars[`f${i}`] = op.field.id;
+    if (!op.key) return `c${i}: clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f${i} }) { clientMutationId }`;
+    vars[`v${i}`] = op.v;
+    return `s${i}: updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $f${i}, value: { ${op.key}: $v${i} } }) { clientMutationId }`;
+  });
+  const params = ops.map((op, i) => `$f${i}: ID!${op.key ? `, $v${i}: ${op.type}!` : ''}`).join(', ');
+  return [`mutation($project: ID!, $item: ID!, ${params}) { ${parts.join(' ')} }`, vars];
+}
+
 // Project fields for start date, end date, and sprint (chosen the same way as the roadmap)
 async function projectFields(url, refresh = false) {
-  const p = parseProjectUrl(url);
-  if (!p) throw E('projectUrlInvalid', { url });
-  return cached(`plan-fields:v2:${url}`, refresh, async () => {
-    const data = await ghql(`query($login: String!, $number: Int!) { ${projectRoot(p)} { id title repositories(first: 50) { nodes { nameWithOwner } } fields(first: 50) { nodes {
-      ... on ProjectV2FieldCommon { id name dataType }
-      ... on ProjectV2IterationField { configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
-    } } } } }`, { login: p.login, number: p.number });
-    const project = data[p.owner].projectV2;
-    const nodes = project.fields.nodes.filter((f) => f.id);
-    const f = detectFields(nodes, fieldChoice(url) || {});
-    const ref = (name) => name && { id: nodes.find((n) => n.name === name).id, name };
-    return {
-      id: project.id, title: project.title, start: ref(f.start), end: ref(f.end), sprint: ref(f.sprint),
-      // Repo candidates for a new plan (repos linked to the project)
-      repos: project.repositories.nodes.map((r) => r.nameWithOwner),
-      // Only unfinished sprints can be chosen in plans
-      iterations: f.iterations.filter((i) => !i.completed).sort((a, b) => a.startDate.localeCompare(b.startDate)).map(({ id, title, startDate, endDate }) => ({ id, title, startDate, endDate })),
-    };
-  });
+  const m = await projectMeta(url, refresh);
+  const ref = (name) => name && { id: m.fieldIds[name], name };
+  // repos: candidates for a new plan (repos linked to the project)
+  return { id: m.id, title: m.title, start: ref(m.start), end: ref(m.end), sprint: ref(m.sprint), repos: m.repos, iterations: m.openIterations };
 }
 
 // Segments made only of dots (. / ..) would walk out of repos/ in API paths
@@ -1467,14 +1487,29 @@ const validRepo = (repo) => /^(?!\.+\/)[\w.-]+\/(?!\.+$)[\w.-]+$/.test(repo || '
 // Candidates for assignees, labels, and milestones
 async function repoOptions(repo, refresh = false) {
   if (!validRepo(repo)) return { assignees: [], labels: [], milestones: [] };
-  return cached(`plan-repo:${repo}`, refresh, async () => {
+  const [owner, name] = repo.split('/');
+  return cached(`plan-repo:v2:${repo}`, refresh, async () => {
+    // The three lists share each request and page together, so a repo needs as many requests as its longest list has pages
+    const lists = {
+      assignees: { conn: 'assignableUsers', fields: 'login avatarUrl' },
+      labels: { conn: 'labels', fields: 'name color' },
+      milestones: { conn: 'milestones', args: 'states: OPEN, ', fields: 'title number' },
+    };
+    const out = { assignees: [], labels: [], milestones: [] };
+    let todo = Object.keys(lists).map((k) => [k, null]);
     let partial = false;
-    const get = (p) => gh(['api', '--paginate', '--slurp', p]).then((out) => JSON.parse(out).flat()).catch(() => { partial = true; return []; });
-    const [assignees, labels, milestones] = await Promise.all([get(`repos/${repo}/assignees?per_page=100`), get(`repos/${repo}/labels?per_page=100`), get(`repos/${repo}/milestones?state=open&per_page=100`)]);
+    while (todo.length) {
+      const body = todo.map(([k, after]) => `${k}: ${lists[k].conn}(${lists[k].args || ''}first: 100${after ? `, after: ${JSON.stringify(after)}` : ''}) { nodes { ${lists[k].fields} } pageInfo { hasNextPage endCursor } }`).join('\n');
+      const { data, failed } = await ghqlResult(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${body} } }`, { owner, name }).catch(() => ({ data: {}, failed: true }));
+      const r = data.repository;
+      if (failed || !r) { partial = true; break; }
+      for (const [k] of todo) out[k].push(...r[k].nodes);
+      todo = todo.filter(([k]) => r[k].pageInfo.hasNextPage).map(([k]) => [k, r[k].pageInfo.endCursor]);
+    }
     return {
-      assignees: assignees.map((a) => ({ login: a.login, avatarUrl: a.avatar_url })),
-      labels: labels.map((l) => ({ name: l.name, color: l.color })),
-      milestones: milestones.map((m) => ({ title: m.title, number: m.number })),
+      assignees: out.assignees.map((a) => ({ login: a.login, avatarUrl: a.avatarUrl })),
+      labels: out.labels.map((l) => ({ name: l.name, color: l.color })),
+      milestones: out.milestones.map((m) => ({ title: m.title, number: m.number })),
       ...(partial && { partial }),
     };
   });
@@ -1566,20 +1601,22 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
     if (parent?.issue && (fresh || relink)) await ghRest('POST', `repos/${parent.repo || repo}/issues/${parent.issue}/sub_issues`, { sub_issue_id: issue.id, replace_parent: true });
     if (fields) {
       const { addProjectV2ItemById: { item } } = await ghql('mutation($project: ID!, $content: ID!) { addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } } }', { project: fields.id, content: issue.node_id });
-      const ids = { project: fields.id, item: item.id };
-      const set = (field, v, type, key) => ghql(`mutation($project: ID!, $item: ID!, $field: ID!, $v: ${type}!) { updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field, value: { ${key}: $v } }) { clientMutationId } }`, { ...ids, field: field.id, v });
-      const clear = (field) => ghql('mutation($project: ID!, $item: ID!, $field: ID!) { clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field }) { clientMutationId } }', { ...ids, field: field.id });
+      // Dates and iteration are set (or cleared) in one request
+      const ops = [];
+      const set = (field, v, type, key) => ops.push({ field, v, type, key });
+      const clear = (field) => ops.push({ field });
       // For applied issues, values removed in the plan are removed from the Project too
       for (const k of ['start', 'end']) {
         if (!fields[k]) continue;
-        if (node[k]) await set(fields[k], node[k], 'Date', 'date');
-        else if (!fresh) await clear(fields[k]);
+        if (node[k]) set(fields[k], node[k], 'Date', 'date');
+        else if (!fresh) clear(fields[k]);
       }
       if (node.sprint) {
         const it = fields.sprint && fields.iterations.find((i) => i.title === node.sprint);
-        if (it) await set(fields.sprint, it.id, 'String', 'iterationId');
+        if (it) set(fields.sprint, it.id, 'String', 'iterationId');
         else warnings.push(E('planSprintMissing', { title: node.title, sprint: node.sprint }));
-      } else if (fields.sprint && !fresh) await clear(fields.sprint);
+      } else if (fields.sprint && !fresh) clear(fields.sprint);
+      if (ops.length) await ghql(...fieldMutation(fields.id, item.id, ops));
     }
     synced[syncKey(plan, node)] = syncSnapshot(node);
     delete synced[`!${syncKey(plan, node)}`];
@@ -1625,10 +1662,15 @@ function inPollHours(date, start, end) {
 }
 
 let pollTimer = null;
+// Nothing on the server acts on new pull requests by itself, so polling only matters while someone has the page
+// open (it asks for /api/board every few seconds). A page opened after a skipped poll fetches right away
+let lastViewAt = 0;
+const VIEW_IDLE_MS = 2 * 60 * 1000;
+const viewing = (now) => now - lastViewAt < VIEW_IDLE_MS;
 function schedulePoll() {
   clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    if (!inPollHours(new Date(), config.pollStartHour, config.pollEndHour)) return;
+    if (!inPollHours(new Date(), config.pollStartHour, config.pollEndHour) || !viewing(Date.now())) return;
     refreshFromGitHub().catch((e) => { state.fetchError = e.message; });
   }, pollIntervalMs(config.pollMinutes));
 }
@@ -2247,6 +2289,12 @@ async function handle(req, res) {
   if (!auth.user(req)) return send(res, 401, { error: 'signin' });
 
   if (req.method === 'GET' && url.pathname === '/api/board') {
+    const now = Date.now();
+    // Opened again after polls were skipped: fetch now if the data is older than one poll
+    if (!viewing(now) && now - (state.lastFetchedAt || 0) >= pollIntervalMs(config.pollMinutes) && inPollHours(new Date(now), config.pollStartHour, config.pollEndHour)) {
+      refreshFromGitHub().catch((e) => { state.fetchError = e.message; });
+    }
+    lastViewAt = now;
     if (url.searchParams.get('refresh') === '1') {
       try {
         await refreshFromGitHub();
@@ -2439,4 +2487,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits to create it again.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { normalizePr, withFilterValues, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, ALWAYS_DENY, cwdError, dropFlags, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, readCodexResult, codexOptions, sessionProvider, skillInvocation, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, childEnv, modelOptions, pathSettings, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildPostPrompt, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, splitArgs, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
