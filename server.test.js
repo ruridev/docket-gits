@@ -1258,3 +1258,16 @@ test('buildPostPrompt: passes the AI summary as escaped data and uses it as the 
   assert.match(prompt, /Use the summary as the review body/);
   assert.doesNotMatch(buildPostPrompt(pr, [], {}, true, true), /<summary>/);
 });
+
+test('buildReviewPrompt: names the base branch and asks to state only what was confirmed', () => {
+  const prompt = buildReviewPrompt({ url: 'u', number: 1, repo: 'o/r', base: 'feature/b-2' }, { skill: PROMPT_SKILL }, 'Review {pr-url}');
+  assert.match(prompt, /Base branch: feature\/b-2/);
+  assert.match(prompt, /already exists for this pull request/);
+  assert.match(prompt, /could not confirm/);
+  assert.doesNotMatch(buildReviewPrompt({ url: 'u', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, 'x'), /Base branch:/);
+});
+
+test('buildPostPrompt: drops parts of the summary that are unconfirmed or contradict the decisions', () => {
+  const prompt = buildPostPrompt({ url: 'u', repo: 'o/r', number: 7 }, [], {}, true, true, 'x', 'ok');
+  assert.match(prompt, /Leave out of the body anything in the summary that was not confirmed/);
+});

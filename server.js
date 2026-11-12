@@ -431,8 +431,10 @@ function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.en.review
 
 ---
 (Non-interactive run from docket-gits)
-- Pull request: ${pr.url}
+- Pull request: ${pr.url}${pr.base ? `
+- Base branch: ${pr.base}. This pull request merges into it, so code on that branch already exists for this pull request (for stacked pull requests too); check it there before assuming something is missing.` : ''}
 - You cannot ask the user anything. Do not post to the pull request or approve it yet; stop at the preview.
+- In the summary and findings, state only what you confirmed. If you could not confirm something (a command was denied or failed), do not turn it into a risk or a request to the author; say plainly that you could not confirm it, or leave it out.
 - When the review is done, end the final answer with the findings you would post, in the format below. If there are none, make findings an empty array.
 - Only the last message is read as the result. If the answer goes on (for example after a subagent's completion notice), repeat this block in full in the last message.
 
@@ -472,7 +474,7 @@ ${postLines(findings, decisions)}
   - Second paragraph: start with "${icon} " and say what the reviewer thinks about this point. Do not paste the user's text as is; add context and match the team's review tone.
 - Disagree without a reason: do not post.
 - Out of scope: do not post.
-- If there is nothing to post, no Approve and no code-read statement, post nothing.${summary?.trim() ? "\n- Use the summary as the review body (rewrite it in the team's review tone), followed by the code-read sentence if any. Keep it even when no finding is posted." : ''}
+- If there is nothing to post, no Approve and no code-read statement, post nothing.${summary?.trim() ? "\n- Use the summary as the review body (rewrite it in the team's review tone), followed by the code-read sentence if any. Keep it even when no finding is posted. Leave out of the body anything in the summary that was not confirmed (guesses, things the review could not check) or that contradicts the user's decisions above." : ''}
 - Post with \`gh api repos/${pr.repo}/pulls/${pr.number}/reviews -X POST ...\` as one review: put the path right after \`gh api\` and the flags after it. Run each command on its own, without pipes or shell variables (body and event; line findings go in comments with path, line and side: RIGHT). If a line is not in the diff and the post fails, put that finding in the review body with its file name and line number.
 - Before posting, list the existing reviews with \`gh api repos/${pr.repo}/pulls/${pr.number}/reviews\` and do not post again what a previous run already posted.
 - Only \`gh api\` on this pull request's reviews is allowed in this run. Do not read the pull request or run other commands.
