@@ -747,8 +747,11 @@ function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG) {
   const env = agentArgs({ ws, workdir: ws.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [],
     network: { allowLocal: cfg.runLocalhost !== false, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
   if (mode === 'compose') return ['--tools', '', '--json-schema', JSON.stringify(POST_SCHEMA), ...env];
-  if (mode === 'apply') return ['--permission-mode', 'acceptEdits', '--json-schema', JSON.stringify(APPLY_SCHEMA), ...env];
-  return env;
+  // Every Bash command runs in the sandbox (it can't leave it), so allow them all: without this, claude still asks
+  // about commands it can't check up front (shell variables, $(...)), and a run can't answer
+  const bash = ['--allowedTools', 'Bash'];
+  if (mode === 'apply') return ['--permission-mode', 'acceptEdits', ...bash, '--json-schema', JSON.stringify(APPLY_SCHEMA), ...env];
+  return [...bash, ...env];
 }
 
 // Worktrees of pull requests that left the board (closed, merged, no longer requested)

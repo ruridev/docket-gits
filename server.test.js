@@ -1109,8 +1109,9 @@ test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back 
     const args = claudeArgs(mode, run);
     assert.equal(JSON.parse(rulesOf(args, '--settings').join(',')).sandbox.enabled, true, mode);
     for (const r of ['WebFetch', 'Read(~/.ssh/**)', 'Edit(//ws/**)']) assert.ok(rulesOf(args, '--disallowedTools').includes(r), `${mode}: ${r}`);
-    // No command lists: what a run can do is decided by its token and the sandbox
-    assert.ok(!args.includes('--allowedTools') && !args.includes('--plugin-dir'), mode);
+    // No command lists: Bash is in the sandbox, which decides what a run can reach
+    assert.deepEqual(rulesOf(args, '--allowedTools'), mode === 'compose' ? [] : ['Bash'], mode);
+    assert.ok(!args.includes('--plugin-dir'), mode);
   }
   const read = claudeArgs('read', run);
   assert.ok(!read.includes('--permission-mode'));
@@ -1329,7 +1330,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   // Review, self-review and fix plan are read-only; posting allows only its tools; applying accepts edits.
   // Posting and applying start a fresh session, since the review / plan session read the PR
   const [review, self, apply, fix] = calls.map((c) => c.args);
-  for (const args of [review, self, fix]) assert.ok(!args.includes('--permission-mode') && !args.includes('--allowedTools'));
+  for (const args of [review, self, fix]) assert.ok(!args.includes('--permission-mode') && args[args.indexOf('--allowedTools') + 1] === 'Bash');
   assert.ok(apply.includes('--permission-mode'));
   for (const args of calls.map((c) => c.args)) assert.ok(!args.includes('--resume'));
   // Every run is sandboxed, holds no token (gh goes through the gatekeeper), and works in the pull request's worktree
