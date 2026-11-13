@@ -106,11 +106,13 @@ async function prepareWorkspace(pr, { runId, workdir, clone = true, root = WORK_
     // Inside the run, git over https asks gh, which answers with the read-only GH_TOKEN
     await git(['-C', repoDir, 'config', 'credential.helper', '']);
     await git(['-C', repoDir, 'config', '--add', 'credential.helper', '!gh auth git-credential']);
+    // The head the run starts from: a fix is published only if the branch is still there
+    const headSha = (await git(['-C', repoDir, 'rev-parse', 'HEAD'])).trim();
+    return { runDir, ghDir, cwd: repoDir, headSha };
   } catch (e) {
     removeWorkspace(runDir, root);
     throw e;
   }
-  return { runDir, ghDir, cwd: repoDir };
 }
 
 function removeWorkspace(runDir, root = WORK_ROOT) {

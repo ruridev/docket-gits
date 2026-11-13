@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, postTools, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -432,34 +432,35 @@ test('buildFixApplyPrompt / buildSelfApplyPrompt: agree + reason is added to the
   assert.match(buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], decisions, '', '🙋'), /starts with "🙋 "/);
 });
 
-test('buildFixApplyPrompt / buildSelfApplyPrompt: passes decisions and pushes/replies as already approved', () => {
+test('buildFixApplyPrompt / buildSelfApplyPrompt: passes decisions as already approved; splits, issues and the self-review are handed back', () => {
   const decisions = { 1: { verdict: 'agree' }, 2: { verdict: 'disagree', reason: 'As specified' } };
   const fix = buildFixApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }, { no: 2 }], decisions);
   assert.match(fix, /- #1 agree \/ no reason/);
   assert.match(fix, /- #2 disagree \/ reason: As specified/);
   assert.match(fix, /approval at the confirmation gate/);
   assert.match(fix, /For an agreed split/);
-  assert.match(fix, /Open a Draft pull request/);
-  assert.match(fix, /as a sub-issue/);
+  assert.match(fix, /as a split branch with the title and body of its Draft pull request/);
+  assert.match(fix, /\{pull:<key>\}/);
+  assert.match(fix, /with parent: the issue this pull request closes/);
   assert.match(fix, /For a rebut \(the AI's rebuttal\)/);
-  assert.match(fix, /<docket-applied>/);
+  assert.doesNotMatch(fix, /push/i);
   const self = buildSelfApplyPrompt({ url: 'https://x/3' }, [{ no: 1 }], { 1: { verdict: 'agree' } });
-  assert.match(self, /event: COMMENT/);
-  assert.match(self, /with the SHA of the fixing commit/);
-  assert.match(self, /<docket-applied>/);
+  assert.match(self, /event COMMENT/);
+  assert.match(self, /"finding:<no>"\) with the SHA of the fixing commit/);
+  assert.doesNotMatch(self, /push|gh api/i);
   // Even with 0 comments, post the impressions as the review body
   const empty = buildSelfApplyPrompt({ url: 'https://x/3' }, [], {}, 'No problems found');
   assert.match(empty, /No problems found/);
-  assert.match(empty, /Post the summary-only review even if no finding was agreed/);
+  assert.match(empty, /Write the review even if no finding was agreed/);
 });
 
-test('buildCommentApplyPrompt: treats my own PR comments as instructions; fixes, pushes and replies as approved', () => {
+test('buildCommentApplyPrompt: treats my own PR comments as instructions; fixes and replies as approved', () => {
   const prompt = buildCommentApplyPrompt({ url: 'https://x/3' });
   assert.match(prompt, /https:\/\/x\/3/);
   assert.match(prompt, /last comment written by the pull request author/);
   assert.match(prompt, /approval/);
-  assert.match(prompt, /Do not force-push/);
-  assert.match(prompt, /<docket-applied>/);
+  assert.match(prompt, /write the replies/);
+  assert.doesNotMatch(prompt, /push/i);
 });
 
 test('runForTag: if the last message has no tag, resumes the same session once to output it again', async () => {
@@ -736,7 +737,7 @@ test('buildReviewPrompt: starts with /skill when a skill is set', () => {
 test('buildReviewPrompt: (prompt) expands the configured prompt template', () => {
   const prompt = buildReviewPrompt({ url: 'https://x/1', number: 1, repo: 'o/r' }, { skill: PROMPT_SKILL }, 'Look at {pr-url}');
   // Claude starts it with the bundled read skill, which holds the tools
-  assert.match(prompt, /^\/docket-gits:read\nLook at https:\/\/x\/1\n/);
+  assert.match(prompt, /^Look at https:\/\/x\/1\n/);
   assert.match(prompt, /stop at the preview/);
   assert.match(prompt, /<docket-findings>/);
 });
@@ -746,14 +747,10 @@ test('buildReviewPrompt: uses the default prompt when the configured one is empt
   assert.match(prompt, /gh pr diff https:\/\/x\/1/);
 });
 
-test('post prompt: can post with gh api even if the skill has no posting steps', () => {
-  assert.match(buildSelfApplyPrompt({ url: 'https://x/1' }, [], {}), /gh api/);
-});
-
 test('buildFixPlanPrompt: (prompt) expands the configured fix prompt template', () => {
   const triage = [{ no: 1, url: 'https://x/c1', author: 'a', comment: 'c', verdict: 'agree', reason: '' }];
   const prompt = buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, '{pr-url} に対応');
-  assert.match(prompt, /^\/docket-gits:read\nhttps:\/\/x\/3 に対応\n/);
+  assert.match(prompt, /^https:\/\/x\/3 に対応\n/);
   assert.match(prompt, /<docket-fix-plan>/);
   assert.match(buildFixPlanPrompt({ repo: 'acme/api', number: 3, url: 'https://x/3' }, { fixSkill: PROMPT_SKILL }, triage, ''), /gh pr checkout https:\/\/x\/3/);
 });
@@ -795,7 +792,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1069,7 +1066,9 @@ test('applyRun: fix runs start a fresh session that only sees the approved plan,
   assert.match(prompt, /a\.js/);
   assert.match(prompt, /Do not fetch or read the pull request's comments/);
   assert.doesNotMatch(prompt, /check the existing reviews, comments and commits/);
-  assert.match(prompt, /select\(\.user\.login == "me"\)/);
+  // It hands its work back to docket-gits instead of publishing it
+  assert.match(prompt, /## How this run ends/);
+  assert.match(prompt, /-o <out>\/<key>/);
 });
 
 test('applyRun: self-review runs start a fresh session too', () => {
@@ -1100,113 +1099,28 @@ test('latestAuthorComment: picks the newest non-empty comment by the PR author o
   assert.equal(latestAuthorComment([''], 'me'), null);
 });
 
-// Mirrors how Claude matches a Bash rule: a rule ending in ":*" is a prefix, every other "*" matches anything
-const ruleMatches = (rule, cmd) => {
-  const m = /^Bash\((.*)\)$/.exec(rule);
-  if (!m) return false;
-  if (m[1].endsWith(':*')) { const p = m[1].slice(0, -2); return cmd === p || cmd.startsWith(`${p} `); }
-  let re = m[1].split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-  if (re.endsWith(' .*') && m[1].split('*').length === 2) re = `${re.slice(0, -3)}( .*)?`; // "git status *" also matches "git status"
-  return new RegExp(`^${re}$`, 's').test(cmd);
-};
 const rulesOf = (args, flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1].split(',') : []);
-// The allowed-tools of a bundled skill (plugin/skills/<mode>/SKILL.md)
-const skillTools = (mode) => /^allowed-tools: (.*)$/m.exec(fs.readFileSync(path.join(__dirname, 'plugin', 'skills', mode, 'SKILL.md'), 'utf8'))[1].split(', ');
-// A read or apply run gets its tools from the bundled skill it starts with; a post run only from --allowedTools
-const permits = (args, cmd, mode) => [...rulesOf(args, '--allowedTools'), ...(mode === 'post' ? [] : skillTools(mode))].some((r) => ruleMatches(r, cmd))
-  && !rulesOf(args, '--disallowedTools').some((r) => ruleMatches(r, cmd));
 
-test('claudeArgs: read and apply runs take their tools from the bundled skills; posts get only the reviews endpoint', () => {
-  const { claudeArgs, ALWAYS_DENY, APPLY_DENY, DEFAULT_CONFIG, PLUGIN_DIR } = require('./server');
+test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back a schema, posts have no tools', () => {
+  const { claudeArgs, DEFAULT_CONFIG } = require('./server');
   assert.ok(!('claudeArgs' in DEFAULT_CONFIG) && !('readOnlyTools' in DEFAULT_CONFIG));
-  const tool = postTools({ repo: 'o/r', number: 7 });
-  for (const mode of ['apply', 'read', 'post']) assert.deepEqual(rulesOf(claudeArgs(mode, tool), '--plugin-dir'), [PLUGIN_DIR], mode);
-
-  const apply = claudeArgs('apply');
+  const run = { runDir: '/run', workdir: '/ws' };
+  for (const mode of ['read', 'apply', 'compose']) {
+    const args = claudeArgs(mode, run);
+    assert.equal(JSON.parse(rulesOf(args, '--settings').join(',')).sandbox.enabled, true, mode);
+    for (const r of ['WebFetch', 'Read(~/.ssh/**)', 'Edit(//ws/**)']) assert.ok(rulesOf(args, '--disallowedTools').includes(r), `${mode}: ${r}`);
+    // No command lists: what a run can do is decided by its token and the sandbox
+    assert.ok(!args.includes('--allowedTools') && !args.includes('--plugin-dir'), mode);
+  }
+  const read = claudeArgs('read', run);
+  assert.ok(!read.includes('--permission-mode'));
+  for (const r of ['Write', 'Edit', 'NotebookEdit']) assert.ok(rulesOf(read, '--disallowedTools').includes(r), r);
+  const apply = claudeArgs('apply', run);
   assert.deepEqual(apply.slice(0, 2), ['--permission-mode', 'acceptEdits']);
-  assert.ok(!apply.includes('--allowedTools'), 'fix tools come from the skill');
-  for (const t of ['Write', 'Edit', 'Bash(git:*)', 'Bash(gh pr:*)', 'Bash(gh api repos/*)', 'Bash(gh api /repos/*)']) assert.ok(skillTools('apply').includes(t), t);
-  // No tool that takes any path or runs every gh command
-  for (const t of ['Bash(gh:*)', 'Bash(jq:*)', 'Bash(ls:*)', 'Bash(cat:*)']) assert.ok(!skillTools('apply').includes(t), t);
-  for (const r of [...APPLY_DENY, ...ALWAYS_DENY, 'WebFetch', 'Read(~/.ssh/**)']) assert.ok(rulesOf(apply, '--disallowedTools').includes(r), r);
-  assert.equal(JSON.parse(rulesOf(apply, '--settings').join(',')).sandbox.enabled, true);
-
-  // Read runs: no edits and nothing that writes to GitHub, even when the skill allows Bash(gh *) or Bash(git *)
-  const read = claudeArgs('read');
-  assert.ok(!read.includes('--permission-mode') && !read.includes('--allowedTools'));
-  assert.ok(!skillTools('read').includes('Write') && skillTools('read').includes('Bash(gh pr diff:*)'));
-  for (const rule of ['Write', 'Edit', 'Bash(gh api * -f*)', 'Bash(gh api * --input*)', 'Bash(gh pr comment*)', 'Bash(gh pr review*)', 'Bash(gh pr create*)', 'Bash(gh pr edit*)',
-    'Bash(gh pr close*)', 'Bash(gh issue create*)', 'Bash(gh issue comment*)', 'Bash(gh issue edit*)', 'Bash(gh label*)', 'Bash(git push*)', 'Bash(git commit*)', ...ALWAYS_DENY]) assert.ok(rulesOf(read, '--disallowedTools').includes(rule), rule);
-
-  // Writing the text of a post: no tools at all, still sandboxed
-  const compose = claudeArgs('compose', '', { runDir: '/run' });
+  assert.ok(JSON.parse(rulesOf(apply, '--json-schema').join(',')).required.includes('branches'));
+  const compose = claudeArgs('compose', run);
   assert.deepEqual(compose.slice(0, 2), ['--tools', '']);
   assert.deepEqual(JSON.parse(rulesOf(compose, '--json-schema').join(',')).required, ['body', 'comments']);
-  assert.ok(!compose.includes('--permission-mode') && !compose.includes('--allowedTools'));
-  assert.equal(JSON.parse(rulesOf(compose, '--settings').join(',')).sandbox.enabled, true);
-
-  // Posts: only the reviews endpoint of that PR
-  const post = claudeArgs('post', tool);
-  assert.deepEqual(post.slice(0, 2), ['--allowedTools', tool]);
-  assert.ok(['Write', 'Edit', 'Bash(gh api * -X DELETE*)', 'Bash(gh api * --input /*)', ...ALWAYS_DENY].every((r) => rulesOf(post, '--disallowedTools').includes(r)));
-  assert.ok(!rulesOf(post, '--disallowedTools').includes('Bash(gh api *APPROVE*)'), 'posts may approve when the user chose to');
-  for (const mode of ['apply', 'read', 'post']) {
-    for (const rule of ['Bash(gh api *://*)', 'Bash(gh api */..*)', 'Bash(git * --no-index*)', 'Edit(**/.git/**)', 'Read(~/.ssh/**)']) assert.ok(rulesOf(claudeArgs(mode, tool), '--disallowedTools').includes(rule), `${mode}: ${rule}`);
-  }
-});
-
-test('bundled skills: only docket-gits can start them, and runs without a skill of their own start with them', () => {
-  for (const mode of ['read', 'apply']) {
-    const text = fs.readFileSync(path.join(__dirname, 'plugin', 'skills', mode, 'SKILL.md'), 'utf8');
-    // The model must not call the apply skill from a read run to get its tools
-    assert.match(text, /^disable-model-invocation: true$/m, mode);
-    assert.match(text, new RegExp(`^name: ${mode}$`, 'm'));
-  }
-  assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8')).name, 'docket-gits');
-  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
-  assert.match(buildReviewPrompt(pr, { skill: PROMPT_SKILL }, 'Review it'), /^\/docket-gits:read\nReview it/);
-  assert.match(buildReviewPrompt(pr, { skill: 'my-review', args: '{pr-number}' }, ''), /^\/my-review 5/);
-  assert.match(buildFixPlanPrompt(pr, { fixSkill: PROMPT_SKILL }, [], 'Plan it'), /^\/docket-gits:read\nPlan it/);
-});
-
-test('settings: claude args, read-only tools and the removed Codex settings can no longer be saved', () => {
-  assert.deepEqual(sanitizeConfig({ claudeArgs: '--allowedTools Bash(gh:*)', readOnlyTools: 'Bash(gh:*)', provider: 'codex', codexModel: 'm', codexEffort: 'high', codexArgs: '--approve-for-me' }), {});
-});
-
-test('claudeArgs: the commands each run needs still pass, and the ones that escape the fence do not', () => {
-  const { claudeArgs } = require('./server');
-  const pr = { repo: 'acme/api', number: 5, url: 'https://github.com/acme/api/pull/5' };
-  const apply = claudeArgs('apply', '', pr);
-  const read = claudeArgs('read', '', pr);
-  const post = claudeArgs('post', postTools(pr), pr);
-  const ok = {
-    apply: ['git status', 'git diff', 'git diff --unified=0 HEAD', 'git log --oneline -5', 'git add -A', 'git commit -m "Fix the null check"',
-      'git fetch origin', 'git fetch origin main', 'git checkout -b fix-null', 'git switch feature-x', 'git rebase origin/main', 'git merge origin/main',
-      'git push', 'git push origin feature-x', 'git push -u origin fix/null', 'git push origin HEAD:feature-x', 'git rev-parse HEAD',
-      'gh pr view 5', 'gh pr diff 5', 'gh pr comment https://github.com/acme/api/pull/5 --body "Fixed in abc123"', 'gh pr checks 5',
-      'gh api repos/acme/api/pulls/5/comments', 'gh api repos/acme/api/pulls/5/comments --paginate --jq .[]', 'gh api repos/acme/api/pulls/5/comments/9/replies -f body="Fixed in abc123"',
-      'gh api repos/acme/api/actions/runs/1/jobs', 'mkdir -p tmp'],
-    read: ['gh pr view 5', 'gh pr diff 5', 'gh pr checks 5', 'git log --oneline -5', 'git diff main...HEAD', 'git show HEAD', 'git status',
-      'gh api repos/acme/api/pulls/5/comments', 'gh api repos/acme/api/contents/README.md'],
-    post: ['gh api repos/acme/api/pulls/5/reviews', 'gh api repos/acme/api/pulls/5/reviews -X POST --input -', 'gh api -X POST repos/acme/api/pulls/5/reviews -f event=APPROVE -f body=LGTM',
-      'gh api --method POST repos/acme/api/pulls/5/reviews -f event=COMMENT'],
-  };
-  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of ok[mode]) assert.ok(permits(args, cmd, mode), `${mode} should allow: ${cmd}`);
-  // Every gh / git command a fix run's prompt tells the agent to run must pass the fix run's rules
-  const { applyRun } = require('./server');
-  const { prompt } = applyRun({ pr: { ...pr, author: { login: 'alice' } }, mode: 'fix', findings: [], cwd: '/tmp/api' }, {});
-  assert.match(prompt, /^\/docket-gits:apply\n/);
-  const told = [...prompt.matchAll(/`((?:gh|git) [^`]+)`/g)].map((m) => m[1]).filter((c) => c.split(' ').length > 2); // skip bare mentions such as `gh api`
-  assert.ok(told.some((c) => c.includes('--paginate')), 'the prompt has the retry queries');
-  for (const cmd of told) assert.ok(permits(apply, cmd, 'apply'), `fix prompt command should pass: ${cmd}`);
-
-  const bad = ["git fetch --upload-pack='sh -c x' origin", 'git fetch origin --upl=x', 'git pull --upload-pack=x origin main', "git push --receive-pack='sh -c x' origin",
-    'git push --rece=x origin', 'git rebase --exe x main', 'git ls-remote -u x origin', 'git clone -u x https://github.com/acme/api', 'git grep -Ox foo', 'git grep -nOx foo',
-    'git grep --open-files-in-pager=x foo', 'git --config-env=core.sshCommand=X fetch', 'git -C . -c core.sshCommand=x fetch', 'git maintenance start', 'git instaweb --httpd=x',
-    'git push origin :feature-x', 'git push origin :refs/heads/feature-x', 'gh api repos/acme/api -X PATCH -f private=false', 'gh api repos/acme/api --method=PATCH -f archived=true',
-    'gh api -X PATCH repos/acme/api -f default_branch=x', 'gh api -X DELETE repos/acme/api/git/refs/heads/x', 'gh api repos/acme/api/dispatches -f event_type=x',
-    'gh api repos/acme/api/actions/workflows/ci.yml/dispatches -f ref=main', 'git push --force origin x', 'git push origin main', 'gh pr merge 5'];
-  for (const [mode, args] of Object.entries({ apply, read, post })) for (const cmd of bad) assert.ok(!permits(args, cmd, mode), `${mode} should block: ${cmd}`);
 });
 
 test('checkAgentToken: only fine-grained tokens, and one that can read a configured repository of the owner', async () => {
@@ -1282,12 +1196,6 @@ test('postReview: posts once with the user login, folds line comments into the b
   await assert.rejects(postReview(pr, review, 0, async () => { throw new Error('HTTP 403'); }, async () => []), /403/);
 });
 
-test('postTools: the reviews endpoint is allowed whether the method flag comes before or after the path', () => {
-  const rules = postTools({ repo: 'o/r', number: 7 }).split(',');
-  for (const r of ['Bash(gh api repos/o/r/pulls/7/reviews*)', 'Bash(gh api -X POST repos/o/r/pulls/7/reviews*)', 'Bash(gh api --method POST repos/o/r/pulls/7/reviews*)']) assert.ok(rules.includes(r), r);
-  assert.ok(rules.every((r) => r.includes('repos/o/r/pulls/7/reviews')));
-});
-
 test('buildReviewPrompt: names the base branch and asks to state only what was confirmed', () => {
   const prompt = buildReviewPrompt({ url: 'u', number: 1, repo: 'o/r', base: 'feature/b-2' }, { skill: PROMPT_SKILL }, 'Review {pr-url}');
   assert.match(prompt, /Base branch: feature\/b-2/);
@@ -1327,11 +1235,12 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
     const { command, args, calls } = JSON.parse(process.argv[1]);
     fs.appendFileSync(calls, JSON.stringify({ command, args, token: process.env.GH_TOKEN || null, ghConfig: process.env.GH_CONFIG_DIR || null, cwd: process.cwd() }) + '\\n');
     const prompt = args[args.indexOf('-p') + 1];
-    const result = prompt.includes('<docket-posted>') ? '<docket-posted>{"posted":true}</docket-posted>'
-      : prompt.includes('<docket-applied>') ? '<docket-applied>{"done":true}</docket-applied>'
-      : prompt.includes('<docket-fix-plan>') ? '<docket-fix-plan>{"items":[]}</docket-fix-plan>'
-      : '<docket-findings>{"findings":[]}</docket-findings>';
-    console.log(JSON.stringify({ type: 'result', result, session_id: 'claude-session' }));
+    // A fix run answers with its schema: here only a reply, which docket-gits posts after the user publishes
+    const structured = prompt.includes('## How this run ends')
+      ? { done: true, error: null, summary: 'Replied', branches: [], issues: [], review: null, replies: [{ to: 'https://github.com/acme/api/pull/1#issuecomment-5', body: 'Done' }] } : undefined;
+    const result = prompt.includes('<docket-fix-plan>') ? '<docket-fix-plan>{"items":[]}</docket-fix-plan>'
+      : structured ? JSON.stringify(structured) : '<docket-findings>{"findings":[]}</docket-findings>';
+    console.log(JSON.stringify({ type: 'result', result, structured_output: structured, session_id: 'claude-session' }));
   `;
   fs.writeFileSync(preload, `
     const cp = require('node:child_process');
@@ -1345,7 +1254,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
     const ghLog = ${JSON.stringify(path.join(dir, 'gh.jsonl'))};
     cp.execFile = (command, args, options, callback) => {
       if (command === 'git') return execFile(command, args, options, callback);
-      const post = command === 'gh' && args[0] === 'api' && args[1] === '-X' && args[2] === 'POST' && args[3].endsWith('/reviews');
+      const post = command === 'gh' && args[0] === 'api' && args[1] === '-X' && args[2] === 'POST';
       const list = command === 'gh' && args[0] === 'api' && (args[1] || '').endsWith('/reviews?per_page=100');
       let input = '';
       process.nextTick(() => {
@@ -1417,6 +1326,10 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   await api('/api/mine/run', { key: mineKey, mode: 'self' });
   await wait('mine', 'planned');
   await api('/api/mine/apply', { key: mineKey, decisions: {}, confirmed: true });
+  // The fix run's result waits for the user; publishing posts the reply with the user's gh login
+  const ready = await wait('mine', 'ready');
+  assert.deepEqual(ready.result.replies, [{ to: 'https://github.com/acme/api/pull/1#issuecomment-5', body: 'Done' }]);
+  assert.equal((await api('/api/mine/publish', { key: mineKey })).status, 200);
   await wait('mine', 'idle');
   await api('/api/mine/run', { key: mineKey, mode: 'fix', decisions: { 'https://github.com/acme/api/pull/1#discussion_r1': { verdict: 'agree' } } });
   await wait('mine', 'planned');
@@ -1424,7 +1337,8 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   // The post had nothing for the AI to write (no finding, no summary), so docket-gits posted it without a run
   assert.deepEqual(calls.map((c) => c.command), ['claude', 'claude', 'claude', 'claude']);
   const posted = fs.readFileSync(path.join(dir, 'gh.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(posted, [{ endpoint: 'repos/acme/api/pulls/1/reviews', body: { event: 'COMMENT', body: 'A human reviewer also read the code ✅', comments: [] } }]);
+  assert.deepEqual(posted, [{ endpoint: 'repos/acme/api/pulls/1/reviews', body: { event: 'COMMENT', body: 'A human reviewer also read the code ✅', comments: [] } },
+    { endpoint: 'repos/acme/api/issues/1/comments', body: { body: 'Done' } }]);
   // Review, self-review and fix plan are read-only; posting allows only its tools; applying accepts edits.
   // Posting and applying start a fresh session, since the review / plan session read the PR
   const [review, self, apply, fix] = calls.map((c) => c.args);
