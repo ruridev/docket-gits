@@ -1,0 +1,62 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const http = require('node:http');
+const { isRead, startGitHubProxy } = require('./github-proxy');
+
+const gql = (query) => Buffer.from(JSON.stringify({ query }));
+
+test('isRead: GET and GraphQL queries read; other methods, mutations and odd requests do not', () => {
+  assert.equal(isRead('GET', '/repos/o/r/pulls/1/comments', Buffer.alloc(0)), true);
+  assert.equal(isRead('HEAD', '/user', Buffer.alloc(0)), true);
+  for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal(isRead(m, '/repos/o/r/issues/1/comments', Buffer.from('{}')), false, m);
+  assert.equal(isRead('POST', '/graphql', gql('query { viewer { login } }')), true);
+  assert.equal(isRead('POST', '/graphql', gql('{ repository(owner:"o", name:"r") { pullRequest(number:1) { title } } }')), true);
+  // The word inside a string or a comment doesn't make a query a mutation
+  assert.equal(isRead('POST', '/graphql', gql('query { search(query:"mutation testing", type:ISSUE, first:1) { issueCount } } # no mutation here')), true);
+  assert.equal(isRead('POST', '/graphql', gql('mutation { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } }')), false);
+  assert.equal(isRead('POST', '/graphql', gql('query A { viewer { login } }\nmutation B { addStar(input:{starrableId:"x"}) { clientMutationId } }')), false);
+  assert.equal(isRead('POST', '/graphql', gql('subscription { x }')), false);
+  assert.equal(isRead('POST', '/graphql', Buffer.from('[{"query":"{ viewer { login } }"}]')), false);
+  assert.equal(isRead('POST', '/graphql', Buffer.from('not json')), false);
+  assert.equal(isRead('GET', 'https://evil.example/x', Buffer.alloc(0)), false);
+  assert.equal(isRead('GET', '//evil.example/x', Buffer.alloc(0)), false);
+});
+
+test('startGitHubProxy: adds the user token to reads, refuses writes and other hosts, drops method overrides', async (t) => {
+  const seen = [];
+  const upstream = http.createServer((req, res) => {
+    seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, override: req.headers['x-http-method-override'] ?? null });
+    res.end('{"ok":true}');
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dgp-'));
+  const socket = path.join(dir, 's');
+  const proxy = await startGitHubProxy({ socket, getToken: async () => 'user-token', upstream: { protocol: http, host: '127.0.0.1', port: upstream.address().port } });
+  t.after(() => { proxy.close(); upstream.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  assert.equal(fs.statSync(socket).mode & 0o777, 0o600);
+  const call = (method, url, { host = 'api.github.com', body, headers = {} } = {}) => new Promise((resolve, reject) => {
+    const req = http.request({ socketPath: socket, method, path: url, headers: { host, authorization: 'token placeholder', ...headers } }, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+  assert.equal((await call('GET', '/repos/o/r/pulls/1', { headers: { 'x-http-method-override': 'DELETE' } })).status, 200);
+  assert.equal((await call('POST', '/graphql', { body: gql('{ viewer { login } }') })).status, 200);
+  const write = await call('POST', '/repos/o/r/issues/1/comments', { body: '{"body":"x"}' });
+  assert.equal(write.status, 403);
+  assert.match(write.data, /can only read/);
+  assert.equal((await call('POST', '/graphql', { body: gql('mutation { x }') })).status, 403);
+  assert.equal((await call('GET', '/x', { host: 'example.com' })).status, 403);
+  assert.deepEqual(seen, [
+    { method: 'GET', url: '/repos/o/r/pulls/1', auth: 'token user-token', override: null },
+    { method: 'POST', url: '/graphql', auth: 'token user-token', override: null },
+  ]);
+});

@@ -7,8 +7,9 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
-const { agentArgs, agentEnv, prepareWorkspace, removeWorkspace, pruneWorkspaces, git: serverGit } = require('./workspace');
-const { APPLY_SCHEMA, applyHandback, collectResult, publish } = require('./publish');
+const { HOME: DOCKET_HOME, REGISTRIES, agentArgs, agentEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
+const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
+const { startGitHubProxy } = require('./github-proxy');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = path.resolve(process.env.DOCKET_DATA || path.join(__dirname, 'data'));
@@ -16,8 +17,6 @@ const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
-// Read-only fine-grained tokens for runs, one per repository owner: { "acme": "github_pat_..." }. Never sent to the browser
-const AGENT_TOKENS_FILE = path.join(DATA_DIR, 'agent-tokens.json');
 // What fix runs handed back (patches, replies...), waiting for the user to publish them
 const RESULTS_DIR = path.join(DATA_DIR, 'results');
 const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session', header: 'x-docket' });
@@ -29,6 +28,10 @@ const DEFAULT_CONFIG = {
   workdir: '',
   // Fix runs may edit <working directory>/.claude/skills without asking (off: those edits are denied)
   skillEdits: false,
+  // What AI runs may reach besides GitHub (read-only, through the server): localhost ports, for databases tests use,
+  // and these hosts, for installing dependencies. Everything else is blocked by the sandbox
+  runLocalhost: true,
+  runDomains: REGISTRIES,
   // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',
@@ -670,8 +673,7 @@ function applyHead(entry, cfg) {
 }
 
 // decisions: from the dialog, or null to follow comment (the author's comment fetched by docket-gits)
-// outDir: where the run writes its patches (see publish.js)
-function applyRun(entry, decisions, comment = '', cfg = config || DEFAULT_CONFIG, outDir = '<out>') {
+function applyRun(entry, decisions, comment = '', cfg = config || DEFAULT_CONFIG) {
   const { pr } = entry;
   const icon = cfg.agreeIcon?.trim() || DEFAULT_CONFIG.agreeIcon;
   const body = !decisions ? buildCommentApplyPrompt(pr, comment) : entry.mode === 'self' ? buildSelfApplyPrompt(pr, entry.findings, decisions, entry.summary, icon) : buildFixApplyPrompt(pr, entry.findings, decisions, icon);
@@ -687,7 +689,7 @@ The user read and approved these items in docket-gits. An AI wrote them from the
 
 ${body}
 
-${applyHandback(pr, outDir)}`;
+${applyHandback(pr)}`;
   return { prompt, opts: { cwd: entry.cwd, pr } };
 }
 
@@ -740,56 +742,39 @@ function modelOptions(cfg) {
 // read: review / self-review / fix plan, which edit no files; apply: a fix run, which edits and commits in its
 // clone and hands back patches; compose: writes the text of a post, with no tools at all.
 // Bash runs in the sandbox, so no command list is needed: what a run can't do is decided by the token and the sandbox
-// run: { runDir, workdir } of the run's workspace
-function claudeArgs(mode = 'apply', run = {}) {
-  const env = agentArgs({ runDir: run.runDir, workdir: run.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [] });
+// ws: the run's workspace (see workspace.js), with workdir
+function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG) {
+  const env = agentArgs({ ws, workdir: ws.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [],
+    network: { allowLocal: cfg.runLocalhost !== false, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
   if (mode === 'compose') return ['--tools', '', '--json-schema', JSON.stringify(POST_SCHEMA), ...env];
   if (mode === 'apply') return ['--permission-mode', 'acceptEdits', '--json-schema', JSON.stringify(APPLY_SCHEMA), ...env];
   return env;
 }
 
-function readAgentTokens() {
-  try {
-    const tokens = JSON.parse(fs.readFileSync(AGENT_TOKENS_FILE, 'utf8'));
-    return tokens && typeof tokens === 'object' && !Array.isArray(tokens) ? tokens : {};
-  } catch {
-    return {};
+// Worktrees of pull requests that left the board (closed, merged, no longer requested)
+function dropWorktrees(before, after) {
+  for (const [key, e] of Object.entries(before)) {
+    if (!after[key] && e.pr) removeWorkspace(e.pr, { workdir: repoTool(config.repos[e.pr.repo]).cwd || config.workdir }).catch((err) => console.error(`worktree ${key}: ${err.message}`));
   }
 }
 
-const agentToken = (repo) => readAgentTokens()[repo.split('/')[0].toLowerCase()] || null;
-
-// Only fine-grained tokens can be limited to reading; classic ones (ghp_, gho_) can't. If a repository of the
-// owner is set up, the token must be able to read it. Read-only access itself can't be checked: the README says how to make one
-async function checkAgentToken(owner, token, { repos = config.repos, fetchImpl = fetch } = {}) {
-  if (!/^github_pat_\w{20,}$/.test(token)) return E('agentTokenNotFineGrained');
-  const repo = Object.keys(repos).find((r) => r.split('/')[0].toLowerCase() === owner);
-  if (!repo) return null;
-  try {
-    const r = await fetchImpl(`https://api.github.com/repos/${repo}`, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'docket-gits' } });
-    return r.ok ? null : E('agentTokenCannotRead', { repo, status: r.status });
-  } catch (e) {
-    return E('agentTokenCheckFailed', { message: e.message });
-  }
-}
-
-// Runs fn(ws) in a throwaway clone of the pull request (clone: false gives an empty folder) and removes it afterwards.
-// workdir: the user's working directory, which the run may read but not write
+// Runs fn(ws) in the pull request's worktree (see workspace.js). clone: false gives an empty folder (a post's text needs no code).
+// workdir: the user's working directory: where their clones are found, read-only for runs
 async function withWorkspace(pr, workdir, fn, clone = true) {
   const unsafe = cwdError(workdir);
   if (unsafe) return { ok: false, error: unsafe };
-  if (!agentToken(pr.repo)) return { ok: false, error: E('agentTokenMissing', { owner: pr.repo.split('/')[0] }) };
+  if (!clone) {
+    const cwd = path.join(DOCKET_HOME, 'empty');
+    fs.mkdirSync(cwd, { recursive: true });
+    return fn({ cwd, workdir });
+  }
   let ws;
   try {
-    ws = await prepareWorkspace(pr, { runId: newRunId(), workdir, clone });
+    ws = await prepareWorkspace(pr, { workdir });
   } catch (e) {
     return { ok: false, error: E('workspaceFailed', { message: e.message }) };
   }
-  try {
-    return await fn({ ...ws, workdir });
-  } finally {
-    removeWorkspace(ws.runDir);
-  }
+  return fn({ ...ws, workdir });
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -985,10 +970,12 @@ async function fetchFromGitHub() {
   for (const g of groups) data[g].nodes = withDetails(data[g].nodes, detailCache, g);
   state.viewer = data.viewer;
   const nodes = [...data.open.nodes, ...(data.merged?.nodes || [])].filter((n) => n?.number);
+  const before = { ...state.prs, ...state.mine };
   state.prs = mergeBoard(state.prs, filterByAuthors(nodes, config.authors), Date.now(), (data.reviewed?.nodes || []).filter((n) => n?.number), data.viewer.login, doneKeepMs(config.doneKeepDays));
   // Only handle PRs from repos in the config, to keep personal repos etc. out (all PRs if none configured)
   const registered = (n) => Object.keys(config.repos).length === 0 || config.repos[n.repository.nameWithOwner];
   state.mine = mergeMine(state.mine, data.mine.nodes.filter((n) => n?.number && registered(n)), data.viewer.login);
+  dropWorktrees(before, { ...state.prs, ...state.mine });
   state.lastFetchedAt = Date.now();
   state.fetchError = partialError;
   saveState();
@@ -1866,12 +1853,10 @@ function waitForExit(pid) {
 }
 
 // Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
-// ws: the run's workspace from withWorkspace. Claude runs in ws.cwd, with the read-only token of the pull request's owner
+// ws: the run's workspace from withWorkspace. Claude runs in ws.cwd; it reaches GitHub only through the gatekeeper
 // readOnly: review / self-review / fix plan, which edit no files. mode: 'compose' for the text of a post
 function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, pr, mode: forced }) {
   return new Promise((resolve) => {
-    const token = agentToken(pr.repo);
-    if (!token) return resolve({ ok: false, error: E('agentTokenMissing', { owner: pr.repo.split('/')[0] }) });
     // Throwing (e.g. log file can't be opened) would leave the caller's card stuck running, so return a failure
     // If it throws after starting (e.g. saving state fails), claude is running, so return the result on close
     let child;
@@ -1886,7 +1871,7 @@ function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, 
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w', 0o600);
       const err = fs.openSync(`${base}.err`, 'w', 0o600);
-      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { token, ghDir: ws.ghDir }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
@@ -1895,7 +1880,7 @@ function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, 
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
       // lastLog: kept so the log stays viewable after the run (tag re-output is extra, so keep the main run's log)
-      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd: ws.cwd, runDir: ws.runDir, workdir: ws.workdir, headSha: ws.headSha }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
+      if (child.pid) updateEntry(key, { run: { pid: child.pid, logName, cwd: ws.cwd, workdir: ws.workdir, clone: ws.clone, headSha: ws.headSha }, ...(!logName.endsWith('-retag') && { lastLog: logName }) });
     } catch (e) {
       if (!child) resolve({ ok: false, error: e.message });
     }
@@ -1998,7 +1983,6 @@ function recoverRun(run, finish, repo) {
     .then(finish)
     .catch((e) => console.error(e))
     .finally(() => {
-      removeWorkspace(run.runDir);
       running--;
       busyRepos.delete(repo);
       pump();
@@ -2064,14 +2048,14 @@ function finishMine(key, cwd, res, runId) {
 }
 
 const resultFile = (key) => path.join(RESULTS_DIR, `${key.replace(/[^\w.-]+/g, '_')}.json`);
-// The result without patch text, for the board
-const resultView = (r) => ({ ...r, branches: r.branches.map(({ patches, ...b }) => ({ ...b, patches: patches.map(({ text, ...p }) => p) })) });
+// The result for the board: without the clone's path
+const resultView = ({ clone, ...r }) => r;
 
-// Reads what a fix run handed back from its folder, before the folder is removed
-function collectApply(res, run, pr) {
+// Reads what a fix run handed back (its answer and its commits in the clone)
+async function collectApply(res, run, pr) {
   if (!res.ok) return res;
   try {
-    return { ...res, collected: collectResult(res.structured, path.join(run.runDir, 'out'), pr, run.headSha) };
+    return { ...res, collected: { ...(await collectResult(res.structured, { pr, clone: run.clone, headSha: run.headSha, git: serverGit })), clone: run.clone } };
   } catch (e) {
     return { ...res, ok: false, error: E('applyResultInvalid', { message: e.message }) };
   }
@@ -2091,29 +2075,20 @@ function enqueuePublish(key) {
   const entry = state.mine[key];
   updateEntry(key, { status: 'publishing', error: null });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
-    const dirs = [];
-    const workdir = entry.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir;
     try {
       const result = JSON.parse(fs.readFileSync(resultFile(key), 'utf8'));
       const progress = await publish(entry.pr, result, { ...(state.mine[key].publishProgress || {}) }, {
+        clone: result.clone,
         git: (args) => serverGit(args),
         rest: ghRest,
         read: (endpoint) => gh(['api', endpoint]).then(JSON.parse),
         findings: entry.findings,
-        clone: async (base) => {
-          const ws = await prepareWorkspace(entry.pr, { runId: newRunId(), workdir });
-          dirs.push(ws.runDir);
-          if (base) await serverGit(['-C', ws.cwd, 'checkout', '--quiet', `origin/${base}`]);
-          return ws.cwd;
-        },
         save: (p) => updateEntry(key, { publishProgress: p }),
       });
       fs.rmSync(resultFile(key), { force: true });
       updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, result: null, publishProgress: null, published: progress, appliedAt: Date.now() });
     } catch (e) {
       updateEntry(key, { status: 'ready', error: E('publishFailed', { message: e.message.trim().split('\n').pop() }) });
-    } finally {
-      dirs.forEach((dir) => removeWorkspace(dir));
     }
   } });
   pump();
@@ -2149,9 +2124,7 @@ function enqueueApply(key, decisions, comment = '') {
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     finishApply(key, await withWorkspace(entry.pr, entry.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir, async (ws) => {
-      const outDir = path.join(ws.runDir, 'out');
-      fs.mkdirSync(outDir, { recursive: true });
-      const { prompt } = applyRun(entry, decisions, comment, config, outDir);
+      const { prompt } = applyRun(entry, decisions, comment, config);
       return collectApply(await runAgent(prompt, { ws, key, pr: entry.pr, logName: logName(key, 'apply') }), ws, entry.pr);
     }));
   } });
@@ -2399,34 +2372,11 @@ async function handle(req, res) {
     const key = url.searchParams.get('key') || '';
     if (!own(state.mine, key) || !fs.existsSync(resultFile(key))) return send(res, 404, { error: 'not found' });
     const result = JSON.parse(fs.readFileSync(resultFile(key), 'utf8'));
-    return send(res, 200, { branches: result.branches.map((b) => ({ key: b.key, name: b.name, patches: b.patches.map((p) => ({ name: p.name, subject: p.subject, text: p.text })) })) });
-  }
-
-  // The owners runs need a token for, and whether one is saved. Tokens never leave the server
-  if (req.method === 'GET' && url.pathname === '/api/agent-tokens') {
-    const tokens = readAgentTokens();
-    // Owners of configured repositories and of every pull request on the board (review requests come from anywhere)
-    const repos = [...Object.keys(config.repos), ...[...Object.values(state.prs), ...Object.values(state.mine)].map((e) => e.pr?.repo).filter(Boolean)];
-    const owners = [...new Set([...repos.map((r) => r.split('/')[0].toLowerCase()), ...Object.keys(tokens)])].sort();
-    return send(res, 200, { owners: owners.map((owner) => ({ owner, set: Boolean(tokens[owner]) })) });
+    const branches = await Promise.all(result.branches.map(async (b) => ({ key: b.key, name: b.name, patch: await branchPatch(result.clone, b, serverGit).catch(() => '') })));
+    return send(res, 200, { branches });
   }
 
   const body = await readBody(req);
-  if (req.method === 'PUT' && url.pathname === '/api/agent-tokens') {
-    const owner = String(body?.owner || '').toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(owner)) return send(res, 400, { error: E('agentTokenInvalid') });
-    const token = String(body?.token || '').trim();
-    const tokens = readAgentTokens();
-    if (!token) {
-      delete tokens[owner];
-      writeJson(AGENT_TOKENS_FILE, tokens);
-      return send(res, 200, { ok: true });
-    }
-    const error = await checkAgentToken(owner, token);
-    if (error) return send(res, 400, { error });
-    writeJson(AGENT_TOKENS_FILE, { ...tokens, [owner]: token });
-    return send(res, 200, { ok: true });
-  }
   if (req.method === 'POST' && url.pathname === '/api/consent') {
     config = { ...config, consentVersion: CONSENT_VERSION };
     writeJson(CONFIG_FILE, config);
@@ -2570,7 +2520,7 @@ function main() {
   }
   for (const [key, e] of Object.entries(state.mine)) {
     if ((e.status === 'running' || e.status === 'applying') && e.run) {
-      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.workdir || e.run.cwd, res, e.runId) : finishApply(key, collectApply(res, e.run, e.pr))), e.pr.repo);
+      recoverRun(e.run, (res) => (e.status === 'running' ? finishMine(key, e.run.workdir || e.run.cwd, res, e.runId) : collectApply(res, e.run, e.pr).then((r) => finishApply(key, r))), e.pr.repo);
       continue;
     }
     if (e.status === 'queued' || e.status === 'running') {
@@ -2591,8 +2541,8 @@ function main() {
   });
   schedulePoll();
   pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays));
-  // Workspaces of runs that ended while the server was down; recovered runs remove their own
-  pruneWorkspaces(new Set([...Object.values(state.prs), ...Object.values(state.mine)].map((e) => e.run?.runDir).filter(Boolean)));
+  // AI runs reach GitHub only through this gatekeeper, which lets reads through with the user's gh login
+  startGitHubProxy({ log: (m) => console.log(`github gatekeeper: ${m}`) }).catch((e) => console.error(`github gatekeeper: ${e.message}`));
   setInterval(() => pruneLogs(LOG_DIR, Date.now(), logKeepMs(config.logKeepDays)), 24 * 60 * 60 * 1000);
 
   http
@@ -2610,4 +2560,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { checkAgentToken, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

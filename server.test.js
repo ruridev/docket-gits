@@ -792,7 +792,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1068,7 +1068,7 @@ test('applyRun: fix runs start a fresh session that only sees the approved plan,
   assert.doesNotMatch(prompt, /check the existing reviews, comments and commits/);
   // It hands its work back to docket-gits instead of publishing it
   assert.match(prompt, /## How this run ends/);
-  assert.match(prompt, /-o <out>\/<key>/);
+  assert.match(prompt, /on branch docket\/pr-3 at its head/);
 });
 
 test('applyRun: self-review runs start a fresh session too', () => {
@@ -1121,19 +1121,6 @@ test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back 
   const compose = claudeArgs('compose', run);
   assert.deepEqual(compose.slice(0, 2), ['--tools', '']);
   assert.deepEqual(JSON.parse(rulesOf(compose, '--json-schema').join(',')).required, ['body', 'comments']);
-});
-
-test('checkAgentToken: only fine-grained tokens, and one that can read a configured repository of the owner', async () => {
-  const { checkAgentToken } = require('./server');
-  const token = 'github_pat_' + 'a'.repeat(30);
-  for (const t of ['ghp_' + 'a'.repeat(36), 'gho_x', 'github_pat_short']) assert.equal((await checkAgentToken('acme', t, { repos: {} })).code, 'agentTokenNotFineGrained');
-  assert.equal(await checkAgentToken('acme', token, { repos: {}, fetchImpl: () => assert.fail('no repository, no request') }), null);
-  const seen = [];
-  const fetchImpl = async (url, opts) => { seen.push([url, opts.headers.Authorization]); return { ok: url.toLowerCase().endsWith('/acme/api'), status: 404 }; };
-  assert.equal(await checkAgentToken('acme', token, { repos: { 'Acme/api': {} }, fetchImpl }), null);
-  assert.deepEqual(seen, [['https://api.github.com/repos/Acme/api', `Bearer ${token}`]]);
-  assert.deepEqual(await checkAgentToken('acme', token, { repos: { 'acme/web': {} }, fetchImpl }), { code: 'agentTokenCannotRead', params: { repo: 'acme/web', status: 404 } });
-  assert.equal((await checkAgentToken('acme', token, { repos: { 'acme/web': {} }, fetchImpl: async () => { throw new Error('offline'); } })).code, 'agentTokenCheckFailed');
 });
 
 test('postable: agreed findings and disagreed ones with a reason go out; out-of-scope and bare disagreements stay', () => {
@@ -1275,7 +1262,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   git('init', '-q');
   git('commit', '-q', '--allow-empty', '-m', 'base');
   git('update-ref', 'refs/pull/1/head', 'HEAD');
-  fs.writeFileSync(path.join(dir, 'agent-tokens.json'), JSON.stringify({ acme: 'github_pat_test' }));
+
   const pr = { repo: 'acme/api', number: 1, url: 'https://github.com/acme/api/pull/1', reviews: [], requested: [], labels: [], issues: [], author: {} };
   const mineKey = 'mine:acme/api#1';
   const mapping = { skill: '(prompt)', selfSkill: '(prompt)', fixSkill: '(prompt)' };
@@ -1288,7 +1275,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
       server.close(() => resolve(port));
     });
   });
-  const child = spawn(process.execPath, ['--require', preload, path.join(__dirname, 'server.js')], { env: { ...process.env, DOCKET_DATA: dir, PORT: String(port), DOCKET_CLONE_BASE: path.join(dir, 'origins'), DOCKET_WORK: path.join(dir, 'work') } });
+  const child = spawn(process.execPath, ['--require', preload, path.join(__dirname, 'server.js')], { env: { ...process.env, DOCKET_DATA: dir, PORT: String(port), DOCKET_CLONE_BASE: path.join(dir, 'origins'), DOCKET_HOME: path.join(dir, 'home') } });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   t.after(async () => {
@@ -1345,15 +1332,16 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   for (const args of [review, self, fix]) assert.ok(!args.includes('--permission-mode') && !args.includes('--allowedTools'));
   assert.ok(apply.includes('--permission-mode'));
   for (const args of calls.map((c) => c.args)) assert.ok(!args.includes('--resume'));
-  // Every run is sandboxed with the owner's read-only token in a workspace that is gone afterwards
+  // Every run is sandboxed, holds no token (gh goes through the gatekeeper), and works in the pull request's worktree
   for (const args of calls.map((c) => c.args)) assert.equal(JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.enabled, true);
-  assert.deepEqual(fs.readdirSync(path.join(dir, 'work')), []);
+  const worktree = fs.realpathSync(path.join(dir, 'home', 'worktrees', 'acme-api-1'));
   for (const c of calls) {
-    assert.equal(c.token, 'github_pat_test');
-    assert.ok(c.ghConfig && c.cwd.startsWith(fs.realpathSync(path.join(dir, 'work'))), c.cwd);
+    assert.equal(c.token, 'docket-gits');
+    assert.ok(c.ghConfig.startsWith(path.join(dir, 'home', 'gh-')), c.ghConfig);
+    assert.equal(fs.realpathSync(c.cwd), worktree);
   }
-  // Every run here reads code, so each gets a clone of the pull request
-  assert.ok(calls.every((c) => path.basename(c.cwd) === 'repo'));
+  // No clone of the repository under the working directory, so docket-gits keeps its own
+  assert.ok(fs.existsSync(path.join(dir, 'home', 'repos', 'acme', 'api', '.git')));
   const file = path.join(dir, '.claude', 'skills', 'docket-claude-review', 'SKILL.md');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, 'Review instructions');

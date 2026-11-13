@@ -6,24 +6,28 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { agentEnv, agentSettings, agentArgs, prepareWorkspace, removeWorkspace, pruneWorkspaces } = require('./workspace');
+const { agentEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace } = require('./workspace');
 
-test('agentEnv: keeps what claude needs, drops other secrets, and gives gh only the read-only token', () => {
-  const env = agentEnv({ HOME: '/h', PATH: '/bin', ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDECODE: '1', GITHUB_TOKEN: 'write', GH_TOKEN: 'write', SSH_AUTH_SOCK: '/s', NPM_TOKEN: 'n' },
-    { token: 'read', ghDir: '/run/gh' });
-  assert.equal(env.HOME, '/h');
-  assert.equal(env.ANTHROPIC_API_KEY, 'k');
-  assert.equal(env.CLAUDE_CODE_USE_BEDROCK, '1');
+const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
+const tmpdir = (t) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-ws-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+};
+
+test('agentEnv: keeps what claude and toolchains need, drops secrets, points gh at the gatekeeper and caches at docket-gits', () => {
+  const env = agentEnv({ HOME: '/h', PATH: '/bin', ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_USE_BEDROCK: '1', RBENV_VERSION: '3.3', CLAUDECODE: '1', GITHUB_TOKEN: 'w', GH_TOKEN: 'w', SSH_AUTH_SOCK: '/s', NPM_TOKEN: 'n' }, { home: '/d' });
+  for (const k of ['HOME', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_USE_BEDROCK', 'RBENV_VERSION']) assert.ok(k in env, k);
   for (const k of ['CLAUDECODE', 'GITHUB_TOKEN', 'SSH_AUTH_SOCK', 'NPM_TOKEN']) assert.ok(!(k in env), k);
-  assert.equal(env.GH_TOKEN, 'read');
-  assert.equal(env.GH_CONFIG_DIR, '/run/gh');
+  assert.equal(env.GH_TOKEN, 'docket-gits');
+  assert.equal(env.GH_CONFIG_DIR, `/d/gh-${process.env.PORT || 4649}`);
+  assert.equal(env.npm_config_store_dir, '/d/cache/pnpm-store');
   assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
 });
 
 test('agentEnv: git really skips hooks with that env', (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-hooks-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const env = agentEnv(process.env, { token: 'read', ghDir: dir });
+  const dir = tmpdir(t);
+  const env = agentEnv(process.env, { home: dir });
   const git = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@example.com', ...a], { cwd: dir, env, stdio: 'pipe' });
   git('init', '-q');
   fs.mkdirSync(path.join(dir, '.husky'));
@@ -33,58 +37,110 @@ test('agentEnv: git really skips hooks with that env', (t) => {
   assert.ok(!fs.existsSync(path.join(dir, 'ran')));
 });
 
-test('agentSettings / agentArgs: sandbox on and required, GitHub only, credentials and data unreadable, workdir read-only', () => {
-  const s = agentSettings({ runDir: '/run', workdir: '/ws', dataDir: '/data', envPath: '/bin' }).sandbox;
-  assert.equal(s.enabled, true);
+test('agentSettings / agentArgs: what a commit needs is writable; config, hooks and other branches are not', () => {
+  const ws = { cwd: '/wt', gitDir: '/c/.git', adminDir: '/c/.git/worktrees/x' };
+  const s = agentSettings({ ws, dataDir: '/data', home: '/d', socket: '/sock' }).sandbox;
   assert.equal(s.failIfUnavailable, true);
   assert.equal(s.allowUnsandboxedCommands, false);
-  assert.ok(s.network.allowedDomains.every((d) => d === 'github.com' || d.endsWith('.github.com') || d.endsWith('.githubusercontent.com')));
+  assert.deepEqual(s.network.allowUnixSockets, ['/sock']);
+  assert.equal(s.network.allowLocalBinding, true);
+  assert.ok(s.network.allowedDomains.includes('registry.npmjs.org') && !s.network.allowedDomains.some((d) => /github/.test(d)));
+  assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
+  for (const p of ['/c/.git/config', '/c/.git/hooks', '/c/.git/packed-refs', '/c/.git/worktrees/x/commondir', '/c/.git/worktrees/x/gitdir']) assert.ok(s.filesystem.denyWrite.includes(p), p);
   for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
-  assert.deepEqual(s.filesystem.allowWrite, ['/run']);
-  assert.deepEqual(s.filesystem.denyWrite, ['/ws']);
-  const args = agentArgs({ runDir: '/run', workdir: '/ws', dataDir: '/data', deny: ['Write'] });
-  assert.equal(args[args.indexOf('--add-dir') + 1], '/ws');
+  const args = agentArgs({ ws, workdir: '/w', dataDir: '/data', deny: ['Write'], network: { allowLocal: false, domains: [] } });
+  const settings = JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.network;
+  assert.equal(settings.allowLocalBinding, false);
+  // The working directory is added so skills load, which would make it writable: it is denied
+  assert.ok(JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.filesystem.denyWrite.includes('/w'));
+  assert.deepEqual(settings.allowedDomains, []);
+  assert.equal(args[args.indexOf('--add-dir') + 1], '/w');
   assert.ok(args.includes('--strict-mcp-config'));
-  const deny = args[args.indexOf('--disallowedTools') + 1].split(',');
-  for (const r of ['Read(~/.ssh/**)', 'Read(//data/**)', 'Edit(//ws/**)', 'Write(//ws/**)', 'WebFetch', 'WebSearch', 'Write']) assert.ok(deny.includes(r), r);
+  for (const r of ['Read(~/.ssh/**)', 'Read(//data/**)', 'Edit(//w/**)', 'WebFetch', 'Write']) assert.ok(args[args.indexOf('--disallowedTools') + 1].split(',').includes(r), r);
 });
 
-test('prepareWorkspace: a throwaway clone at the pull request head, with gh as its only credential helper', async (t) => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-ws-'));
-  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
-  const git = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
-  const origin = path.join(tmp, 'origin');
-  fs.mkdirSync(origin);
-  git(origin, 'init', '-q', '-b', 'main');
-  git(origin, 'commit', '-q', '--allow-empty', '-m', 'base');
-  git(origin, 'checkout', '-q', '-b', 'feature');
-  git(origin, 'commit', '-q', '--allow-empty', '-m', 'change');
-  const head = git(origin, 'rev-parse', 'HEAD');
-  git(origin, 'update-ref', 'refs/pull/7/head', head);
-  git(origin, 'checkout', '-q', 'main');
+test('findClone: the clone whose remote is the repository, wherever it is under the working directory', (t) => {
+  const w = tmpdir(t);
+  const clone = (rel, url) => {
+    const dir = path.join(w, rel);
+    fs.mkdirSync(dir, { recursive: true });
+    sh(dir, 'init', '-q');
+    sh(dir, 'remote', 'add', 'origin', url);
+    return dir;
+  };
+  clone('other', 'git@github.com:acme/apiserver.git');
+  const want = clone('repos/api', 'git@github.com:acme/api.git');
+  fs.mkdirSync(path.join(w, 'repos', 'api', 'node_modules', 'x'), { recursive: true });
+  // A worktree (.git is a file) is not a clone
+  fs.mkdirSync(path.join(w, 'aaa'));
+  fs.writeFileSync(path.join(w, 'aaa', '.git'), 'gitdir: /elsewhere\n');
+  assert.equal(findClone(w, 'acme/api'), want);
+  assert.equal(findClone(w, 'ACME/API'), want);
+  assert.equal(findClone(w, 'acme/web'), null);
+  clone('https-clone', 'https://github.com/acme/web');
+  assert.equal(findClone(w, 'acme/web'), path.join(w, 'https-clone'));
+});
 
-  const root = path.join(tmp, 'work');
-  const ws = await prepareWorkspace({ repo: 'acme/api', number: 7, head: 'feature' }, { runId: 'r1', root, remote: origin });
-  assert.equal(ws.cwd, path.join(ws.runDir, 'repo'));
-  assert.ok(ws.runDir.startsWith(root + path.sep));
-  assert.equal(git(ws.cwd, 'rev-parse', 'HEAD'), head);
-  assert.equal(git(ws.cwd, 'branch', '--show-current'), 'feature');
-  // An empty value first resets helpers from the user's global config
-  assert.deepEqual(git(ws.cwd, 'config', '--local', '--get-regexp', 'credential.helper').split('\n').map((l) => l.trim()), ['credential.helper', 'credential.helper !gh auth git-credential']);
-  assert.ok(fs.statSync(ws.ghDir).isDirectory());
+test('prepareWorkspace: a worktree per pull request at its head, reset each run, dependencies kept, removed when gone', async (t) => {
+  const tmp = tmpdir(t);
+  // A fake GitHub (bare repository with refs/pull/7/head) and the user's clone of it under the working directory
+  const seed = path.join(tmp, 'seed');
+  fs.mkdirSync(seed);
+  sh(seed, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(seed, 'a.js'), '1\n');
+  sh(seed, 'add', '.');
+  sh(seed, 'commit', '-q', '-m', 'base');
+  sh(seed, 'checkout', '-q', '-b', 'feature');
+  sh(seed, 'commit', '-q', '--allow-empty', '-m', 'feature');
+  const origin = path.join(tmp, 'origins', 'acme', 'api.git');
+  fs.mkdirSync(path.dirname(origin), { recursive: true });
+  sh(tmp, 'clone', '-q', '--bare', seed, origin);
+  sh(origin, 'update-ref', 'refs/pull/7/head', 'refs/heads/feature');
+  process.env.DOCKET_CLONE_BASE = path.join(tmp, 'origins');
+  t.after(() => { delete process.env.DOCKET_CLONE_BASE; });
+  const workdir = path.join(tmp, 'work');
+  const userClone = path.join(workdir, 'repos', 'api');
+  fs.mkdirSync(path.dirname(userClone), { recursive: true });
+  sh(tmp, 'clone', '-q', origin, userClone);
+  sh(userClone, 'remote', 'set-url', 'origin', 'git@github.com:acme/api.git');
+  const userState = () => [sh(userClone, 'branch', '--list'), sh(userClone, 'worktree', 'list'), fs.readFileSync(path.join(userClone, '.git', 'config'), 'utf8')];
+  const before = userState();
 
-  // A clone that fails leaves nothing behind
-  await assert.rejects(prepareWorkspace({ repo: 'acme/api', number: 8 }, { runId: 'r2', root, remote: origin }));
-  assert.deepEqual(fs.readdirSync(root), [path.basename(ws.runDir)]);
+  const home = path.join(tmp, 'home');
+  const pr = { repo: 'acme/api', number: 7, base: 'main' };
+  const ws = await prepareWorkspace(pr, { workdir, home });
+  const clone = path.join(home, 'repos', 'acme', 'api');
+  assert.equal(ws.clone, clone);
+  // docket-gits' own clone borrows the objects of the user's clone
+  assert.equal(fs.readFileSync(path.join(clone, '.git', 'objects', 'info', 'alternates'), 'utf8').trim(), path.join(userClone, '.git', 'objects'));
+  assert.equal(ws.cwd, path.join(home, 'worktrees', 'acme-api-7'));
+  assert.equal(ws.headSha, sh(origin, 'rev-parse', 'feature'));
+  assert.equal(sh(ws.cwd, 'rev-parse', 'HEAD'), ws.headSha);
+  assert.equal(sh(ws.cwd, 'branch', '--show-current'), 'docket/pr-7');
+  assert.ok(ws.adminDir.startsWith(path.join(clone, '.git', 'worktrees')));
+  assert.equal(sh(clone, 'rev-parse', 'origin/main'), sh(origin, 'rev-parse', 'main'));
+  assert.match(fs.readFileSync(path.join(home, `gh-${process.env.PORT || 4649}`, 'config.yml'), 'utf8'), /^http_unix_socket: /);
 
-  // Only folders under the work root are removed; stale ones are pruned, kept ones stay
-  removeWorkspace(tmp, root);
-  assert.ok(fs.existsSync(origin));
-  const old = path.join(root, 'old');
-  fs.mkdirSync(old);
-  fs.utimesSync(old, new Date(0), new Date(0));
-  pruneWorkspaces(new Set([ws.runDir]), 1000, root);
-  assert.ok(!fs.existsSync(old) && fs.existsSync(ws.runDir));
-  removeWorkspace(ws.runDir, root);
-  assert.ok(!fs.existsSync(ws.runDir));
+  // A run's changes and commits go away next run; installed dependencies stay. A forged .git file is ignored
+  fs.writeFileSync(path.join(ws.cwd, 'a.js'), 'changed\n');
+  sh(ws.cwd, 'commit', '-q', '-am', 'local');
+  fs.mkdirSync(path.join(ws.cwd, 'node_modules'));
+  fs.writeFileSync(path.join(ws.cwd, 'node_modules', 'dep.js'), '');
+  // The clone's head moves on GitHub
+  sh(seed, 'commit', '-q', '--allow-empty', '-m', 'more');
+  sh(seed, 'push', '-q', origin, 'feature');
+  sh(origin, 'update-ref', 'refs/pull/7/head', 'refs/heads/feature');
+  const again = await prepareWorkspace(pr, { workdir, home });
+  assert.equal(again.adminDir, ws.adminDir);
+  assert.equal(again.headSha, sh(origin, 'rev-parse', 'feature'));
+  assert.equal(sh(again.cwd, 'rev-parse', 'HEAD'), again.headSha);
+  assert.equal(fs.readFileSync(path.join(again.cwd, 'a.js'), 'utf8'), '1\n');
+  assert.ok(fs.existsSync(path.join(again.cwd, 'node_modules', 'dep.js')));
+
+  await removeWorkspace(pr, { workdir, home });
+  assert.ok(!fs.existsSync(ws.cwd));
+  assert.equal(sh(clone, 'branch', '--list', 'docket/*'), '');
+  assert.equal(sh(clone, 'for-each-ref', 'refs/docket'), '');
+  // The user's clone is never touched
+  assert.deepEqual(userState(), before);
 });
