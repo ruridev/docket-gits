@@ -3,7 +3,7 @@
 docket-gits is a local web app for code review with an AI agent. It collects the GitHub pull requests waiting on you into a kanban board, lets [Claude Code](https://claude.com/claude-code) do the review, and posts to GitHub only what you agreed to, one finding at a time.
 
 - **Review**: pull requests where your review is requested. The AI reviews; you agree or disagree with each finding before anything is posted.
-- **Get reviewed**: your own open pull requests. Run a self-review, or triage the comments you received and let the AI plan, fix, push and reply.
+- **Get reviewed**: your own open pull requests. Run a self-review, or triage the comments you received and let the AI plan and fix; you check the result before docket-gits pushes and replies.
 - **Roadmap**: plan a feature as an issue / sub-issue tree in a Markdown file, then create or sync it on GitHub in one go.
 - **Home**: what is left to do, decisions waiting on you, unanswered comments and AI cost, at a glance.
 
@@ -90,7 +90,7 @@ flowchart LR
    - **Agree**: it is posted. A reason you add is reflected in the text.
    - **Disagree with a reason**: your reason is posted as your own opinion, marked with `🙅💭`.
    - **Disagree without a reason**: nothing is posted.
-3. **Comment** starts a new AI session that sees only the findings and your decisions, not the pull request, and posts them as one review. That session may run only `gh api` on the reviews of that pull request.
+3. **Comment** has a new AI session with no tools write the text from the findings and your decisions only (it never sees the pull request), and docket-gits posts it as one review with your `gh` login.
 
 The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes by default while the page is open (you can limit it to certain hours in **Settings → Refresh**) (and right away when you come back to it), and the **Refresh** button fetches at any time. Each fetch lists the pull requests first and reads full details only for those updated since the last fetch. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
 
@@ -106,16 +106,18 @@ flowchart LR
   M -->|Address comments| T[Triage each comment]
   T -->|Have the AI plan| R
   R --> P[Needs decision]
-  P -->|agree / disagree, then Comment| A[Running: fix, push, reply]
-  A --> M
+  P -->|agree / disagree, then Comment| A[Running: fix and commit]
+  A --> K[Check the result]
+  K -->|Publish: push, open, post, reply| M
 ```
 
-- **Self-review** runs your self-review skill. Findings you agree with are posted, fixed, pushed and answered with the commit SHA.
+- **Self-review** runs your self-review skill. Findings you agree with are fixed; after you check the result, they are posted, the fixes pushed, and each one answered with the commit SHA.
 - **Address comments** first lists the unanswered comments *without* the AI, so you form your own view before reading the AI's. For each one you agree, disagree (with a reason) or skip.
 - **Have the AI plan** returns a plan per comment without changing anything: fix, reply, defer, split into another pull request, create a follow-up issue, or rebut (when the AI thinks your disagreement is wrong).
-- You review the plans, then **Comment** carries them out: fix, push and reply.
+- You review the plans, then **Comment** has the AI carry them out in its own clone: it fixes and commits, and writes the replies, issues and split pull requests. It can't publish anything itself.
+- **Check and publish** shows what it made: the commits with their diff, the replies, the issues and the Draft pull requests. Changes to CI or repository settings (`.github/`, `.gitattributes`, ...) and executable files are flagged and need an extra confirmation, since they run with the repository's secrets once pushed. **Publish** applies the commits in a clean clone and pushes them (never forced; it stops if the branch moved since the run), then creates the issues and pull requests and posts the replies with your `gh` login. If something fails, publishing again does only the rest.
 
-A comment counts as unanswered while you are not the last one to have written in its thread. Runs on your own pull requests go one at a time per repository, since they switch branches in the same clone.
+A comment counts as unanswered while you are not the last one to have written in its thread. Fix runs on your own pull requests go one at a time per repository.
 
 ### Roadmap
 
@@ -157,27 +159,13 @@ Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}`
 ### Claude
 
 - Skills are read from `.claude/skills` in the working directories and your home directory.
-- **The commands a skill needs belong to the skill.** List them under `allowed-tools` in the skill's `SKILL.md` frontmatter; Claude allows them while the skill runs, also in docket-gits' non-interactive runs. Anyone who uses the same skill gets the same commands, with no docket-gits setting. Allow narrow forms, for example `Bash(bin/rspec:*)` or `Bash(git -C * log:*)`, rather than `Bash(git *)`:
-
-  ```yaml
-  ---
-  name: review-fix
-  description: Fix and reply to review comments
-  allowed-tools: Read, Grep, Glob, Edit, Write, Bash(gh pr:*), Bash(git:*), Bash(bin/rspec:*), Bash(bin/rubocop:*)
-  ---
-  ```
-
-- **A run with your own skill gets only that skill's `allowed-tools`.** docket-gits adds no tools of its own, so list everything the skill's steps and docket-gits' instructions use: at least `gh pr view` / `diff`, `gh api repos/*` and `git log` / `diff` / `show` / `status` for reviews and plans, and file edits, `git`, `gh pr` and `gh api repos/*` for fixes. The bundled skills below are a starting point.
-- Runs that use the configured prompt instead of a skill take their tools from the plugin in `plugin/`, which docket-gits loads into its Claude runs with `--plugin-dir` (nothing is installed in `~/.claude`): `plugin/skills/read/SKILL.md` for review, self-review and **Have the AI plan** (reading tools, `gh pr view` / `diff` / `checks`, `gh api repos/*`, `git log` / `diff` / `show` / `status`) and `plugin/skills/apply/SKILL.md` for fix runs (file edits, `git`, `mkdir`, `gh pr`, `gh issue`, `gh api repos/*`, with `--permission-mode acceptEdits`). Only docket-gits can start these skills (`disable-model-invocation`), so a review run can't call the fix skill to get its tools.
-- Review, self-review and **Have the AI plan** are meant to change nothing, whatever the skill allows. For these runs docket-gits denies Write / Edit, `gh api` with a write flag (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`), commands that write to GitHub (`gh pr comment` / `review` / `create` / `edit` / `merge` / `close`…, `gh issue create` / `comment` / `edit` / `close`…, `gh label`, `gh project`) and `git push` / `commit`.
-- Posting a review starts a new session that may only call `gh api` on that pull request's reviews.
-- Every Claude run denies reading credentials (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.netrc`, `.env*` files and this app's `data/`), `gh api --hostname`, force-push, `gh pr merge`, `gh repo delete` / `edit`, `gh secret`, `gh variable` and `gh gist`.
-- Every Claude run denies `gh auth`, `gh alias`, `gh extension`, `gh config`, `git config`, `git credential`, `git -c` and reading `~/.ssh`, `~/.aws`, `~/.config/gh` and `~/.netrc`.
-- Every Claude run also denies `gh api` with a full URL or `..` in the path, `git ... --no-index` (it reads files outside the repository) and writing under `.git/` (hooks and config run code later).
+- Every run starts in its own throwaway clone of the pull request, checked out at its head, with your working directory added read-only so skills and other repositories can be read. Bash commands run in Claude Code's sandbox and need no allow list; `allowed-tools` in a skill is not needed for docket-gits (it still applies when you use the skill yourself).
+- Steps of a skill that write outside the run's clone (for example `git fetch` or `git worktree add` in a clone under your working directory) fail. Write skills that work in the current directory, which is already the pull request's code.
+- Steps that publish (posting, pushing, replying, opening pull requests, creating issues) fail too: runs have a [read-only token](#read-only-token-for-ai-runs). docket-gits tells fix runs to hand those back instead, and publishes them after you check them.
 
 ### Several GitHub accounts
 
-docket-gits uses whichever account is active in `gh`, and the AI posts and pushes as that account. To switch, make sure nothing is running, run `gh auth switch`, then press **Refresh**. If your clones use SSH remotes, `git push` uses your SSH key, so switch that too.
+docket-gits uses whichever account is active in `gh`: it fetches, posts and pushes as that account (pushes go over HTTPS with `gh`'s credentials). AI runs use the read-only token saved for each repository owner. To switch, make sure nothing is running, run `gh auth switch`, then press **Refresh**.
 
 `data/` is not split per account. To keep accounts apart, run a second instance:
 
@@ -187,18 +175,19 @@ DOCKET_DATA=~/docket-data-other PORT=4650 node server.js
 
 ## Security
 
-docket-gits runs an AI agent that can execute commands without asking you each time. Before you use it:
+docket-gits runs an AI agent on pull requests that anyone can write, so it assumes the agent can be steered by them (prompt injection) and limits what the agent can reach instead of what it is told:
 
-- **Only configure repositories you trust.** The content of a pull request goes to the AI as it is, so a malicious pull request can try to steer it (prompt injection).
-- **Posts and pushes cannot be undone.** **Comment** asks you to confirm before it runs.
+- **The agent can't write to GitHub.** Runs get only a [read-only fine-grained token](#read-only-token-for-ai-runs) for the pull request's owner, and can't reach your `gh` login. Posting, pushing, replying and creating issues or pull requests are done by docket-gits itself with your `gh` login, after you approve them on the board.
+- **The agent runs in a sandbox.** Its Bash commands run in [Claude Code's sandbox](https://docs.anthropic.com/en/docs/claude-code/sandboxing): it can't read credential stores (`~/.ssh`, `~/.config/gh`, the macOS keychain, `~/.aws`, `~/.netrc`, `~/.npmrc`, ...) or `data/`, it can reach no host but GitHub, and it can write only to its own throwaway clone. Runs refuse to start if the sandbox is unavailable. Claude's own tools follow the same rules: reading those paths and editing your working directory are denied, web fetch and search are off, and your MCP servers are not loaded. Only an allow list of environment variables reaches a run, so tokens in the server's environment don't. `npm run check:sandbox` checks all this with a real run.
+- **docket-gits never runs git in the agent's clone.** The agent could have changed its git config there. A fix run hands back its commits as patch files; docket-gits applies them in a clean clone of its own and pushes from there, without force. Agent runs never run git hooks (`core.hooksPath` is `/dev/null`).
+- **Check before you publish.** The agent's commits are code you push to your repository: read the diff. Changes to CI or repository settings and executable files are flagged and need an extra confirmation, because they run with the repository's secrets once pushed. Protect your default branches.
+- **Comments that anyone can write are read only by runs that change nothing** (review, self-review, fix plan). A fix run starts a new session that gets only the plan you approved (or, with **Follow PR comments**, your own last comment, which docket-gits fetches by your login) and the code. The plan was written by an AI that read the comments, so read it before you approve it. A post is written by a run with no tools that sees only the findings and your decisions.
+- **What a run can still do:** read what the read-only token can read and the files your user can read outside the denied paths (for example other repositories in your working directory), and put what it read into the text it hands back. Only configure repositories you trust, and read findings and replies before you post them.
 - **AI runs cost money.** Costs are shown per pull request and in total.
 - The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
-- Reviews and plans can't edit files or write to GitHub, whatever a skill allows (see [Claude](#claude)). **Comment** starts a new session that never reads the pull request and may only call `gh api` on that pull request's reviews. No run starts in your home directory or `/`. These limits match the command Claude writes, not the same program run another way (for example through `sh -c`), so they reduce what an injected instruction can do but are not a sandbox.
-- Fix runs may edit files under `<working directory>/.claude/skills` without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default): an instruction hidden in a comment could otherwise stay in a skill and steer later runs. Other protected paths are always denied, and review and post runs can't edit skills.
-- Every Claude run also denies `git log / diff / show --output` (it writes files), git commands and options that run other programs (`rebase --exec`, `--upload-pack`, `--receive-pack`, `--config-env`, `submodule`, `bisect`, `filter-branch`, `difftool`, `mergetool`, `grep -O`, `maintenance`, `instaweb`), `git clone` and `git ls-remote`, adding remotes, pushing to a URL, to `main` / `master` or deleting remote branches (`--delete` or `origin :branch`), `gh repo create` / `fork`, `gh release`, `gh workflow`, `gh issue delete` / `transfer`, and `gh api` with `PUT` / `PATCH` / `DELETE` or on collaborators, webhooks, deploy keys, invitations, branch protection and workflow dispatches. Reading other credential files (`~/.git-credentials`, `~/.codex`, `~/.npmrc`, `~/.docker`, `~/.kube`, `~/.gnupg`) is denied too. Post runs may only POST the review: no other method and no body read from a file.
-- **Comments that anyone can write are read only by read-only runs** (review, self-review, fix plan). A fix run, which can edit, push and reply, starts a new session that never reads the pull request's comments: it gets only the plan you approved in docket-gits (or, with **Follow PR comments**, your own last comment, which docket-gits fetches by your login) and the code. It checks its own earlier work with queries filtered to your login. The plan was written by an AI that read the comments, so read it before you approve it. This rests on the agent following its instructions, and a skill you set may still tell it to fetch comments, so the limits below stay in place. The code of the repository is also input: only configure repositories whose code you trust. Fix runs may not approve pull requests, and agent runs never run git hooks (`core.hooksPath` is set to `/dev/null`), so a hook script written by the agent can't run on commit; your own pre-commit hooks don't run on its commits either. The bundled tools allow `gh api` under `repos/`, and `gh pr` / `gh issue` accept `--repo`, so a run can reach any repository your `gh` token can. To limit the damage, give `gh` a [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) for only the repositories you review, and protect your default branches. Skills' `allowed-tools` widen what runs can do: avoid `Bash(gh *)`, `Bash(jq *)`, `Bash(cat *)` and `Bash(ls *)` there, since they reach other repositories or take any path, so they can read files the deny list protects.
+- Fix runs may edit files under `.claude/skills` of their clone without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default), so an instruction hidden in a comment can't slip into a skill unnoticed; such edits are part of the commits you check before publishing.
 - Importing `docket-settings.json` never changes skill edits or local folders (working directories, plan folder). **Extra claude args** and **Read-only tools** were removed: saved values are ignored and dropped on the next save.
-- `data/` is readable only by you (0700, files 0600).
+- `data/` (settings, tokens, state, logs, results waiting to be published) is readable only by you (0700, files 0600).
 
 ## Related
 
