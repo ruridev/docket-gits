@@ -121,11 +121,11 @@ async function collectResult(answer, { pr, clone, headSha, git }) {
 // The commits of a branch as patch text, to read before publishing
 const branchPatch = (clone, branch, git) => git(['-C', clone, 'format-patch', '--stdout', '--no-signature', `${branch.baseSha}..${branch.tip}`]);
 
-// Where a reply goes: a thread reply, or a pull request comment
+// Where a reply goes: a thread reply, or a pull request comment (also for a finding whose comment wasn't found,
+// so no reply is dropped)
 function replyEndpoint(pr, to, findingComments = {}) {
   const finding = /^finding:(\d+)$/.exec(to);
   const thread = finding ? findingComments[finding[1]] : /#discussion_r(\d+)$/.exec(to)?.[1];
-  if (finding && !thread) return null;
   return thread ? `repos/${pr.repo}/pulls/${pr.number}/comments/${thread}/replies` : `repos/${pr.repo}/issues/${pr.number}/comments`;
 }
 
@@ -184,14 +184,15 @@ async function publish(pr, result, progress, deps) {
     const body = [fillLinks(result.review.body, links()), ...loose].filter(Boolean).join('\n\n');
     const made = await deps.rest('POST', `repos/${pr.repo}/pulls/${pr.number}/reviews`, { event: 'COMMENT', body, comments: comments.map(({ no, ...c }) => c) });
     const posted = await deps.read(`repos/${pr.repo}/pulls/${pr.number}/reviews/${made.id}/comments`).catch(() => []);
-    progress.findingComments = Object.fromEntries(comments.map((c) => [c.no, posted.find((p) => p.path === c.path && (p.line ?? p.original_line) === c.line)?.id]).filter(([, id]) => id));
+    // This endpoint leaves line empty, so find each comment by its text (then by path and line)
+    const list = Array.isArray(posted) ? posted : [];
+    progress.findingComments = Object.fromEntries(comments.map((c) => [c.no, (list.find((p) => p.body === c.body && p.path === c.path) || list.find((p) => p.path === c.path && (p.line ?? p.original_line) === c.line))?.id]).filter(([, id]) => id));
     progress.review = made.html_url;
     await deps.save?.(progress);
   }
   for (const [i, reply] of result.replies.entries()) {
     if (progress.replies[i]) continue;
     const endpoint = replyEndpoint(pr, reply.to, progress.findingComments);
-    if (!endpoint) continue;
     const made = await deps.rest('POST', endpoint, { body: fillLinks(reply.body, links()) });
     progress.replies[i] = made?.html_url || true;
     await deps.save?.(progress);

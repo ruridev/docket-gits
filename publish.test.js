@@ -95,7 +95,8 @@ test('replyEndpoint / fillLinks: thread replies, PR comments, and links filled i
   assert.equal(replyEndpoint(pr, 'https://github.com/o/r/pull/3#discussion_r12'), 'repos/o/r/pulls/3/comments/12/replies');
   assert.equal(replyEndpoint(pr, 'https://github.com/o/r/pull/3#issuecomment-5'), 'repos/o/r/issues/3/comments');
   assert.equal(replyEndpoint(pr, 'finding:2', { 2: 77 }), 'repos/o/r/pulls/3/comments/77/replies');
-  assert.equal(replyEndpoint(pr, 'finding:4', {}), null);
+  // A finding whose comment wasn't found is answered with a pull request comment, not dropped
+  assert.equal(replyEndpoint(pr, 'finding:4', {}), 'repos/o/r/issues/3/comments');
   assert.equal(fillLinks('{pull:p} / {issue:i} / {issue:none}', { pulls: { p: 'P' }, issues: { i: 'I' } }), 'P / I / {issue:none}');
 });
 
@@ -134,13 +135,15 @@ test('publish: refuses when the PR branch moved, and when a split branch already
 test('publish: a self-review is posted with comments on their lines, and replies go to those comments', async () => {
   const calls = [];
   const rest = async (method, endpoint, body) => { calls.push([endpoint, body]); return { id: 40, html_url: 'https://github.com/acme/api/pull/1#pullrequestreview-40' }; };
-  const read = async () => [{ id: 701, path: 'a.js', line: 1 }];
+  // As GitHub answers: line is empty on this endpoint, so the comment is found by its text
+  const read = async () => [{ id: 701, path: 'a.js', line: null, original_line: null, body: 'Use const' }];
   const result = { branches: [], issues: [], review: { body: 'Self-review', comments: [{ no: 1, body: 'Use const' }, { no: 2, body: 'General note' }] },
-    replies: [{ to: 'finding:1', body: 'Fixed' }, { to: 'finding:2', body: 'No line to reply to' }] };
+    replies: [{ to: 'finding:1', body: 'Fixed' }, { to: 'finding:2', body: 'Noted in the body' }] };
   await publish({ repo: 'acme/api', number: 1 }, result, {}, { git, rest, read, findings: [{ no: 1, path: 'a.js', line: 1 }, { no: 2 }] });
   assert.deepEqual(calls, [
     ['repos/acme/api/pulls/1/reviews', { event: 'COMMENT', body: 'Self-review\n\nGeneral note', comments: [{ path: 'a.js', line: 1, side: 'RIGHT', body: 'Use const' }] }],
     ['repos/acme/api/pulls/1/comments/701/replies', { body: 'Fixed' }],
+    ['repos/acme/api/issues/1/comments', { body: 'Noted in the body' }],
   ]);
 });
 
