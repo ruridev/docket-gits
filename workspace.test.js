@@ -191,6 +191,11 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.match(workspaceNote(again, pr), /don't link dependency folders such as node_modules/);
   assert.match(workspaceNote(again, pr), /CI results don't replace this/);
   assert.match(workspaceNote(again, pr), /Browsers \(Playwright, Cypress, Puppeteer\) can't start in this sandbox/);
+  // With the browser setting on, Playwright tests are run against the browser docket-gits starts outside
+  const withBrowser = workspaceNote(again, pr, { browser: true });
+  assert.match(withBrowser, /PW_TEST_CONNECT_WS_ENDPOINT/);
+  assert.match(withBrowser, /Cypress and Puppeteer still can't run/);
+  assert.doesNotMatch(withBrowser, /don't try browser or E2E tests/);
   assert.match(workspaceNote(again, pr), /find out how this project runs them[\s\S]*Check, don't guess/);
   assert.match(workspaceNote(again, pr), /remove it before you finish/);
   assert.match(workspaceNote(again, pr), /branch docket\/pr-7; the base branch is at origin\/main/);

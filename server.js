@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
+const { startGateway } = require('./browser');
 const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
@@ -34,6 +35,8 @@ const DEFAULT_CONFIG = {
   runDomains: REGISTRIES,
   // Env vars for AI runs, KEY=VALUE per line (a local test database's password, ...). The run's commands can read them
   runEnv: '',
+  // A Chromium for the runs' Playwright tests, started outside the sandbox (browser.js). Off: browser tests can't run
+  runBrowser: false,
   // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',
@@ -747,7 +750,7 @@ function modelOptions(cfg) {
 // ws: the run's workspace (see workspace.js), with workdir
 function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG) {
   const env = agentArgs({ ws, workdir: ws.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [],
-    network: { allowLocal: cfg.runLocalhost === true, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
+    network: { allowLocal: cfg.runLocalhost === true || cfg.runBrowser === true, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
   if (mode === 'compose') return ['--tools', '', '--json-schema', JSON.stringify(POST_SCHEMA), ...env];
   // Every Bash command runs in the sandbox (it can't leave it), so allow them all: without this, claude still asks
   // about commands it can't check up front (shell variables, $(...)), and a run can't answer
@@ -1860,7 +1863,23 @@ function waitForExit(pid) {
 // Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
 // ws: the run's workspace from withWorkspace. Claude runs in ws.cwd; it reaches GitHub only through the gatekeeper
 // readOnly: review / self-review / fix plan, which edit no files. mode: 'compose' for the text of a post
-function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, pr, mode: forced }) {
+// One gateway for every run, started the first time a run needs it
+let browserGateway = null;
+function browserEndpoint() {
+  browserGateway = browserGateway || startGateway({ home: DOCKET_HOME }).catch((e) => {
+    browserGateway = null;
+    throw e;
+  });
+  return browserGateway.then((g) => g.endpoint);
+}
+
+function runAgent(prompt, opts) {
+  // A run without the browser it was promised still runs, and is told browsers can't start
+  const browser = config.runBrowser === true && opts.ws.gitDir ? browserEndpoint().catch((e) => (console.error(`browser gateway: ${e.message}`), null)) : Promise.resolve(null);
+  return browser.then((endpoint) => startAgent(prompt, { ...opts, browser: endpoint }));
+}
+
+function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, pr, mode: forced, browser }) {
   return new Promise((resolve) => {
     // Throwing (e.g. log file can't be opened) would leave the caller's card stuck running, so return a failure
     // If it throws after starting (e.g. saving state fails), claude is running, so return the result on close
@@ -1870,14 +1889,14 @@ function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, 
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = forced || (readOnly ? 'read' : 'apply');
       // Runs in a worktree are told what it lacks and where the user's clone is (a post's text needs no folder)
-      const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr)}` : prompt, lang);
+      const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr, { browser: Boolean(browser) })}` : prompt, lang);
       const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, ws)];
       if (resume) args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w', 0o600);
       const err = fs.openSync(`${base}.err`, 'w', 0o600);
-      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { extra: runEnv(config.runEnv) }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { extra: runEnv(config.runEnv) }), ...(browser && { PW_TEST_CONNECT_WS_ENDPOINT: browser }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));

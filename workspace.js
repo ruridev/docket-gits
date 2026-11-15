@@ -228,7 +228,8 @@ function adminDirOf(gitDir, worktree) {
 }
 
 // What a run is told about its folder. The AI knows its stack: it copies or installs what the project needs
-function workspaceNote(ws, pr) {
+// browser: a Chromium for Playwright runs outside the sandbox (browser.js), its address in PW_TEST_CONNECT_WS_ENDPOINT
+function workspaceNote(ws, pr, { browser = false } = {}) {
   return `## The folder of this run
 - The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${pr.base ? `; the base branch is at origin/${pr.base}` : ''}.
 - Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only): copy from it what you need to build or test.` : 'There is no local clone of this repository to copy them from.'} Install missing dependencies here (for example pnpm install / bundle install): don't link dependency folders such as node_modules from the user's clone, since tools write into them and the clone can't be written.
@@ -237,7 +238,9 @@ function workspaceNote(ws, pr) {
 - Use the project's usual test setup (for example its usual test database) rather than creating new ones. If you do create anything outside this worktree (a database, files elsewhere), remove it before you finish; if you can't, list what is left in the summary.
 - Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.
 - Reach local servers by 127.0.0.1, not by a hostname: names don't resolve in the sandbox, and names that point to 127.0.0.1 (such as a dev server's local.* host) are refused. Start servers on 127.0.0.1 (curl --resolve maps a name if a Host header matters).
-- Browsers (Playwright, Cypress, Puppeteer) can't start in this sandbox on macOS, so don't try browser or E2E tests: run unit and component tests, and say in the summary that browser tests were not run for this reason.`;
+${browser
+    ? `- Browsers can't start in this sandbox on macOS, but a Chromium for Playwright runs outside it: PW_TEST_CONNECT_WS_ENDPOINT is set, so playwright test connects to it by itself (don't install browsers). Run the Playwright tests that cover the change. That browser reaches only hosts that resolve to 127.0.0.1, so a dev server's local.* host works from the page; the test runner itself is in the sandbox, so where it checks a URL (webServer url, health checks) point it at 127.0.0.1, for example through the env var the config reads. Cypress and Puppeteer still can't run here: if the project uses them, say so in the summary.`
+    : '- Browsers (Playwright, Cypress, Puppeteer) can\'t start in this sandbox on macOS, so don\'t try browser or E2E tests: run unit and component tests, and say in the summary that browser tests were not run for this reason.'}`;
 }
 
 const worktreeOf = (pr, home = HOME) => path.join(home, 'worktrees', `${pr.repo.replace('/', '-')}-${pr.number}`);

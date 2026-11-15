@@ -792,7 +792,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1118,6 +1118,8 @@ test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back 
   assert.equal(DEFAULT_CONFIG.runLocalhost, false);
   assert.equal(net({}), false);
   assert.equal(net({ runLocalhost: true }), true);
+  // The browser for Playwright is on a local port, so turning it on opens local ports too
+  assert.equal(net({ runLocalhost: false, runBrowser: true }), true);
   const read = claudeArgs('read', run);
   assert.ok(!read.includes('--permission-mode'));
   for (const r of ['Write', 'Edit', 'NotebookEdit']) assert.ok(rulesOf(read, '--disallowedTools').includes(r), r);
