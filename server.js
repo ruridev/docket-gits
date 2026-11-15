@@ -1868,6 +1868,23 @@ function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000) {
   for (const p of descendants(pid)) killRun(p);
 }
 
+// Processes whose working directory is in a run's worktree once the run has ended: servers it started that left
+// claude's process tree (a run can't stop them itself: kill and pkill are refused or blind in the sandbox)
+function reapWorktree(dir) {
+  if (!dir) return;
+  let out = '';
+  try {
+    out = execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) {
+    out = e.stdout || '';
+  }
+  let pid = 0;
+  for (const line of out.split('\n')) {
+    if (line[0] === 'p') pid = Number(line.slice(1));
+    else if (line[0] === 'n' && pid !== process.pid && (line.slice(1) === dir || line.slice(1).startsWith(`${dir}/`))) killRun(pid);
+  }
+}
+
 function killRun(pid) {
   try {
     process.kill(-pid, 'SIGTERM');
@@ -1932,6 +1949,7 @@ function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang
       const reaper = setInterval(() => reapLeftovers(child.pid, `${base}.out`, seen), 10 * 1000);
       child.on('close', (code) => {
         clearInterval(reaper);
+        reapWorktree(ws.gitDir && ws.cwd);
         const result = readRun(LOG_DIR, logName, code);
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
@@ -2616,4 +2634,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { reapLeftovers, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { reapLeftovers, reapWorktree, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

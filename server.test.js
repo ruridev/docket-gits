@@ -865,6 +865,26 @@ test('reapLeftovers: once the answer is out, stops processes a run left running 
   }
 });
 
+test('reapWorktree: stops processes still working in a run\'s worktree after it ends', async () => {
+  const { reapWorktree } = require('./server');
+  const wt = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-wt-')));
+  const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-other-')));
+  // A dev server the run started, detached from claude, and an unrelated process
+  const left = require('node:child_process').spawn('sleep', ['300'], { cwd: wt, detached: true, stdio: 'ignore' });
+  const keep = require('node:child_process').spawn('sleep', ['300'], { cwd: other, detached: true, stdio: 'ignore' });
+  const leftExit = new Promise((r) => left.on('exit', r));
+  try {
+    await new Promise((r) => setTimeout(r, 200));
+    reapWorktree(wt);
+    const code = await Promise.race([leftExit, new Promise((r) => setTimeout(() => r('still running'), 5000))]);
+    assert.notEqual(code, 'still running');
+    assert.equal(isAlive(keep.pid), true);
+  } finally {
+    killRun(left.pid);
+    killRun(keep.pid);
+  }
+});
+
 test('killRun: does not throw for an already exited process (so cancel can restore state)', () => {
   const { pid } = require('node:child_process').spawnSync('true');
   assert.doesNotThrow(() => killRun(pid));
