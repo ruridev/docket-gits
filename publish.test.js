@@ -147,6 +147,21 @@ test('publish: a self-review is posted with comments on their lines, and replies
   ]);
 });
 
+test('publish: a finding on a line outside the diff (422) goes into the review body, and its reply to the pull request', async () => {
+  const calls = [];
+  const rest = async (method, endpoint, body) => {
+    calls.push([endpoint, body]);
+    if (body.comments?.length) throw new Error('gh: Unprocessable Entity (HTTP 422)');
+    return { id: 41, html_url: 'https://github.com/acme/api/pull/1#pullrequestreview-41' };
+  };
+  const result = { branches: [], issues: [], review: { body: 'Self-review', comments: [{ no: 1, body: 'Use const' }] }, replies: [{ to: 'finding:1', body: 'Fixed' }] };
+  await publish({ repo: 'acme/api', number: 1 }, result, {}, { git, rest, read: async () => [], findings: [{ no: 1, path: 'a.js', line: 1 }] });
+  assert.deepEqual(calls.slice(1), [
+    ['repos/acme/api/pulls/1/reviews', { event: 'COMMENT', body: 'Self-review\n\n**a.js:1**\n\nUse const', comments: [] }],
+    ['repos/acme/api/issues/1/comments', { body: 'Fixed' }],
+  ]);
+});
+
 test('applyHandback: tells the run to commit on docket/pr-<n> and that it cannot publish', () => {
   const text = applyHandback({ url: 'https://github.com/o/r/pull/4', number: 4, head: 'feat' });
   assert.match(text, /on branch docket\/pr-4 at its head/);

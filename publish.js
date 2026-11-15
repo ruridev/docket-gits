@@ -182,7 +182,17 @@ async function publish(pr, result, progress, deps) {
       else loose.push(f?.path ? `**${f.path}**\n\n${body}` : body);
     }
     const body = [fillLinks(result.review.body, links()), ...loose].filter(Boolean).join('\n\n');
-    const made = await deps.rest('POST', `repos/${pr.repo}/pulls/${pr.number}/reviews`, { event: 'COMMENT', body, comments: comments.map(({ no, ...c }) => c) });
+    const post = (b, cs) => deps.rest('POST', `repos/${pr.repo}/pulls/${pr.number}/reviews`, { event: 'COMMENT', body: b, comments: cs.map(({ no, ...c }) => c) });
+    let made;
+    try {
+      made = await post(body, comments);
+    } catch (e) {
+      // 422: a finding sits on a line outside the pull request diff (e.g. a file only the fix commits touch).
+      // Put them all in the body; their replies then go to the pull request (replyEndpoint)
+      if (!/HTTP 422/.test(e.message) || !comments.length) throw e;
+      made = await post([body, ...comments.map((c) => `**${c.path}:${c.line}**\n\n${c.body}`)].filter(Boolean).join('\n\n'), []);
+      comments.length = 0;
+    }
     const posted = await deps.read(`repos/${pr.repo}/pulls/${pr.number}/reviews/${made.id}/comments`).catch(() => []);
     // This endpoint leaves line empty, so find each comment by its text (then by path and line)
     const list = Array.isArray(posted) ? posted : [];
