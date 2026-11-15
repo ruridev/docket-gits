@@ -28,6 +28,12 @@ const SECRET_PATHS = ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/Library
   '~/.docker', '~/.kube', '~/.gnupg', '~/.npmrc', '~/.gem/credentials', '~/.pypirc', '~/.cargo/credentials.toml', '~/.codex', '~/.config/gcloud',
   '~/.claude.json', '~/.claude/.credentials.json', '~/.claude/settings.json', '~/.claude/settings.local.json'];
 
+// The other docket apps' data (their sign-in secrets): with it a run could sign in to their APIs on local ports.
+// Their default places (docket-jobs outside its clone, both in a clone next to this one) and any set in the env
+const DOCKET_DATA_PATHS = ['~/Library/Application Support/docket-jobs', '~/.local/share/docket-jobs',
+  ...['docket', 'docket-jobs'].map((r) => path.join(path.dirname(__dirname), r, 'data')),
+  ...[process.env.DOCKET_PORTAL_DATA, process.env.DOCKET_JOBS_DATA_DIR].filter(Boolean).map((p) => path.resolve(p))];
+
 // Env vars a run keeps. Everything else (GITHUB_TOKEN, SSH_AUTH_SOCK, other tools' secrets) is dropped.
 // CLAUDECODE and the like are dropped too: claude refuses to start nested in another session
 const ENV_KEEP = /^(HOME|USER|LOGNAME|PATH|SHELL|LANG|LC_\w+|TERM|TMPDIR|TZ|NODE_EXTRA_CA_CERTS|(HTTPS?|NO|ALL)_PROXY|(https?|no|all)_proxy|ANTHROPIC_\w+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_USE_\w+|AWS_\w+|CLOUD_ML_REGION|VERTEX_\w+|GOOGLE_\w+|RBENV_\w+|PYENV_\w+|NVM_\w+|ASDF_\w+|MISE_\w+|VOLTA_\w+|GEM_\w+|JAVA_HOME|GOPATH|GOROOT|RUBY_\w+|BUNDLE_GEMFILE)$/;
@@ -78,7 +84,7 @@ function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = R
       allowUnsandboxedCommands: false,
       network: { allowedDomains: domains, allowUnixSockets: [socket], allowLocalBinding: Boolean(allowLocal) },
       filesystem: {
-        denyRead: [...SECRET_PATHS, dataDir],
+        denyRead: [...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir],
         allowWrite: [ws.cwd, path.join(home, 'cache'), ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
         // The user's git runs these later, outside the sandbox; the server trusts the admin folder's links
         denyWrite: [...(workdir ? [workdir] : []), ...(git ? [path.join(git, 'config'), path.join(git, 'hooks'), path.join(git, 'info'), path.join(git, 'packed-refs'),
@@ -92,7 +98,7 @@ function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = R
 // no editing the working directory (clones of the user live there), and no web access
 function agentToolDeny({ workdir, dataDir }) {
   return [
-    ...[...SECRET_PATHS, dataDir].map((p) => `Read(${abs(p)}/**)`),
+    ...[...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir].map((p) => `Read(${abs(p)}/**)`),
     ...(workdir ? ['Edit', 'Write', 'NotebookEdit'].map((t) => `${t}(${abs(workdir)}/**)`) : []),
     'WebFetch', 'WebSearch',
   ];

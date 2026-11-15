@@ -48,6 +48,7 @@ test('agentSettings / agentArgs: what a commit needs is writable; config, hooks 
   assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
   for (const p of ['/c/.git/config', '/c/.git/hooks', '/c/.git/packed-refs', '/c/.git/worktrees/x/commondir', '/c/.git/worktrees/x/gitdir']) assert.ok(s.filesystem.denyWrite.includes(p), p);
   for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
+  for (const p of ['~/Library/Application Support/docket-jobs', path.join(path.dirname(__dirname), 'docket', 'data')]) assert.ok(s.filesystem.denyRead.includes(p), p);
   const args = agentArgs({ ws, workdir: '/w', dataDir: '/data', deny: ['Write'], network: { allowLocal: false, domains: [] } });
   const settings = JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.network;
   assert.equal(settings.allowLocalBinding, false);
