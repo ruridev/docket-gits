@@ -48,12 +48,20 @@ const ghDirOf = (home) => path.join(home, `gh-${process.env.PORT || 4649}`);
 // Absolute paths in permission rules start with //
 const abs = (p) => (p.startsWith('~') ? p : `/${p}`);
 
-function agentEnv(env, { home = HOME } = {}) {
+// The user's env vars for runs (settings, KEY=VALUE per line), e.g. the password of a local database tests use.
+// The run's commands (the pull request's code) can read them, so they are for local development values only
+function runEnv(text) {
+  return Object.fromEntries(String(text || '').split('\n').map((line) => line.match(/^\s*([A-Za-z_]\w*)\s*=(.*)$/)).filter(Boolean).map(([, k, v]) => [k, v.trim()]));
+}
+
+// extra: runEnv(); it can't replace the values below, which keep the run away from the user's token, hooks and caches
+function agentEnv(env, { home = HOME, extra = {} } = {}) {
   const clouds = Object.entries(CLOUD_KEEP).filter(([flag]) => env[flag]).map(([, keep]) => keep);
   const out = Object.fromEntries(Object.entries(env).filter(([k]) => ENV_KEEP.test(k) || clouds.some((keep) => keep.test(k))));
   const cache = path.join(home, 'cache');
   return {
     ...out,
+    ...extra,
     // gh sends every request to the gatekeeper, which adds the user's token; the placeholder only makes gh try
     GH_TOKEN: 'docket-gits',
     GH_CONFIG_DIR: ghDirOf(home),
@@ -273,4 +281,4 @@ async function removeWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
-module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };
+module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };

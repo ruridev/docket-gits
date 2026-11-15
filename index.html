@@ -702,7 +702,7 @@ const I18N = {
     'pub.issues': '作成する issue', 'pub.parent': '#{n} のサブ issue', 'pub.review': '投稿するセルフレビュー', 'pub.replies': '返信', 'pub.toFinding': '指摘 #{no}',
     'pub.risky': 'CI・リポジトリ設定を変更するか、ファイルを実行可能にしています。push すると、これらはリポジトリのシークレット付きで実行されます:', 'pub.riskyOk': 'これらの変更を確認しました',
     'pub.publish': '公開', 'pub.discard': '破棄', 'pub.confirmPublish': 'もう一度押すと push・投稿', 'pub.confirmDiscard': 'もう一度押すと結果を破棄', 'pub.linkReview': 'レビュー',
-    's.runNet': 'AI 実行のネットワーク', 's.runNet.help': 'AI の実行は PR の worktree の中でサンドボックスに入って動きます。GitHub は docket-gits を通して読むだけで、投稿や push はできません。ここに書いていない宛先はすべてブロックされます', 's.runLocalhost': 'AI の実行にローカルのポートを使わせる (テストに必要なデータベースやサービス)', 's.runDomains': 'AI の実行が依存関係のインストールに使えるホスト (1 行 1 つ)', 'pub.files': '{n} ファイルを変更', 'err.workspaceFailed': "作業用のフォルダーを用意できませんでした: {message}",
+    's.runNet': 'AI 実行のネットワーク', 's.runNet.help': 'AI の実行は PR の worktree の中でサンドボックスに入って動きます。GitHub は docket-gits を通して読むだけで、投稿や push はできません。ここに書いていない宛先はすべてブロックされます', 's.runLocalhost': 'AI の実行にローカルのポートを使わせる (テストに必要なデータベースやサービス)', 's.runDomains': 'AI の実行が依存関係のインストールに使えるホスト (1 行 1 つ)', 's.runEnv': 'AI の実行に渡す環境変数 (1 行に KEY=VALUE)', 's.runEnv.help': 'テストが使うローカルのデータベースのパスワードなど。PR のコードからも読めるので、ローカル開発用の値だけを書いてください。設定の書き出しには含まれません', 'pub.files': '{n} ファイルを変更', 'err.workspaceFailed': "作業用のフォルダーを用意できませんでした: {message}",
   },
   ko: {
     'agent.run': '실행·로그', 'agent.targets': '작업 대상', 'agent.prompts': '공통 프롬프트',
@@ -801,7 +801,7 @@ const I18N = {
     'pub.issues': '만들 issue', 'pub.parent': '#{n}의 하위 issue', 'pub.review': '게시할 셀프 리뷰', 'pub.replies': '답글', 'pub.toFinding': '의견 #{no}',
     'pub.risky': 'CI·저장소 설정을 바꾸거나 파일을 실행 가능하게 만듭니다. push하면 이것들은 저장소의 시크릿과 함께 실행됩니다:', 'pub.riskyOk': '이 변경을 확인했습니다',
     'pub.publish': '게시', 'pub.discard': '버리기', 'pub.confirmPublish': '한 번 더 누르면 push·게시', 'pub.confirmDiscard': '한 번 더 누르면 결과를 버립니다', 'pub.linkReview': '리뷰',
-    's.runNet': 'AI 실행 네트워크', 's.runNet.help': 'AI 실행은 PR의 worktree 안에서 샌드박스에 갇혀 동작합니다. GitHub는 docket-gits를 거쳐 읽기만 할 수 있고, 게시나 push는 할 수 없습니다. 여기에 없는 곳은 모두 막힙니다', 's.runLocalhost': 'AI 실행이 로컬 포트를 쓰도록 허용 (테스트에 필요한 데이터베이스·서비스)', 's.runDomains': 'AI 실행이 의존성 설치에 접속할 수 있는 호스트 (한 줄에 하나)', 'pub.files': '파일 {n}개 변경', 'err.workspaceFailed': "작업용 폴더를 준비하지 못했습니다: {message}",
+    's.runNet': 'AI 실행 네트워크', 's.runNet.help': 'AI 실행은 PR의 worktree 안에서 샌드박스에 갇혀 동작합니다. GitHub는 docket-gits를 거쳐 읽기만 할 수 있고, 게시나 push는 할 수 없습니다. 여기에 없는 곳은 모두 막힙니다', 's.runLocalhost': 'AI 실행이 로컬 포트를 쓰도록 허용 (테스트에 필요한 데이터베이스·서비스)', 's.runDomains': 'AI 실행이 의존성 설치에 접속할 수 있는 호스트 (한 줄에 하나)', 's.runEnv': 'AI 실행에 넘길 환경 변수 (한 줄에 KEY=VALUE)', 's.runEnv.help': '테스트가 쓰는 로컬 데이터베이스 비밀번호 등. PR 코드에서도 읽을 수 있으니 로컬 개발용 값만 적으세요. 설정 내보내기에는 포함되지 않습니다', 'pub.files': '파일 {n}개 변경', 'err.workspaceFailed': "작업용 폴더를 준비하지 못했습니다: {message}",
   },
   en: {
     'agent.run': 'Execution & logs', 'agent.targets': 'Work targets', 'agent.prompts': 'Shared prompts',
@@ -900,7 +900,7 @@ const I18N = {
     'pub.issues': 'Issues to create', 'pub.parent': 'sub-issue of #{n}', 'pub.review': 'Self-review to post', 'pub.replies': 'Replies', 'pub.toFinding': 'finding #{no}',
     'pub.risky': 'This changes CI / repository settings or makes a file executable; these run with the repository\'s secrets when pushed:', 'pub.riskyOk': 'I checked these changes',
     'pub.publish': 'Publish', 'pub.discard': 'Discard', 'pub.confirmPublish': 'Click again to push and post', 'pub.confirmDiscard': 'Click again to discard the result', 'pub.linkReview': 'Review',
-    's.runNet': 'Network for AI runs', 's.runNet.help': 'AI runs work in a sandbox in a worktree of the pull request. They read GitHub only through docket-gits and cannot post or push. Everything not listed here is blocked', 's.runLocalhost': 'Let AI runs use local ports (databases and services tests need)', 's.runDomains': 'Hosts AI runs may reach to install dependencies (one per line)', 'pub.files': '{n} files changed', 'err.workspaceFailed': "Couldn't prepare the working folder: {message}",
+    's.runNet': 'Network for AI runs', 's.runNet.help': 'AI runs work in a sandbox in a worktree of the pull request. They read GitHub only through docket-gits and cannot post or push. Everything not listed here is blocked', 's.runLocalhost': 'Let AI runs use local ports (databases and services tests need)', 's.runDomains': 'Hosts AI runs may reach to install dependencies (one per line)', 's.runEnv': 'Env vars for AI runs (KEY=VALUE per line)', 's.runEnv.help': 'Such as the password of a local database tests use. The pull request\'s code can read them too, so write local development values only. Not included when settings are exported', 'pub.files': '{n} files changed', 'err.workspaceFailed': "Couldn't prepare the working folder: {message}",
   },
 };
 // Fill {name} from params. Placeholders with non-\w characters like {pr-number} are left as is
@@ -1987,6 +1987,8 @@ async function openSettings() {
           <p class="muted">${tr('s.runNet.help')}</p>
           <div class="form-row"><label><input type="checkbox" data-cfg="runLocalhost" ${cfg.runLocalhost === true ? 'checked' : ''}> ${tr('s.runLocalhost')}</label></div>
           <div class="form-row"><label>${tr('s.runDomains')}</label><textarea data-cfg="runDomains" rows="6" placeholder="registry.npmjs.org">${esc((cfg.runDomains || []).join('\n'))}</textarea></div>
+          <div class="form-row"><label>${tr('s.runEnv')}</label><textarea data-cfg="runEnv" rows="3" placeholder="DB_PASSWORD=..." spellcheck="false">${esc(cfg.runEnv || '')}</textarea></div>
+          <p class="muted">${tr('s.runEnv.help')}</p>
           <h4>${tr('s.repoSkills')}</h4>
           <p class="muted">${tr('s.repoSkills.help')}</p>
           <table class="repos">
@@ -2009,12 +2011,12 @@ async function openSettings() {
   const PANES = ['agent-run', 'agent-targets', 'agent-prompts', 'agent-claude', 'agent-roadmap', 'refresh', 'lang', 'theme', 'terms'];
   // Settings restored by "Reset all to defaults" (terms and UI language are handled separately)
   const PANE_KEYS = {
-    agent: ['workdir', 'model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
+    agent: ['workdir', 'model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
     'agent-run': ['maxConcurrent', 'logKeepDays'],
     'agent-targets': ['workdir', 'repos', 'authors', 'mergedDays', 'doneKeepDays'],
     'agent-prompts': ['reviewPrompt', 'fixPrompt'],
     'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir'],
-    'agent-claude': ['model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains'],
+    'agent-claude': ['model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
     lang: ['outputLang', 'authorLangs', 'agreeIcon', 'disagreeIcon'],
   };
@@ -2172,7 +2174,7 @@ async function openSettings() {
         const data = JSON.parse(await file.text());
         const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
         // A shared file must not change what runs or where: agent args, tools and local folders stay as they are
-        const LOCAL = ['claudeArgs', 'readOnlyTools', 'skillEdits', 'runLocalhost', 'runDomains', 'workdir', 'plansDir'];
+        const LOCAL = ['claudeArgs', 'readOnlyTools', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'workdir', 'plansDir'];
         const imported = data.config && typeof data.config === 'object' ? data.config : {};
         skipped = Object.keys(imported).filter((k) => LOCAL.includes(k));
         for (const [k, v] of Object.entries(imported)) if (k in board.defaults && k !== 'consentVersion' && !LOCAL.includes(k) && kind(v) === kind(board.defaults[k])) cfg[k] = v;
@@ -2252,7 +2254,8 @@ async function openSettings() {
     }
     if (t.matches('[data-import-pick]')) return dlg.querySelector('[data-import]').click();
     if (t.matches('[data-export]')) {
-      const { consentVersion, ...config } = cfg;
+      // runEnv may hold passwords: it stays on this machine
+      const { consentVersion, runEnv: _env, ...config } = cfg;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify({ config, terms, uiLang, theme: uiTheme }, null, 2)], { type: 'application/json' }));
       a.download = 'docket-settings.json';

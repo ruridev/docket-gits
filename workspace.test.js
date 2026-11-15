@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { agentEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
+const { agentEnv, runEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
 
 const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
 const tmpdir = (t) => {
@@ -27,6 +27,18 @@ test('agentEnv: keeps what claude and toolchains need, drops secrets, points gh 
 
 test('agentEnv: pnpm keeps the versions it fetches for packageManager in the cache, not in the user\'s pnpm home', () => {
   const env = agentEnv({ PATH: '/bin', PNPM_HOME: '/Users/u/Library/pnpm' }, { home: '/d' });
+  assert.equal(env.PNPM_HOME, '/d/cache/pnpm-home');
+});
+
+test('runEnv: KEY=VALUE lines the user set reach a run, but never replace what keeps the run in its fence', () => {
+  const extra = runEnv('DB_PASSWORD=p=w\n# comment\n  RAILS_ENV = test \nbad key=x\nnoequals\nGH_TOKEN=leak\nGIT_CONFIG_VALUE_0=hooks\nPNPM_HOME=/x\n');
+  assert.deepEqual(extra, { DB_PASSWORD: 'p=w', RAILS_ENV: 'test', GH_TOKEN: 'leak', GIT_CONFIG_VALUE_0: 'hooks', PNPM_HOME: '/x' });
+  assert.deepEqual(runEnv(undefined), {});
+  const env = agentEnv({ PATH: '/bin' }, { home: '/d', extra });
+  assert.equal(env.DB_PASSWORD, 'p=w');
+  assert.equal(env.RAILS_ENV, 'test');
+  assert.equal(env.GH_TOKEN, 'docket-gits');
+  assert.equal(env.GIT_CONFIG_VALUE_0, '/dev/null');
   assert.equal(env.PNPM_HOME, '/d/cache/pnpm-home');
 });
 

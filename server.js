@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
-const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
+const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
   // and these hosts, for installing dependencies. Everything else is blocked by the sandbox
   runLocalhost: false,
   runDomains: REGISTRIES,
+  // Env vars for AI runs, KEY=VALUE per line (a local test database's password, ...). The run's commands can read them
+  runEnv: '',
   // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',
@@ -1875,7 +1877,7 @@ function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, 
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w', 0o600);
       const err = fs.openSync(`${base}.err`, 'w', 0o600);
-      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { extra: runEnv(config.runEnv) }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
