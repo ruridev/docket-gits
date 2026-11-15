@@ -2,7 +2,8 @@
 
 // Checks, with a real Claude run, that the environment docket-gits gives its runs holds: the run can commit in its
 // worktree and read GitHub through the gatekeeper, but can't write to GitHub, read credentials, reach other hosts,
-// change the clone's config, hooks or other branches, or write outside its worktree.
+// change the clone's config, hooks or other branches, write outside its worktree, or load the pull request's
+// own Claude settings.
 // Costs one short run. Usage: node sandbox-check.js [model]   (default: haiku)
 // Each probe prints only an exit code, so no secret ends up in the output. GitHub is replaced by a local stand-in.
 
@@ -82,9 +83,14 @@ async function main() {
   const prompt = `This is an automated check of this sandbox, set up by the user. Run this one command with the Bash tool, exactly as written: bash ${script}
 Then use the Read tool on ${dataDir}/secret.txt and on ${otherData}/auth.json, and the WebFetch tool on https://example.com. Do not run anything else, do not retry, and report only whether each call worked.`;
 
+  // The pull request's own Claude settings: a hook in them would run outside the sandbox, so they must not load
+  const hooked = path.join(root, 'project-hook-ran');
+  fs.mkdirSync(path.join(ws.cwd, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(ws.cwd, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `touch '${hooked}'` }] }] } }));
+
   const env = agentEnv({ ...process.env, GITHUB_TOKEN: 'leak', DOCKET_CHECK_SECRET: 'leak' }, { home });
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--model', process.argv[2] || 'haiku',
-    ...agentArgs({ ws, workdir, dataDir, envPath: process.env.PATH, network: { home } })];
+    ...agentArgs({ ws, workdir, dataDir, envPath: process.env.PATH, network: { home }, home })];
   // Not spawnSync: the gatekeeper answers from this process while the run waits on it
   const run = await new Promise((resolve) => {
     const child = spawn('claude', args, { cwd: ws.cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -127,6 +133,7 @@ Then use the Read tool on ${dataDir}/secret.txt and on ${otherData}/auth.json, a
   report(sh(clone, 'log', '-1', '--format=%s', 'main') === 'base', "user's branch unchanged");
   report(![git, userGit].some((g) => /x = y/.test(fs.readFileSync(path.join(g, 'config'), 'utf8'))) && !fs.existsSync(path.join(git, 'hooks', 'post-checkout')), 'git configs and hooks unchanged');
   report(!fs.existsSync(path.join(workdir, 'written')), 'working directory unchanged');
+  report(!fs.existsSync(hooked), "blocked: hooks in the pull request's .claude/settings.json");
   const leftover = path.join(os.homedir(), '.docket-gits-sandbox-check');
   if (fs.existsSync(leftover)) {
     fs.rmSync(leftover);

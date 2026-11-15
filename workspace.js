@@ -10,6 +10,7 @@
 // never to the clone's config or hooks (the server pushes from that clone), other branches or anything else. It reads GitHub only through the
 // gatekeeper (github-proxy.js) and holds no token. Publishing is done by the server (publish.js).
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -36,7 +37,10 @@ const DOCKET_DATA_PATHS = ['~/Library/Application Support/docket-jobs', '~/.loca
 
 // Env vars a run keeps. Everything else (GITHUB_TOKEN, SSH_AUTH_SOCK, other tools' secrets) is dropped.
 // CLAUDECODE and the like are dropped too: claude refuses to start nested in another session
-const ENV_KEEP = /^(HOME|USER|LOGNAME|PATH|SHELL|LANG|LC_\w+|TERM|TMPDIR|TZ|NODE_EXTRA_CA_CERTS|(HTTPS?|NO|ALL)_PROXY|(https?|no|all)_proxy|ANTHROPIC_\w+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_USE_\w+|AWS_\w+|CLOUD_ML_REGION|VERTEX_\w+|GOOGLE_\w+|RBENV_\w+|PYENV_\w+|NVM_\w+|ASDF_\w+|MISE_\w+|VOLTA_\w+|GEM_\w+|JAVA_HOME|GOPATH|GOROOT|RUBY_\w+|BUNDLE_GEMFILE)$/;
+const ENV_KEEP = /^(HOME|USER|LOGNAME|PATH|SHELL|LANG|LC_\w+|TERM|TMPDIR|TZ|NODE_EXTRA_CA_CERTS|(HTTPS?|NO|ALL)_PROXY|(https?|no|all)_proxy|ANTHROPIC_\w+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_USE_\w+|RBENV_\w+|PYENV_\w+|NVM_\w+|ASDF_\w+|MISE_\w+|VOLTA_\w+|GEM_\w+|JAVA_HOME|GOPATH|GOROOT|RUBY_\w+|BUNDLE_GEMFILE)$/;
+
+// Cloud credentials, kept only when claude itself signs in through that cloud
+const CLOUD_KEEP = { CLAUDE_CODE_USE_BEDROCK: /^AWS_\w+$/, CLAUDE_CODE_USE_VERTEX: /^(CLOUD_ML_REGION|VERTEX_\w+|GOOGLE_\w+)$/ };
 
 // gh's config for runs, one per server (port) like the gatekeeper socket it points to
 const ghDirOf = (home) => path.join(home, `gh-${process.env.PORT || 4649}`);
@@ -45,7 +49,8 @@ const ghDirOf = (home) => path.join(home, `gh-${process.env.PORT || 4649}`);
 const abs = (p) => (p.startsWith('~') ? p : `/${p}`);
 
 function agentEnv(env, { home = HOME } = {}) {
-  const out = Object.fromEntries(Object.entries(env).filter(([k]) => ENV_KEEP.test(k)));
+  const clouds = Object.entries(CLOUD_KEEP).filter(([flag]) => env[flag]).map(([, keep]) => keep);
+  const out = Object.fromEntries(Object.entries(env).filter(([k]) => ENV_KEEP.test(k) || clouds.some((keep) => keep.test(k))));
   const cache = path.join(home, 'cache');
   return {
     ...out,
@@ -104,10 +109,34 @@ function agentToolDeny({ workdir, dataDir }) {
   ];
 }
 
-// Claude CLI options for a run. workdir: the user's working directory, added read-only so its skills load.
+// The working directory's skills as a plugin. Runs load user settings only (see agentArgs), which also skips the
+// skills of an added directory; a plugin brings them back, still invoked as /<skill>. null: no skills there
+function workdirPlugin(workdir, home = HOME) {
+  const skills = path.join(workdir, '.claude', 'skills');
+  if (!fs.existsSync(skills)) return null;
+  const dir = path.join(home, 'plugins', crypto.createHash('sha256').update(workdir).digest('hex').slice(0, 16));
+  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'workdir' }));
+  const link = path.join(dir, 'skills');
+  let current = null;
+  try {
+    current = fs.readlinkSync(link);
+  } catch {}
+  if (current !== skills) {
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(skills, link);
+  }
+  return dir;
+}
+
+// Claude CLI options for a run. workdir: the user's working directory, added read-only so its files can be read.
 // deny: more rules for the run's mode. --strict-mcp-config: the user's MCP servers run outside the sandbox
-function agentArgs({ ws, workdir, dataDir, envPath, deny = [], network = {} }) {
-  return ['--settings', JSON.stringify(agentSettings({ ws, workdir, dataDir, envPath, ...network })), ...(workdir ? ['--add-dir', workdir] : []),
+// --setting-sources user: the worktree is the pull request's code, and its .claude/ (settings, hooks, skills,
+// plugins) would run outside the sandbox or widen it, so only the user's own settings load
+function agentArgs({ ws, workdir, dataDir, envPath, deny = [], network = {}, home = HOME }) {
+  const plugin = workdir && workdirPlugin(workdir, home);
+  return ['--settings', JSON.stringify(agentSettings({ ws, workdir, dataDir, envPath, ...network })), '--setting-sources', 'user',
+    ...(workdir ? ['--add-dir', workdir] : []), ...(plugin ? ['--plugin-dir', plugin] : []),
     '--strict-mcp-config', '--disallowedTools', [...agentToolDeny({ workdir, dataDir }), ...deny].join(',')];
 }
 

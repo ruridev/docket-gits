@@ -1985,7 +1985,7 @@ async function openSettings() {
           <div class="form-row"><label title="${esc(tr('s.skillEdits.title'))}"><input type="checkbox" data-cfg="skillEdits" ${cfg.skillEdits ? 'checked' : ''}> ${tr('s.skillEdits')}</label></div>
           <h4>${tr('s.runNet')}</h4>
           <p class="muted">${tr('s.runNet.help')}</p>
-          <div class="form-row"><label><input type="checkbox" data-cfg="runLocalhost" ${cfg.runLocalhost !== false ? 'checked' : ''}> ${tr('s.runLocalhost')}</label></div>
+          <div class="form-row"><label><input type="checkbox" data-cfg="runLocalhost" ${cfg.runLocalhost === true ? 'checked' : ''}> ${tr('s.runLocalhost')}</label></div>
           <div class="form-row"><label>${tr('s.runDomains')}</label><textarea data-cfg="runDomains" rows="6" placeholder="registry.npmjs.org">${esc((cfg.runDomains || []).join('\n'))}</textarea></div>
           <h4>${tr('s.repoSkills')}</h4>
           <p class="muted">${tr('s.repoSkills.help')}</p>

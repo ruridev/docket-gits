@@ -25,6 +25,34 @@ test('agentEnv: keeps what claude and toolchains need, drops secrets, points gh 
   assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
 });
 
+test('agentEnv: cloud credentials only reach a run when claude itself uses that cloud', () => {
+  const secrets = { AWS_SECRET_ACCESS_KEY: 's', AWS_SESSION_TOKEN: 's', GOOGLE_APPLICATION_CREDENTIALS: '/g', CLOUD_ML_REGION: 'r', VERTEX_REGION_X: 'r' };
+  const plain = agentEnv({ PATH: '/bin', ...secrets }, { home: '/d' });
+  for (const k of Object.keys(secrets)) assert.ok(!(k in plain), k);
+  const bedrock = agentEnv({ PATH: '/bin', CLAUDE_CODE_USE_BEDROCK: '1', ...secrets }, { home: '/d' });
+  assert.ok('AWS_SECRET_ACCESS_KEY' in bedrock && !('GOOGLE_APPLICATION_CREDENTIALS' in bedrock));
+  const vertex = agentEnv({ PATH: '/bin', CLAUDE_CODE_USE_VERTEX: '1', ...secrets }, { home: '/d' });
+  assert.ok('GOOGLE_APPLICATION_CREDENTIALS' in vertex && 'CLOUD_ML_REGION' in vertex && !('AWS_SECRET_ACCESS_KEY' in vertex));
+});
+
+test('agentArgs: settings in the pull request are not loaded; the working directory\'s skills come as a plugin', (t) => {
+  const home = tmpdir(t);
+  const ws = { cwd: '/wt' };
+  const bare = agentArgs({ ws, workdir: path.join(home, 'none'), dataDir: '/data', home });
+  assert.equal(bare[bare.indexOf('--setting-sources') + 1], 'user');
+  assert.ok(!bare.includes('--plugin-dir'));
+  const workdir = path.join(home, 'w');
+  fs.mkdirSync(path.join(workdir, '.claude', 'skills', 'review'), { recursive: true });
+  fs.writeFileSync(path.join(workdir, '.claude', 'skills', 'review', 'SKILL.md'), '---\nname: review\n---\n');
+  const args = agentArgs({ ws, workdir, dataDir: '/data', home });
+  const plugin = args[args.indexOf('--plugin-dir') + 1];
+  assert.ok(plugin.startsWith(home + path.sep), plugin);
+  assert.ok(fs.existsSync(path.join(plugin, 'skills', 'review', 'SKILL.md')));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(plugin, '.claude-plugin', 'plugin.json'), 'utf8')).name, 'workdir');
+  // Same working directory, same plugin
+  assert.equal(agentArgs({ ws, workdir, dataDir: '/data', home })[args.indexOf('--plugin-dir') + 1], plugin);
+});
+
 test('agentEnv: git really skips hooks with that env', (t) => {
   const dir = tmpdir(t);
   const env = agentEnv(process.env, { home: dir });

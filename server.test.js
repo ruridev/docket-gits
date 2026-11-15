@@ -1113,6 +1113,11 @@ test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back 
     assert.deepEqual(rulesOf(args, '--allowedTools'), mode === 'compose' ? [] : ['Bash'], mode);
     assert.ok(!args.includes('--plugin-dir'), mode);
   }
+  // Local ports are off unless turned on
+  const net = (cfg) => JSON.parse(rulesOf(claudeArgs('read', run, cfg), '--settings').join(',')).sandbox.network.allowLocalBinding;
+  assert.equal(DEFAULT_CONFIG.runLocalhost, false);
+  assert.equal(net({}), false);
+  assert.equal(net({ runLocalhost: true }), true);
   const read = claudeArgs('read', run);
   assert.ok(!read.includes('--permission-mode'));
   for (const r of ['Write', 'Edit', 'NotebookEdit']) assert.ok(rulesOf(read, '--disallowedTools').includes(r), r);

@@ -30,7 +30,7 @@ const DEFAULT_CONFIG = {
   skillEdits: false,
   // What AI runs may reach besides GitHub (read-only, through the server): localhost ports, for databases tests use,
   // and these hosts, for installing dependencies. Everything else is blocked by the sandbox
-  runLocalhost: true,
+  runLocalhost: false,
   runDomains: REGISTRIES,
   // Empty = claude's default. Subagents use this model too
   model: '',
@@ -745,7 +745,7 @@ function modelOptions(cfg) {
 // ws: the run's workspace (see workspace.js), with workdir
 function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG) {
   const env = agentArgs({ ws, workdir: ws.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [],
-    network: { allowLocal: cfg.runLocalhost !== false, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
+    network: { allowLocal: cfg.runLocalhost === true, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
   if (mode === 'compose') return ['--tools', '', '--json-schema', JSON.stringify(POST_SCHEMA), ...env];
   // Every Bash command runs in the sandbox (it can't leave it), so allow them all: without this, claude still asks
   // about commands it can't check up front (shell variables, $(...)), and a run can't answer
