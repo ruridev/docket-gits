@@ -187,6 +187,7 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.equal(again.sourceClone, userClone);
   assert.match(workspaceNote(again, pr), new RegExp(`user's own clone of this repository is at ${userClone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(read-only\\)`));
   assert.match(workspaceNote({ ...again, sourceClone: null }, pr), /no local clone/);
+  assert.match(workspaceNote(again, pr), /don't link dependency folders such as node_modules/);
   assert.match(workspaceNote(again, pr), /find out how this project runs them[\s\S]*Check, don't guess/);
   assert.match(workspaceNote(again, pr), /remove it before you finish/);
   assert.match(workspaceNote(again, pr), /branch docket\/pr-7; the base branch is at origin\/main/);
