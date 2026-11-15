@@ -7,7 +7,7 @@ const path = require('node:path');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
-const { HOME: DOCKET_HOME, REGISTRIES, agentArgs, agentEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
+const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -1865,9 +1865,10 @@ function runAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, 
     let child;
     try {
       const model = modelOptions(config);
-      const instruction = withOutputLang(prompt, lang);
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = forced || (readOnly ? 'read' : 'apply');
+      // Runs in a worktree are told what it lacks and where the user's clone is (a post's text needs no folder)
+      const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr)}` : prompt, lang);
       const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, ws)];
       if (resume) args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });

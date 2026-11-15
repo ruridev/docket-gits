@@ -171,6 +171,14 @@ function adminDirOf(gitDir, worktree) {
   }) || null;
 }
 
+// What a run is told about its folder. The AI knows its stack: it copies or installs what the project needs
+function workspaceNote(ws, pr) {
+  return `## The folder of this run
+- The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${pr.base ? `; the base branch is at origin/${pr.base}` : ''}.
+- Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only): copy from it what you need to build or test.` : 'There is no local clone of this repository to copy them from.'} Install missing dependencies here.
+- Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.`;
+}
+
 const worktreeOf = (pr, home = HOME) => path.join(home, 'worktrees', `${pr.repo.replace('/', '-')}-${pr.number}`);
 const branchOf = (pr) => `docket/pr-${pr.number}`;
 
@@ -203,7 +211,8 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
     fs.mkdirSync(path.join(home, 'cache'), { recursive: true });
     fs.mkdirSync(ghDirOf(home), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(ghDirOf(home), 'config.yml'), ghConfig());
-    return { cwd, clone, gitDir, adminDir, headSha, branch: branchOf(pr) };
+    // sourceClone: the user's own clone, which the run may read (local settings, dependencies that aren't in git)
+    return { cwd, clone, gitDir, adminDir, headSha, branch: branchOf(pr), sourceClone: findClone(workdir, pr.repo) };
   });
 }
 
@@ -219,4 +228,4 @@ async function removeWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
-module.exports = { HOME, REGISTRIES, SECRET_PATHS, agentEnv, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };
+module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };

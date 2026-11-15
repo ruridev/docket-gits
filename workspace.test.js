@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { agentEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace } = require('./workspace');
+const { agentEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
 
 const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
 const tmpdir = (t) => {
@@ -134,6 +134,11 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.equal(again.adminDir, ws.adminDir);
   assert.equal(again.headSha, sh(origin, 'rev-parse', 'feature'));
   assert.equal(sh(again.cwd, 'rev-parse', 'HEAD'), again.headSha);
+  // The run is told where the user's clone is, to copy local settings from
+  assert.equal(again.sourceClone, userClone);
+  assert.match(workspaceNote(again, pr), new RegExp(`user's own clone of this repository is at ${userClone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(read-only\\)`));
+  assert.match(workspaceNote({ ...again, sourceClone: null }, pr), /no local clone/);
+  assert.match(workspaceNote(again, pr), /branch docket\/pr-7; the base branch is at origin\/main/);
   assert.equal(fs.readFileSync(path.join(again.cwd, 'a.js'), 'utf8'), '1\n');
   assert.ok(fs.existsSync(path.join(again.cwd, 'node_modules', 'dep.js')));
 

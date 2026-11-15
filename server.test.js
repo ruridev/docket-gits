@@ -1341,6 +1341,8 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
     assert.ok(c.ghConfig.startsWith(path.join(dir, 'home', 'gh-')), c.ghConfig);
     assert.equal(fs.realpathSync(c.cwd), worktree);
   }
+  // Each run is told about its worktree; with no clone of its own here, there is none to copy from
+  for (const c of calls) assert.match(c.args[c.args.indexOf('-p') + 1], /## The folder of this run[\s\S]*no local clone/);
   // No clone of the repository under the working directory, so docket-gits keeps its own
   assert.ok(fs.existsSync(path.join(dir, 'home', 'repos', 'acme', 'api', '.git')));
   const file = path.join(dir, '.claude', 'skills', 'docket-claude-review', 'SKILL.md');
