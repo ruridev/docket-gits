@@ -115,10 +115,13 @@ function git(args, opts = {}) {
 }
 
 // The user's clone of repo under workdir: a folder with a .git directory whose remote is github.com/<repo>.
-// Reads .git/config as text, so nothing in a clone runs. Skips dependency folders; looks 3 levels deep
+// Of several clones, the one named like the repository, then the shallowest. Reads .git/config as text, so nothing
+// in a clone runs. Skips dependency folders; looks 3 levels deep
 function findClone(workdir, repo, depth = 3) {
   if (!workdir) return null;
   const want = new RegExp(`github\\.com[:/]${repo.replace(/[.]/g, '\\.')}(\\.git)?/?\\s*$`, 'im');
+  const name = repo.split('/')[1].toLowerCase();
+  const found = [];
   const queue = [[path.resolve(workdir), 0]];
   while (queue.length) {
     const [dir, level] = queue.shift();
@@ -126,13 +129,16 @@ function findClone(workdir, repo, depth = 3) {
     try {
       if (fs.lstatSync(path.join(dir, '.git')).isDirectory()) config = fs.readFileSync(path.join(dir, '.git', 'config'), 'utf8');
     } catch { /* not a clone */ }
-    if (config && want.test(config)) return dir;
+    if (config && want.test(config)) {
+      if (path.basename(dir).toLowerCase() === name) return dir;
+      found.push(dir);
+    }
     if (config || level >= depth) continue;
     let names = [];
     try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
     for (const d of names) if (d.isDirectory() && !d.name.startsWith('.') && !['node_modules', 'vendor', 'tmp', 'dist', 'build'].includes(d.name)) queue.push([path.join(dir, d.name), level + 1]);
   }
-  return null;
+  return found[0] || null;
 }
 
 // DOCKET_CLONE_BASE: a local folder of <owner>/<name>.git repositories to clone from instead of GitHub (tests)

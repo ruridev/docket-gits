@@ -77,6 +77,9 @@ test('findClone: the clone whose remote is the repository, wherever it is under 
   assert.equal(findClone(w, 'acme/api'), want);
   assert.equal(findClone(w, 'ACME/API'), want);
   assert.equal(findClone(w, 'acme/web'), null);
+  // Of several clones, the one named like the repository wins over one found first
+  clone('aa-api-fix', 'git@github.com:acme/api.git');
+  assert.equal(findClone(w, 'acme/api'), want);
   clone('https-clone', 'https://github.com/acme/web');
   assert.equal(findClone(w, 'acme/web'), path.join(w, 'https-clone'));
 });
