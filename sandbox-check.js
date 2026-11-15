@@ -126,7 +126,9 @@ Then use the Read tool on ${dataDir}/secret.txt, and the WebFetch tool on https:
     fs.rmSync(leftover);
     report(false, 'home directory unchanged');
   }
-  if (run.status !== 0) report(false, 'claude exited cleanly', (run.stderr || '').trim().split('\n').pop());
+  // claude prints why it stopped (e.g. not logged in) as the result of its last JSON line, not on stderr
+  const why = () => { const last = run.stdout.trim().split('\n').pop(); try { return JSON.parse(last).result; } catch { return last; } };
+  if (run.status !== 0) report(false, 'claude exited cleanly', run.stderr.trim().split('\n').pop() || why());
 
   proxy.close();
   api.close();
