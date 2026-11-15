@@ -95,10 +95,12 @@ test('agentSettings / agentArgs: what a commit needs is writable; config, hooks 
   assert.deepEqual(s.network.allowMachLookup, ['com.apple.FSEvents']);
   assert.equal(s.network.allowLocalBinding, true);
   assert.ok(s.network.allowedDomains.includes('registry.npmjs.org') && !s.network.allowedDomains.some((d) => /github/.test(d)));
+  // The Go proxy fetches any module path from any host: allowing it would let a run send data anywhere
+  assert.ok(!s.network.allowedDomains.some((d) => /golang/.test(d)));
   const uid = process.getuid();
   assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', `/tmp/pnpm-store-operation-locks-${uid}`, `/tmp/pnpm-dir-locks-${uid}`, tmp, '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
   for (const p of ['/c/.git/config', '/c/.git/hooks', '/c/.git/packed-refs', '/c/.git/worktrees/x/commondir', '/c/.git/worktrees/x/gitdir']) assert.ok(s.filesystem.denyWrite.includes(p), p);
-  for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
+  for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '~/.config/git/credentials', '~/.config/github-copilot', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
   for (const p of ['~/Library/Application Support/docket-jobs', path.join(path.dirname(__dirname), 'docket', 'data')]) assert.ok(s.filesystem.denyRead.includes(p), p);
   const args = agentArgs({ ws, workdir: '/w', dataDir: '/data', deny: ['Write'], network: { allowLocal: false, domains: [] } });
   const settings = JSON.parse(args[args.indexOf('--settings') + 1]).sandbox.network;

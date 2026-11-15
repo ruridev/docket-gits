@@ -19,15 +19,19 @@ const { SOCKET, ghConfig } = require('./github-proxy');
 
 const HOME = path.resolve(process.env.DOCKET_HOME || path.join(os.homedir(), '.docket-gits'));
 
-// Package registries runs may reach to install dependencies. Publishing needs credentials, which runs can't read
+// Package registries runs may reach to install dependencies. Publishing needs credentials, which runs can't read.
+// Not proxy.golang.org / sum.golang.org: the Go proxy fetches any module path from any host, so it would let a run send data anywhere
 const REGISTRIES = ['registry.npmjs.org', 'registry.yarnpkg.com', 'rubygems.org', 'index.rubygems.org', 'pypi.org', 'files.pythonhosted.org',
-  'repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org', 'proxy.golang.org', 'sum.golang.org', 'crates.io', 'static.crates.io', 'index.crates.io'];
+  'repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org', 'crates.io', 'static.crates.io', 'index.crates.io'];
 
 // Where credentials live. Bash in the sandbox can't read them, and the Read tool is denied them.
 // ~/Library/Keychains: the macOS login keychain is a file, and without this `security` reads the gh token from it
 const SECRET_PATHS = ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/Library/Keychains', '~/.aws', '~/.netrc', '~/.git-credentials',
   '~/.docker', '~/.kube', '~/.gnupg', '~/.npmrc', '~/.gem/credentials', '~/.pypirc', '~/.cargo/credentials.toml', '~/.codex', '~/.config/gcloud',
-  '~/.claude.json', '~/.claude/.credentials.json', '~/.claude/settings.json', '~/.claude/settings.local.json'];
+  '~/.claude.json', '~/.claude/.credentials.json', '~/.claude/settings.json', '~/.claude/settings.local.json',
+  '~/.config/git/credentials', '~/.config/github-copilot', '~/.config/hub', '~/.config/op', '~/.azure', '~/.terraform.d', '~/.vault-token', '~/.pgpass',
+  '~/.yarnrc.yml', '~/.bundle/config', '~/.m2/settings.xml', '~/.gradle/gradle.properties', '~/.composer/auth.json',
+  ...(process.env.CLAUDE_CONFIG_DIR ? [path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), '.credentials.json')] : [])];
 
 // The other docket apps' data (their sign-in secrets): with it a run could sign in to their APIs on local ports.
 // Their default places (docket-jobs outside its clone, both in a clone next to this one) and any set in the env
