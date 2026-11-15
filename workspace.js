@@ -176,6 +176,7 @@ function workspaceNote(ws, pr) {
   return `## The folder of this run
 - The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${pr.base ? `; the base branch is at origin/${pr.base}` : ''}.
 - Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only): copy from it what you need to build or test.` : 'There is no local clone of this repository to copy them from.'} Install missing dependencies here.
+- Before running tests, find out how this project runs them and what they connect to (README, bin/ and scripts, config files, and the local settings in the user's clone). Services such as databases may already be running on local ports. Check, don't guess; if something still can't run, say exactly what you tried and what failed.
 - Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.`;
 }
 
