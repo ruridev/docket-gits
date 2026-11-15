@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { agentEnv, runEnv, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
+const { agentEnv, runEnv, runTmpOf, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
 
 const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
 const tmpdir = (t) => {
@@ -87,11 +87,16 @@ test('agentSettings / agentArgs: what a commit needs is writable; config, hooks 
   const s = agentSettings({ ws, dataDir: '/data', home: '/d', socket: '/sock' }).sandbox;
   assert.equal(s.failIfUnavailable, true);
   assert.equal(s.allowUnsandboxedCommands, false);
-  assert.deepEqual(s.network.allowUnixSockets, ['/sock']);
+  // The run's own temp folder (CLAUDE_CODE_TMPDIR): short enough for socket paths, and dev servers may make sockets there
+  const tmp = runTmpOf(ws);
+  assert.ok(tmp.length <= 30 && runTmpOf({ cwd: '/other' }) !== tmp, tmp);
+  assert.deepEqual(s.network.allowUnixSockets, ['/sock', tmp]);
+  // File watching (fs.watch, dev servers) needs FSEvents on macOS
+  assert.deepEqual(s.network.allowMachLookup, ['com.apple.FSEvents']);
   assert.equal(s.network.allowLocalBinding, true);
   assert.ok(s.network.allowedDomains.includes('registry.npmjs.org') && !s.network.allowedDomains.some((d) => /github/.test(d)));
   const uid = process.getuid();
-  assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', `/tmp/pnpm-store-operation-locks-${uid}`, `/tmp/pnpm-dir-locks-${uid}`, '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
+  assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', `/tmp/pnpm-store-operation-locks-${uid}`, `/tmp/pnpm-dir-locks-${uid}`, tmp, '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
   for (const p of ['/c/.git/config', '/c/.git/hooks', '/c/.git/packed-refs', '/c/.git/worktrees/x/commondir', '/c/.git/worktrees/x/gitdir']) assert.ok(s.filesystem.denyWrite.includes(p), p);
   for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
   for (const p of ['~/Library/Application Support/docket-jobs', path.join(path.dirname(__dirname), 'docket', 'data')]) assert.ok(s.filesystem.denyRead.includes(p), p);
@@ -190,6 +195,7 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.match(workspaceNote({ ...again, sourceClone: null }, pr), /no local clone/);
   assert.match(workspaceNote(again, pr), /don't link dependency folders such as node_modules/);
   assert.match(workspaceNote(again, pr), /CI results don't replace this/);
+  assert.match(workspaceNote(again, pr), /stop them with kill <PID> before your final answer/);
   assert.match(workspaceNote(again, pr), /Browsers \(Playwright, Cypress, Puppeteer\) can't start in this sandbox/);
   // With the browser setting on, Playwright tests are run against the browser docket-gits starts outside
   const withBrowser = workspaceNote(again, pr, { browser: true });

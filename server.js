@@ -8,7 +8,7 @@ const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
 const { startGateway } = require('./browser');
-const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
+const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -1840,6 +1840,34 @@ function isAgentRun(pid) {
 
 // claude started detached leads its process group, so kill the whole group to leave no Bash tool children behind
 // If it exited right after the check, kill throws ESRCH and cancel can't restore state, so ignore it
+// pid's descendants. ps sees them from here; inside the sandbox a run can't list processes, so pkill fails there
+function descendants(pid) {
+  let rows = [];
+  try {
+    rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' }).trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
+  } catch {}
+  const out = [];
+  for (let front = [pid]; front.length; ) {
+    front = rows.filter(([, ppid]) => front.includes(ppid)).map(([p]) => p);
+    out.push(...front);
+  }
+  return out;
+}
+
+// A server a run started in the background and didn't stop keeps claude waiting after its answer, and the run never
+// ends. Called every few seconds: once the answer (the result line) is in the output for afterMs, stop what is left
+// seen: { at } kept between calls
+function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000) {
+  if (!seen.at) {
+    let tail = '';
+    try { tail = readTail(outFile, 64 * 1024); } catch {}
+    if (/"type":"result"/.test(tail)) seen.at = Date.now();
+    return;
+  }
+  if (Date.now() - seen.at < afterMs) return;
+  for (const p of descendants(pid)) killRun(p);
+}
+
 function killRun(pid) {
   try {
     process.kill(-pid, 'SIGTERM');
@@ -1896,11 +1924,14 @@ function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang
       const base = path.join(LOG_DIR, logName);
       const out = fs.openSync(`${base}.out`, 'w', 0o600);
       const err = fs.openSync(`${base}.err`, 'w', 0o600);
-      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { extra: runEnv(config.runEnv) }), ...(browser && { PW_TEST_CONNECT_WS_ENDPOINT: browser }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
+      child = spawn('claude', args, { cwd: ws.cwd, env: { ...agentEnv(process.env, { extra: runEnv(config.runEnv) }), CLAUDE_CODE_TMPDIR: runTmpOf(ws), ...(browser && { PW_TEST_CONNECT_WS_ENDPOINT: browser }), ...model.env }, detached: true, stdio: ['ignore', out, err] });
       fs.closeSync(out);
       fs.closeSync(err);
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
+      const seen = {};
+      const reaper = setInterval(() => reapLeftovers(child.pid, `${base}.out`, seen), 10 * 1000);
       child.on('close', (code) => {
+        clearInterval(reaper);
         const result = readRun(LOG_DIR, logName, code);
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
@@ -2585,4 +2616,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { reapLeftovers, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };

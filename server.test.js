@@ -840,6 +840,29 @@ test('POST /api/auth/setup: answers 413 to a body over 1 MB, before any session 
   }
 });
 
+test('reapLeftovers: once the answer is out, stops processes a run left running so claude can exit', async () => {
+  const { reapLeftovers } = require('./server');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-reap-'));
+  const out = path.join(dir, 'run.out');
+  fs.writeFileSync(out, '{"type":"assistant"}\n');
+  // A stand-in for claude waiting on a background server it started
+  const run = require('node:child_process').spawn('sh', ['-c', 'sleep 300 & wait'], { detached: true, stdio: 'ignore' });
+  const exited = new Promise((resolve) => run.on('exit', resolve));
+  try {
+    const seen = {};
+    reapLeftovers(run.pid, out, seen, 0);
+    assert.equal(seen.at, undefined, 'no answer yet: nothing is stopped');
+    fs.appendFileSync(out, '{"type":"result","result":"done"}\n');
+    reapLeftovers(run.pid, out, seen, 0);
+    assert.ok(seen.at, 'the answer is seen first');
+    reapLeftovers(run.pid, out, seen, 0);
+    const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('still running'), 5000))]);
+    assert.notEqual(code, 'still running');
+  } finally {
+    killRun(run.pid);
+  }
+});
+
 test('killRun: does not throw for an already exited process (so cancel can restore state)', () => {
   const { pid } = require('node:child_process').spawnSync('true');
   assert.doesNotThrow(() => killRun(pid));

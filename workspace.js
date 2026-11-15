@@ -89,6 +89,11 @@ function agentEnv(env, { home = HOME, extra = {} } = {}) {
 // Only lock files go there; agentArgs makes the folders, since a run can't create them in /tmp
 const PNPM_LOCKS = ['pnpm-store-operation-locks', 'pnpm-dir-locks'].map((d) => `/tmp/${d}-${process.getuid()}`);
 
+// The run's own temp folder, given to claude as CLAUDE_CODE_TMPDIR (its TMPDIR is <this>/claude-<uid>).
+// Dev servers make Unix sockets in TMPDIR, which the sandbox allows only in listed folders; the shared one would also
+// reach other sessions' sockets, so each worktree gets its own. Short: a socket path must fit in 104 bytes
+const runTmpOf = (ws) => path.join(fs.realpathSync('/tmp'), `dk-${crypto.createHash('sha256').update(ws.cwd || '').digest('hex').slice(0, 10)}`);
+
 // The sandbox of a run in workspace ws ({ cwd, gitDir, adminDir }). allowLocal: localhost ports (databases for tests)
 // workdir: added to the run read-only (--add-dir would make it writable)
 function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = REGISTRIES, allowLocal = true, socket = SOCKET }) {
@@ -101,10 +106,11 @@ function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = R
       failIfUnavailable: true,
       autoAllowBashIfSandboxed: true,
       allowUnsandboxedCommands: false,
-      network: { allowedDomains: domains, allowUnixSockets: [socket], allowLocalBinding: Boolean(allowLocal) },
+      // FSEvents: file watching (fs.watch, dev servers) on macOS fails without it
+      network: { allowedDomains: domains, allowUnixSockets: [socket, runTmpOf(ws)], allowLocalBinding: Boolean(allowLocal), allowMachLookup: ['com.apple.FSEvents'] },
       filesystem: {
         denyRead: [...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir],
-        allowWrite: [ws.cwd, path.join(home, 'cache'), ...PNPM_LOCKS, ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
+        allowWrite: [ws.cwd, path.join(home, 'cache'), ...PNPM_LOCKS, runTmpOf(ws), ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
         // The user's git runs these later, outside the sandbox; the server trusts the admin folder's links
         denyWrite: [...(workdir ? [workdir] : []), ...(git ? [path.join(git, 'config'), path.join(git, 'hooks'), path.join(git, 'info'), path.join(git, 'packed-refs'),
           path.join(ws.adminDir, 'commondir'), path.join(ws.adminDir, 'gitdir'), path.join(ws.adminDir, 'config.worktree')] : [])],
@@ -149,7 +155,7 @@ function workdirPlugin(workdir, home = HOME) {
 // plugins) would run outside the sandbox or widen it, so only the user's own settings load
 function agentArgs({ ws, workdir, dataDir, envPath, deny = [], network = {}, home = HOME }) {
   const plugin = workdir && workdirPlugin(workdir, home);
-  for (const dir of PNPM_LOCKS) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  for (const dir of [...PNPM_LOCKS, runTmpOf(ws)]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return ['--settings', JSON.stringify(agentSettings({ ws, workdir, dataDir, envPath, ...network })), '--setting-sources', 'user',
     ...(workdir ? ['--add-dir', workdir] : []), ...(plugin ? ['--plugin-dir', plugin] : []),
     '--strict-mcp-config', '--disallowedTools', [...agentToolDeny({ workdir, dataDir }), ...deny].join(',')];
@@ -237,6 +243,7 @@ function workspaceNote(ws, pr, { browser = false } = {}) {
 - Before running tests, find out how this project runs them and what they connect to (README, bin/ and scripts, config files, and the local settings in the user's clone). Services such as databases may already be running on local ports. Check, don't guess; if something still can't run, say exactly what you tried and what failed.
 - Use the project's usual test setup (for example its usual test database) rather than creating new ones. If you do create anything outside this worktree (a database, files elsewhere), remove it before you finish; if you can't, list what is left in the summary.
 - Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.
+- Start servers (dev servers, test databases) in the background, note their PID ($!), and stop them with kill <PID> before your final answer: ps, pkill and lsof can't see processes in this sandbox, and a server left running is stopped for you only after the run has hung for a while.
 - Reach local servers by 127.0.0.1, not by a hostname: names don't resolve in the sandbox, and names that point to 127.0.0.1 (such as a dev server's local.* host) are refused. Start servers on 127.0.0.1 (curl --resolve maps a name if a Host header matters).
 ${browser
     ? `- Browsers can't start in this sandbox on macOS, but a Chromium for Playwright runs outside it: PW_TEST_CONNECT_WS_ENDPOINT is set, so playwright test connects to it by itself (don't install browsers). Run the Playwright tests that cover the change. That browser reaches only hosts that resolve to 127.0.0.1, so a dev server's local.* host works from the page; the test runner itself is in the sandbox, so where it checks a URL (webServer url, health checks) point it at 127.0.0.1, for example through the env var the config reads. Cypress and Puppeteer still can't run here: if the project uses them, say so in the summary.`
@@ -292,4 +299,4 @@ async function removeWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
-module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };
+module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, runTmpOf, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };

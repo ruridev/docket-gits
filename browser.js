@@ -34,11 +34,13 @@ function splice(a, b) {
   b.pipe(a);
 }
 
-// The address host resolves to, if it is loopback (connecting to that address, not the name, so it can't change)
+// The address host resolves to, if every address it has is loopback (connecting to that address, not the name, so it
+// can't change). IPv4 first: dev servers usually listen on 127.0.0.1, while localhost may also resolve to ::1
 async function loopback(host) {
   try {
-    const { address } = await dns.promises.lookup(host.replace(/^\[|\]$/g, ''));
-    return address === '::1' || address.startsWith('127.') ? address : null;
+    const all = await dns.promises.lookup(host.replace(/^\[|\]$/g, ''), { all: true });
+    if (!all.length || !all.every(({ address }) => address === '::1' || address.startsWith('127.'))) return null;
+    return (all.find((a) => a.family === 4) || all[0]).address;
   } catch {
     return null;
   }
