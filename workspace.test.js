@@ -25,6 +25,11 @@ test('agentEnv: keeps what claude and toolchains need, drops secrets, points gh 
   assert.equal(env.GIT_CONFIG_KEY_0, 'core.hooksPath');
 });
 
+test('agentEnv: pnpm keeps the versions it fetches for packageManager in the cache, not in the user\'s pnpm home', () => {
+  const env = agentEnv({ PATH: '/bin', PNPM_HOME: '/Users/u/Library/pnpm' }, { home: '/d' });
+  assert.equal(env.PNPM_HOME, '/d/cache/pnpm-home');
+});
+
 test('agentEnv: cloud credentials only reach a run when claude itself uses that cloud', () => {
   const secrets = { AWS_SECRET_ACCESS_KEY: 's', AWS_SESSION_TOKEN: 's', GOOGLE_APPLICATION_CREDENTIALS: '/g', CLOUD_ML_REGION: 'r', VERTEX_REGION_X: 'r' };
   const plain = agentEnv({ PATH: '/bin', ...secrets }, { home: '/d' });

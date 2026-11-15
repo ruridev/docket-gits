@@ -64,6 +64,8 @@ function agentEnv(env, { home = HOME } = {}) {
     XDG_CACHE_HOME: cache,
     npm_config_cache: path.join(cache, 'npm'),
     npm_config_store_dir: path.join(cache, 'pnpm-store'),
+    // Where pnpm keeps the versions it fetches for a project's packageManager (outside the sandbox by default)
+    PNPM_HOME: path.join(cache, 'pnpm-home'),
     YARN_CACHE_FOLDER: path.join(cache, 'yarn'),
     PIP_CACHE_DIR: path.join(cache, 'pip'),
     // No git hooks (a run could write one and commit to run it), no automatic gc (it rewrites shared files)
