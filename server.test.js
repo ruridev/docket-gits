@@ -849,6 +849,8 @@ test('reapLeftovers: once the answer is out, stops processes a run left running 
   const run = require('node:child_process').spawn('sh', ['-c', 'sleep 300 & wait'], { detached: true, stdio: 'ignore' });
   const exited = new Promise((resolve) => run.on('exit', resolve));
   try {
+    // Wait for the background child to exist, as a run's server would
+    for (let i = 0; i < 50 && !require('node:child_process').execFileSync('ps', ['-A', '-o', 'ppid=']).toString().split('\n').some((l) => Number(l) === run.pid); i++) await new Promise((r) => setTimeout(r, 50));
     const seen = {};
     reapLeftovers(run.pid, out, seen, 0);
     assert.equal(seen.at, undefined, 'no answer yet: nothing is stopped');
