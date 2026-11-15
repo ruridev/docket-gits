@@ -18,9 +18,10 @@ const SOCKET = path.join(SOCKET_DIR, `github-${process.env.PORT || 4649}.sock`);
 const MAX_BODY = 1024 * 1024;
 
 // GraphQL text without strings and comments: an operation keyword can't hide in a string, and a string
-// that says "mutation" doesn't block a query
+// that says "mutation" doesn't block a query. One left-to-right pass, so a quote inside a comment (or a #
+// inside a string) can't open a fake string or comment that hides the next line
 function graphqlKeywords(query) {
-  return query.replace(/"""[\s\S]*?"""/g, '').replace(/"(?:\\.|[^"\\])*"/g, '').replace(/#[^\n]*/g, '');
+  return query.replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"|#[^\n]*/g, '');
 }
 
 // Whether a request only reads: GET / HEAD, or a GraphQL query. Anything unclear is refused

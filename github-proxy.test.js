@@ -20,6 +20,9 @@ test('isRead: GET and GraphQL queries read; other methods, mutations and odd req
   assert.equal(isRead('POST', '/graphql', gql('query { search(query:"mutation testing", type:ISSUE, first:1) { issueCount } } # no mutation here')), true);
   assert.equal(isRead('POST', '/graphql', gql('mutation { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } }')), false);
   assert.equal(isRead('POST', '/graphql', gql('query A { viewer { login } }\nmutation B { addStar(input:{starrableId:"x"}) { clientMutationId } }')), false);
+  // A quote in a comment must not open a string that hides the next line
+  assert.equal(isRead('POST', '/graphql', gql('query A { viewer { login } } # "\nmutation B { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } } # "')), false);
+  assert.equal(isRead('POST', '/graphql', gql('query A { search(query:"# x", type:ISSUE, first:1) { issueCount } }\nmutation B { addStar(input:{starrableId:"x"}) { clientMutationId } }')), false);
   assert.equal(isRead('POST', '/graphql', gql('subscription { x }')), false);
   assert.equal(isRead('POST', '/graphql', Buffer.from('[{"query":"{ viewer { login } }"}]')), false);
   assert.equal(isRead('POST', '/graphql', Buffer.from('not json')), false);
