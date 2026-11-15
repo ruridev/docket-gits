@@ -90,7 +90,8 @@ test('agentSettings / agentArgs: what a commit needs is writable; config, hooks 
   assert.deepEqual(s.network.allowUnixSockets, ['/sock']);
   assert.equal(s.network.allowLocalBinding, true);
   assert.ok(s.network.allowedDomains.includes('registry.npmjs.org') && !s.network.allowedDomains.some((d) => /github/.test(d)));
-  assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
+  const uid = process.getuid();
+  assert.deepEqual(s.filesystem.allowWrite, ['/wt', '/d/cache', `/tmp/pnpm-store-operation-locks-${uid}`, `/tmp/pnpm-dir-locks-${uid}`, '/c/.git/objects', '/c/.git/worktrees/x', '/c/.git/refs/heads/docket', '/c/.git/logs/refs/heads/docket']);
   for (const p of ['/c/.git/config', '/c/.git/hooks', '/c/.git/packed-refs', '/c/.git/worktrees/x/commondir', '/c/.git/worktrees/x/gitdir']) assert.ok(s.filesystem.denyWrite.includes(p), p);
   for (const p of ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/data']) assert.ok(s.filesystem.denyRead.includes(p), p);
   for (const p of ['~/Library/Application Support/docket-jobs', path.join(path.dirname(__dirname), 'docket', 'data')]) assert.ok(s.filesystem.denyRead.includes(p), p);

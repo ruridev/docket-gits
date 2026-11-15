@@ -85,6 +85,10 @@ function agentEnv(env, { home = HOME, extra = {} } = {}) {
   };
 }
 
+// pnpm (12+) takes its store locks in these fixed folders under /tmp, whatever TMPDIR or the store dir say.
+// Only lock files go there; agentArgs makes the folders, since a run can't create them in /tmp
+const PNPM_LOCKS = ['pnpm-store-operation-locks', 'pnpm-dir-locks'].map((d) => `/tmp/${d}-${process.getuid()}`);
+
 // The sandbox of a run in workspace ws ({ cwd, gitDir, adminDir }). allowLocal: localhost ports (databases for tests)
 // workdir: added to the run read-only (--add-dir would make it writable)
 function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = REGISTRIES, allowLocal = true, socket = SOCKET }) {
@@ -100,7 +104,7 @@ function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = R
       network: { allowedDomains: domains, allowUnixSockets: [socket], allowLocalBinding: Boolean(allowLocal) },
       filesystem: {
         denyRead: [...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir],
-        allowWrite: [ws.cwd, path.join(home, 'cache'), ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
+        allowWrite: [ws.cwd, path.join(home, 'cache'), ...PNPM_LOCKS, ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
         // The user's git runs these later, outside the sandbox; the server trusts the admin folder's links
         denyWrite: [...(workdir ? [workdir] : []), ...(git ? [path.join(git, 'config'), path.join(git, 'hooks'), path.join(git, 'info'), path.join(git, 'packed-refs'),
           path.join(ws.adminDir, 'commondir'), path.join(ws.adminDir, 'gitdir'), path.join(ws.adminDir, 'config.worktree')] : [])],
@@ -145,6 +149,7 @@ function workdirPlugin(workdir, home = HOME) {
 // plugins) would run outside the sandbox or widen it, so only the user's own settings load
 function agentArgs({ ws, workdir, dataDir, envPath, deny = [], network = {}, home = HOME }) {
   const plugin = workdir && workdirPlugin(workdir, home);
+  for (const dir of PNPM_LOCKS) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return ['--settings', JSON.stringify(agentSettings({ ws, workdir, dataDir, envPath, ...network })), '--setting-sources', 'user',
     ...(workdir ? ['--add-dir', workdir] : []), ...(plugin ? ['--plugin-dir', plugin] : []),
     '--strict-mcp-config', '--disallowedTools', [...agentToolDeny({ workdir, dataDir }), ...deny].join(',')];
