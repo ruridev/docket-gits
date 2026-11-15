@@ -235,7 +235,9 @@ function workspaceNote(ws, pr) {
 - Run the tests that cover the changed code here, installing dependencies first if they are missing. CI results don't replace this: a missing node_modules or vendor/bundle is a reason to install, not to skip.
 - Before running tests, find out how this project runs them and what they connect to (README, bin/ and scripts, config files, and the local settings in the user's clone). Services such as databases may already be running on local ports. Check, don't guess; if something still can't run, say exactly what you tried and what failed.
 - Use the project's usual test setup (for example its usual test database) rather than creating new ones. If you do create anything outside this worktree (a database, files elsewhere), remove it before you finish; if you can't, list what is left in the summary.
-- Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.`;
+- Commands run in a sandbox: the network reaches only package registries and local ports (for example a database the tests use), and only this worktree is writable.
+- Reach local servers by 127.0.0.1, not by a hostname: names don't resolve in the sandbox, and names that point to 127.0.0.1 (such as a dev server's local.* host) are refused. Start servers on 127.0.0.1 (curl --resolve maps a name if a Host header matters).
+- Browsers (Playwright, Cypress, Puppeteer) can't start in this sandbox on macOS, so don't try browser or E2E tests: run unit and component tests, and say in the summary that browser tests were not run for this reason.`;
 }
 
 const worktreeOf = (pr, home = HOME) => path.join(home, 'worktrees', `${pr.repo.replace('/', '-')}-${pr.number}`);
