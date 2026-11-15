@@ -292,6 +292,21 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
+// The repository's setup command (config repos[repo].setup), run by the server in the worktree before the run.
+// It runs outside the sandbox with the server's env, so it can install what needs the user's credentials
+// (private registries, git+ssh). The command is the user's, but the files it reads (lockfile, .npmrc) are the
+// pull request's: use flags such as --ignore-scripts. ponytail: runs every time; pnpm/bundle are quick when installed
+function runSetup(cwd, command, { env = process.env, timeoutMs = 10 * 60 * 1000 } = {}) {
+  if (!command || !command.trim()) return Promise.resolve({ ok: true });
+  return new Promise((resolve) => {
+    execFile('/bin/sh', ['-c', command], { cwd, env, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (!err) return resolve({ ok: true });
+      const output = `${stdout}${stderr}`.trim().split('\n').slice(-20).join('\n');
+      resolve({ ok: false, output: output || err.message });
+    });
+  });
+}
+
 // Removes the worktree and docket-gits' branches of a pull request that is gone from the board
 async function removeWorkspace(pr, { workdir, home = HOME }) {
   const clone = path.join(home, 'repos', ...pr.repo.split('/'));
@@ -304,4 +319,4 @@ async function removeWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
-module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, runTmpOf, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, worktreeOf, branchOf, git };
+module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, runTmpOf, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, runSetup, worktreeOf, branchOf, git };

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { agentEnv, runEnv, runTmpOf, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote } = require('./workspace');
+const { agentEnv, runEnv, runTmpOf, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote, runSetup } = require('./workspace');
 
 const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
 const tmpdir = (t) => {
@@ -217,4 +217,16 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.equal(sh(clone, 'for-each-ref', 'refs/docket'), '');
   // The user's clone is never touched
   assert.deepEqual(userState(), before);
+});
+
+test('runSetup: runs the repository\'s setup command in the worktree with the server\'s env; failure gives the output tail', async (t) => {
+  const cwd = tmpdir(t);
+  assert.deepEqual(await runSetup(cwd, ''), { ok: true });
+  assert.deepEqual(await runSetup(cwd, 'echo "$DOCKET_SETUP_T" > out.txt', { env: { ...process.env, DOCKET_SETUP_T: 'secret-ok' } }), { ok: true });
+  assert.equal(fs.readFileSync(path.join(cwd, 'out.txt'), 'utf8').trim(), 'secret-ok');
+  const bad = await runSetup(cwd, 'echo first; echo boom >&2; exit 3');
+  assert.equal(bad.ok, false);
+  assert.match(bad.output, /boom/);
+  const slow = await runSetup(cwd, 'sleep 5', { timeoutMs: 100 });
+  assert.equal(slow.ok, false);
 });

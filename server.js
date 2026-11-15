@@ -8,7 +8,7 @@ const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
 const { startGateway } = require('./browser');
-const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, git: serverGit } = require('./workspace');
+const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -51,7 +51,8 @@ const DEFAULT_CONFIG = {
   maxConcurrent: 2,
   // Empty = everyone. If set, only PRs by these authors are shown (e.g. ["alice", "dependabot[bot]"])
   authors: [],
-  // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "" } }
+  // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "", setup: "" } }
+  // setup: shell command the server runs in the worktree before each run, outside the sandbox (see runSetup in workspace.js)
   // selfSkill: self-review of my PRs, fixSkill: handle review comments on my PRs (empty hides the button)
   repos: {},
   // Review instructions for repos that use the "configured prompt" (PROMPT_SKILL) instead of a skill, or have no review skill. Empty = default for the UI language (DEFAULT_PROMPTS)
@@ -782,6 +783,8 @@ async function withWorkspace(pr, workdir, fn, clone = true) {
   } catch (e) {
     return { ok: false, error: E('workspaceFailed', { message: e.message }) };
   }
+  const setup = await runSetup(ws.cwd, repoTool(config.repos[pr.repo]).setup);
+  if (!setup.ok) return { ok: false, error: E('setupFailed', { message: setup.output }) };
   return fn({ ...ws, workdir });
 }
 
