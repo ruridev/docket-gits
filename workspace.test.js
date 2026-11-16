@@ -211,6 +211,13 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.equal(fs.readFileSync(path.join(again.cwd, 'a.js'), 'utf8'), '1\n');
   assert.ok(fs.existsSync(path.join(again.cwd, 'node_modules', 'dep.js')));
 
+  // A cached base branch that was deleted on GitHub (a stacked pull request whose parent merged) doesn't block the run
+  const stale = { ...pr, base: 'gone-parent' };
+  const staleWs = await prepareWorkspace(stale, { workdir, home });
+  assert.equal(staleWs.headSha, again.headSha);
+  assert.equal(staleWs.base, null);
+  assert.doesNotMatch(workspaceNote(staleWs, stale), /base branch is at/);
+
   await removeWorkspace(pr, { workdir, home });
   assert.ok(!fs.existsSync(ws.cwd));
   assert.equal(sh(clone, 'branch', '--list', 'docket/*'), '');

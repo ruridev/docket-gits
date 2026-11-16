@@ -241,7 +241,7 @@ function adminDirOf(gitDir, worktree) {
 // browser: a Chromium for Playwright runs outside the sandbox (browser.js), its address in PW_TEST_CONNECT_WS_ENDPOINT
 function workspaceNote(ws, pr, { browser = false } = {}) {
   return `## The folder of this run
-- The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${pr.base ? `; the base branch is at origin/${pr.base}` : ''}.
+- The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${ws.base ? `; the base branch is at origin/${ws.base}` : ''}.
 - Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only): copy from it what you need to build or test, only files that are not in git (the tracked ones are already here, at this pull request's version).` : 'There is no local clone of this repository to copy them from.'} Install missing dependencies here (for example pnpm install / bundle install): don't link dependency folders such as node_modules from the user's clone, since tools write into them and the clone can't be written.
 - Run the tests that cover the changed code here, installing dependencies first if they are missing. CI results don't replace this: a missing node_modules or vendor/bundle is a reason to install, not to skip.
 - Before running tests, find out how this project runs them and what they connect to (README, bin/ and scripts, config files, and the local settings in the user's clone). Services such as databases may already be running on local ports. Check, don't guess; if something still can't run, say exactly what you tried and what failed.
@@ -266,7 +266,10 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
   const cwd = worktreeOf(pr, home);
   return withLock(clone, async () => {
     const pull = `refs/docket/pull/${pr.number}`;
-    await git(['-C', clone, 'fetch', '--quiet', '--no-tags', 'origin', `+refs/pull/${pr.number}/head:${pull}`, ...(pr.base ? [`+refs/heads/${pr.base}:refs/remotes/origin/${pr.base}`] : [])]);
+    await git(['-C', clone, 'fetch', '--quiet', '--no-tags', 'origin', `+refs/pull/${pr.number}/head:${pull}`]);
+    // Separate fetch: the cached base may be gone on GitHub (a stacked pull request whose parent merged)
+    const base = pr.base && await git(['-C', clone, 'fetch', '--quiet', '--no-tags', 'origin', `+refs/heads/${pr.base}:refs/remotes/origin/${pr.base}`])
+      .then(() => pr.base, () => null);
     const headSha = (await git(['-C', clone, 'rev-parse', pull])).trim();
     // Split branches a previous run left (its result was published or discarded)
     const splits = (await git(['-C', clone, 'for-each-ref', '--format=%(refname)', `refs/heads/${branchOf(pr)}-*`])).split('\n').filter(Boolean);
@@ -288,7 +291,7 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
     fs.mkdirSync(ghDirOf(home), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(ghDirOf(home), 'config.yml'), ghConfig());
     // sourceClone: the user's own clone, which the run may read (local settings, dependencies that aren't in git)
-    return { cwd, clone, gitDir, adminDir, headSha, branch: branchOf(pr), sourceClone: findClone(workdir, pr.repo) };
+    return { cwd, clone, gitDir, adminDir, headSha, base: base || null, branch: branchOf(pr), sourceClone: findClone(workdir, pr.repo) };
   });
 }
 
