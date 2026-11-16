@@ -1235,6 +1235,15 @@ test('reviewPayload: comments on their lines, the rest in the body, code-read se
   assert.deepEqual(reviewPayload([], {}, null, { approve: true, humanRead: false }), { event: 'APPROVE', body: '', comments: [] });
 });
 
+test('review posting uses only the body the user saw, never other fields of a finding', () => {
+  const { reviewPayload, buildComposePrompt } = require('./server');
+  // The board shows f.body; a field it doesn't show must not reach the post or the compose run
+  const items = [{ no: 1, title: 'Typo', path: 'a.js', line: 3, body: '', comment: 'HIDDEN_SECRET' }];
+  const decisions = { 1: { verdict: 'agree' } };
+  assert.equal(reviewPayload(items, decisions, { body: '', comments: [] }, { approve: false, humanRead: false }), null);
+  assert.ok(!buildComposePrompt({ url: 'https://x/1' }, items, decisions).includes('HIDDEN_SECRET'));
+});
+
 test('postReview: posts once with the user login, folds line comments into the body when GitHub rejects a line', async () => {
   const { postReview } = require('./server');
   const pr = { repo: 'o/r', number: 7 };

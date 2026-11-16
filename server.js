@@ -490,7 +490,7 @@ function reviewPayload(items, decisions, text, { approve, humanRead }) {
   const comments = [];
   const loose = [];
   for (const f of items) {
-    const body = written.get(String(f.no)) || (decisions[f.no]?.verdict === 'agree' ? String(f.body || f.comment || '').trim() : '');
+    const body = written.get(String(f.no)) || (decisions[f.no]?.verdict === 'agree' ? String(f.body || '').trim() : '');
     if (!body) continue;
     if (f.path && Number(f.line) > 0) comments.push({ path: f.path, line: Number(f.line), side: 'RIGHT', body });
     else loose.push(f.path ? `**${f.path}**\n\n${body}` : body);
@@ -523,7 +523,8 @@ function postLines(items, decisions) {
     const verdict = { agree: 'agree', skip: 'out of scope' }[d.verdict] || 'disagree';
     const reason = d.reason?.trim() ? `reason: ${escapeXml(d.reason.trim())}` : 'no reason';
     const loc = f.path ? ` ${escapeXml(f.path)}${f.line ? `:${f.line}` : ''}` : '';
-    const text = [f.title && `title: ${f.title}`, f.body || f.comment].filter(Boolean).join('\n');
+    // Only what the board shows: a finding's other fields never reach the post
+    const text = [f.title && `title: ${f.title}`, f.body].filter(Boolean).join('\n');
     return `- #${f.no}${loc} ${verdict} / ${reason}\n<finding>${escapeXml(text)}</finding>`;
   }).join('\n');
 }
