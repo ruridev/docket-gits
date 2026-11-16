@@ -17,18 +17,13 @@ const SOCKET_DIR = path.join(os.tmpdir(), `docket-gits-${process.getuid?.() ?? '
 const SOCKET = path.join(SOCKET_DIR, `github-${process.env.PORT || 4649}.sock`);
 const MAX_BODY = 1024 * 1024;
 
-// GraphQL text without strings and comments: an operation keyword can't hide in a string, and a string
-// that says "mutation" doesn't block a query. One left-to-right pass, so a quote inside a comment (or a #
-// inside a string) can't open a fake string or comment that hides the next line
-function graphqlKeywords(query) {
-  return query.replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"|#[^\n]*/g, '');
-}
-
-// Whether a request only reads: GET / HEAD, or a GraphQL query. Anything unclear is refused
+// Whether a request only reads: GET / HEAD, or a GraphQL query. Anything unclear is refused.
+// The GraphQL text is not parsed: the words mutation or subscription anywhere in it, even inside a string
+// or a comment, refuse the request, so no lexer quirk can hide an operation
 function isRead(method, url, body) {
   if (!url.startsWith('/') || url.startsWith('//')) return false;
   if (method === 'GET' || method === 'HEAD') return true;
-  if (method !== 'POST' || url.split('?')[0] !== '/graphql') return false;
+  if (method !== 'POST' || url !== '/graphql') return false;
   let doc;
   try {
     doc = JSON.parse(body.toString('utf8') || 'null');
@@ -36,7 +31,7 @@ function isRead(method, url, body) {
     return false;
   }
   if (!doc || Array.isArray(doc) || typeof doc.query !== 'string') return false;
-  return !/\b(mutation|subscription)\b/.test(graphqlKeywords(doc.query));
+  return !/\b(mutation|subscription)\b/.test(doc.query);
 }
 
 // The user's gh token, asked from gh outside the sandbox and kept for a few minutes
@@ -108,4 +103,4 @@ function startGitHubProxy({ socket = SOCKET, getToken = tokenSource(), upstream 
 // The gh config of a run: every request goes to the socket
 const ghConfig = (socket = SOCKET) => `http_unix_socket: ${socket}\n`;
 
-module.exports = { SOCKET, isRead, graphqlKeywords, startGitHubProxy, tokenSource, ghConfig };
+module.exports = { SOCKET, isRead, startGitHubProxy, tokenSource, ghConfig };

@@ -16,8 +16,13 @@ test('isRead: GET and GraphQL queries read; other methods, mutations and odd req
   for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal(isRead(m, '/repos/o/r/issues/1/comments', Buffer.from('{}')), false, m);
   assert.equal(isRead('POST', '/graphql', gql('query { viewer { login } }')), true);
   assert.equal(isRead('POST', '/graphql', gql('{ repository(owner:"o", name:"r") { pullRequest(number:1) { title } } }')), true);
-  // The word inside a string or a comment doesn't make a query a mutation
-  assert.equal(isRead('POST', '/graphql', gql('query { search(query:"mutation testing", type:ISSUE, first:1) { issueCount } } # no mutation here')), true);
+  // The word anywhere in the text refuses the request, even inside a string or a comment: nothing is parsed
+  assert.equal(isRead('POST', '/graphql', gql('query { search(query:"mutation testing", type:ISSUE, first:1) { issueCount } }')), false);
+  assert.equal(isRead('POST', '/graphql', gql('query { viewer { login } } # no mutation here')), false);
+  // An escaped \""" inside a block string must not end it early and hide the mutation after it
+  assert.equal(isRead('POST', '/graphql', gql('query A { search(query: """\\"""""", type: ISSUE, first: 1) { issueCount } } mutation B { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } } query C { search(query: """x""", type: ISSUE, first: 1) { issueCount } }')), false);
+  // A query string on /graphql could carry another query
+  assert.equal(isRead('POST', '/graphql?query=mutation%7Bx%7D', gql('{ viewer { login } }')), false);
   assert.equal(isRead('POST', '/graphql', gql('mutation { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } }')), false);
   assert.equal(isRead('POST', '/graphql', gql('query A { viewer { login } }\nmutation B { addStar(input:{starrableId:"x"}) { clientMutationId } }')), false);
   // A quote in a comment must not open a string that hides the next line
