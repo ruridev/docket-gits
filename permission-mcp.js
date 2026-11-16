@@ -28,7 +28,10 @@ function approves(toolName, input, root = process.env.DOCKET_SKILLS_ROOT) {
   if (file.split(/[\\/]/).includes('..')) return false;
   let skills;
   try {
+    // The run can replace its .claude or .claude/skills with a link (to the home folder, say): refuse both
+    if (['.claude', path.join('.claude', 'skills')].some((p) => fs.lstatSync(path.join(root, p)).isSymbolicLink())) return false;
     skills = fs.realpathSync(path.join(root, '.claude', 'skills'));
+    if (skills !== path.join(fs.realpathSync(root), '.claude', 'skills')) return false;
   } catch {
     return false;
   }

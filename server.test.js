@@ -971,6 +971,25 @@ test('permission-mcp: approves only Edit / Write under <run cwd>/.claude/skills'
   assert.equal(approves('Edit', undefined, repo), false);
 });
 
+test('permission-mcp: denies everything when .claude or .claude/skills of the run is a symlink', () => {
+  const { approves } = require('./permission-mcp');
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-perm-link-')));
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(home, '.claude', 'skills'), { recursive: true });
+  // A run can swap its own .claude/skills for a link to the home folder, then edit through it
+  const skillsLink = path.join(base, 'skills-link');
+  fs.mkdirSync(path.join(skillsLink, '.claude'), { recursive: true });
+  fs.symlinkSync(home, path.join(skillsLink, '.claude', 'skills'));
+  assert.equal(approves('Write', { file_path: path.join(skillsLink, '.claude/skills/.zshrc') }, skillsLink), false);
+  assert.equal(approves('Edit', { file_path: path.join(home, '.zshrc') }, skillsLink), false);
+  // Same with .claude itself as the link
+  const claudeLink = path.join(base, 'claude-link');
+  fs.mkdirSync(claudeLink);
+  fs.symlinkSync(path.join(home, '.claude'), path.join(claudeLink, '.claude'));
+  assert.equal(approves('Write', { file_path: path.join(claudeLink, '.claude/skills/a/SKILL.md') }, claudeLink), false);
+  assert.equal(approves('Write', { file_path: path.join(home, '.claude/skills/a/SKILL.md') }, claudeLink), false);
+});
+
 test('permissionArgs: passes permission-mcp.js to claude as the permission prompt tool', () => {
   const args = permissionArgs('/work/repo');
   assert.equal(args[0], '--mcp-config');
