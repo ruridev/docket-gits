@@ -87,6 +87,8 @@ Downloads alone can still leak data slowly, since which packages are fetched can
 
 Count any other command (yarn, bundler, pip, ...) as running the pull request's code, and use it only for repositories where everyone who can open a pull request or comment is trusted.
 
+**Suggest a setup command** (on a review result that lists checks it could not run) has an AI run propose a setup command. That run reads the pull request's worktree, and what it is told the review could not check was written by a run that read the pull request, so the proposal can carry an instruction hidden in the pull request. docket-gits never runs a proposal on its own: it shows the current and the proposed command, and changes the setting only when you press **Apply** (twice). Read the whole command first, as if you wrote it: check that it runs none of the pull request's code and copies no credentials or private files. A proposal made against a setup command that has changed since is refused.
+
 ## The browser for Playwright
 
 **Give AI runs a browser for Playwright** (off by default) starts Chromium outside Claude Code's sandbox, since it can't start inside. docket-gits puts the browser and its Playwright server in a sandbox of their own (macOS `sandbox-exec`) instead:

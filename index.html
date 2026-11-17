@@ -704,7 +704,7 @@ const I18N = {
     'pub.issues': '作成する issue', 'pub.parent': '#{n} のサブ issue', 'pub.review': '投稿するセルフレビュー', 'pub.replies': '返信', 'pub.toFinding': '指摘 #{no}',
     'pub.risky': 'CI・リポジトリ設定を変更するか、ファイルを実行可能にしています。push すると、これらはリポジトリのシークレット付きで実行されます:', 'pub.riskyOk': 'これらの変更を確認しました',
     'pub.publish': '公開', 'pub.discard': '破棄', 'pub.confirmPublish': 'もう一度押すと push・投稿', 'pub.confirmDiscard': 'もう一度押すと結果を破棄', 'pub.linkReview': 'レビュー',
-    's.runNet': 'AI 実行のネットワーク', 's.runNet.help': 'AI の実行は PR の worktree の中でサンドボックスに入って動きます。GitHub は docket-gits を通して読むだけで、投稿や push はできません。ここに書いていない宛先はすべてブロックされます', 's.runLocalhost': 'AI の実行にローカルのポートを使わせる (テストに必要なデータベースやサービス)', 's.runDomains': 'AI の実行が依存関係のインストールに使えるホスト (1 行 1 つ)', 's.runNetRepos': 'これらのホストに接続できるリポジトリ', 's.runNetRepos.help': 'サンドボックスが見分けるのは接続先のホストだけで、送る内容は見ません。そのため実行は、接続を許したレジストリへ自分で用意したトークンで publish でき、読んだ内容を外に出せます。PR を開いたりコメントを書いたりできる人が全員信頼できるリポジトリだけをオンにしてください。オフのリポジトリの実行は依存関係をインストールできません (worktree にすでにあるものは使えます)', 's.runBrowser': 'AI の実行に Playwright 用のブラウザーを使わせる', 's.runBrowser.help': 'サンドボックスの中ではブラウザーが起動できないため、docket-gits がサンドボックスの外で Chromium を起動し、実行中の Playwright テストがそこに接続します。ブラウザーは PR のフロントエンドのコードを実行します。ブラウザーは専用のサンドボックス (macOS) で動き、実行と同じく認証情報や docket のデータを読めず、ループバックにしか接続できません (ローカルのポートのサービスには届きます)。Linux では使えません。Cypress・Puppeteer には対応していません', 's.runEnv': 'AI の実行に渡す環境変数 (1 行に KEY=VALUE)', 's.runEnv.help': 'テストが使うローカルのデータベースのパスワードなど。PR のコードからも読めるので、ローカル開発用の値だけを書いてください。設定の書き出しには含まれません', 'pub.files': '{n} ファイルを変更', 'err.workspaceFailed': "作業用のフォルダーを用意できませんでした: {message}", 'err.setupFailed': "setup コマンドが失敗しました:\n{message}", 's.setup': 'setup コマンド', 's.setup.help': '各実行の前に、docket-gits が PR の worktree でこのコマンドを実行します (例: <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>)。コマンドは専用のサンドボックス (macOS) で動き、認証情報を読めず、ネットワークは docket-gits を通してパッケージレジストリにだけ届きます。~/.npmrc でサインインしているレジストリには docket-gits がトークンを付けて読み込みだけを通すので、非公開レジストリの依存関係も入れられます (SSH キーは使えません)。読み込みだけでも公開のダウンロード数を通して少しずつ外へ送れるので、--ignore-scripts のように PR のコードを実行しないオプションを付けてください。Linux では実行しません。失敗すると実行は止まります。空なら実行しません',
+    's.runNet': 'AI 実行のネットワーク', 's.runNet.help': 'AI の実行は PR の worktree の中でサンドボックスに入って動きます。GitHub は docket-gits を通して読むだけで、投稿や push はできません。ここに書いていない宛先はすべてブロックされます', 's.runLocalhost': 'AI の実行にローカルのポートを使わせる (テストに必要なデータベースやサービス)', 's.runDomains': 'AI の実行が依存関係のインストールに使えるホスト (1 行 1 つ)', 's.runNetRepos': 'これらのホストに接続できるリポジトリ', 's.runNetRepos.help': 'サンドボックスが見分けるのは接続先のホストだけで、送る内容は見ません。そのため実行は、接続を許したレジストリへ自分で用意したトークンで publish でき、読んだ内容を外に出せます。PR を開いたりコメントを書いたりできる人が全員信頼できるリポジトリだけをオンにしてください。オフのリポジトリの実行は依存関係をインストールできません (worktree にすでにあるものは使えます)', 's.runBrowser': 'AI の実行に Playwright 用のブラウザーを使わせる', 's.runBrowser.help': 'サンドボックスの中ではブラウザーが起動できないため、docket-gits がサンドボックスの外で Chromium を起動し、実行中の Playwright テストがそこに接続します。ブラウザーは PR のフロントエンドのコードを実行します。ブラウザーは専用のサンドボックス (macOS) で動き、実行と同じく認証情報や docket のデータを読めず、ループバックにしか接続できません (ローカルのポートのサービスには届きます)。Linux では使えません。Cypress・Puppeteer には対応していません', 's.runEnv': 'AI の実行に渡す環境変数 (1 行に KEY=VALUE)', 's.runEnv.help': 'テストが使うローカルのデータベースのパスワードなど。PR のコードからも読めるので、ローカル開発用の値だけを書いてください。設定の書き出しには含まれません', 'pub.files': '{n} ファイルを変更', 'err.workspaceFailed': "作業用のフォルダーを用意できませんでした: {message}", 'err.setupFailed': "setup コマンドが失敗しました:\n{message}", 'unv.title': '環境のせいで確認できなかったこと', 'unv.suggest': 'setup コマンドを提案してもらう', 'unv.suggest.help': 'AI がこの PR の worktree とあなたのクローンを調べて、足りないものを用意する setup コマンドを提案します。設定は「適用」を押すまで変わりません', 'unv.running': 'setup コマンドを考えています…', 'unv.applied': 'setup コマンドを適用しました。もう一度実行すると使われます', 'unv.noChange': 'setup コマンドでは解決できません', 'unv.current': '今の setup コマンド', 'unv.proposed': '提案された setup コマンド', 'unv.none': '(なし)', 'unv.warn': 'このコマンドは PR の内容を読んだ AI が書いたものです。適用する前に全部読んで、PR のコードを実行しないか、認証情報や機密ファイルをコピーしないかを確かめてください。', 'unv.apply': 'この setup コマンドを適用', 'unv.confirmApply': 'もう一度押すと適用', 'err.cannotSuggestSetup': '提案できる状態ではありません', 'err.cannotApplySetup': '適用できる提案がありません', 'err.setupChanged': '提案のあとで setup コマンドが変わりました。もう一度提案してもらってください', 's.setup': 'setup コマンド', 's.setup.help': '各実行の前に、docket-gits が PR の worktree でこのコマンドを実行します (例: <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>)。コマンドは専用のサンドボックス (macOS) で動き、認証情報を読めず、ネットワークは docket-gits を通してパッケージレジストリにだけ届きます。~/.npmrc でサインインしているレジストリには docket-gits がトークンを付けて読み込みだけを通すので、非公開レジストリの依存関係も入れられます (SSH キーは使えません)。読み込みだけでも公開のダウンロード数を通して少しずつ外へ送れるので、--ignore-scripts のように PR のコードを実行しないオプションを付けてください。Linux では実行しません。失敗すると実行は止まります。空なら実行しません',
   },
   ko: {
     'agent.run': '실행·로그', 'agent.targets': '작업 대상', 'agent.prompts': '공통 프롬프트',
@@ -803,7 +803,7 @@ const I18N = {
     'pub.issues': '만들 issue', 'pub.parent': '#{n}의 하위 issue', 'pub.review': '게시할 셀프 리뷰', 'pub.replies': '답글', 'pub.toFinding': '의견 #{no}',
     'pub.risky': 'CI·저장소 설정을 바꾸거나 파일을 실행 가능하게 만듭니다. push하면 이것들은 저장소의 시크릿과 함께 실행됩니다:', 'pub.riskyOk': '이 변경을 확인했습니다',
     'pub.publish': '게시', 'pub.discard': '버리기', 'pub.confirmPublish': '한 번 더 누르면 push·게시', 'pub.confirmDiscard': '한 번 더 누르면 결과를 버립니다', 'pub.linkReview': '리뷰',
-    's.runNet': 'AI 실행 네트워크', 's.runNet.help': 'AI 실행은 PR의 worktree 안에서 샌드박스에 갇혀 동작합니다. GitHub는 docket-gits를 거쳐 읽기만 할 수 있고, 게시나 push는 할 수 없습니다. 여기에 없는 곳은 모두 막힙니다', 's.runLocalhost': 'AI 실행이 로컬 포트를 쓰도록 허용 (테스트에 필요한 데이터베이스·서비스)', 's.runDomains': 'AI 실행이 의존성 설치에 접속할 수 있는 호스트 (한 줄에 하나)', 's.runNetRepos': '이 호스트에 접속할 수 있는 저장소', 's.runNetRepos.help': '샌드박스는 접속하는 호스트만 구분하고, 보내는 내용은 보지 않습니다. 그래서 실행은 접속을 허용한 레지스트리에 직접 준비한 토큰으로 publish해서 읽은 내용을 밖으로 내보낼 수 있습니다. PR을 열거나 코멘트를 쓸 수 있는 사람이 모두 신뢰할 수 있는 저장소만 켜세요. 꺼진 저장소의 실행은 의존성을 설치할 수 없습니다 (worktree에 이미 있는 것은 씁니다)', 's.runBrowser': 'AI 실행에 Playwright용 브라우저 제공', 's.runBrowser.help': '샌드박스 안에서는 브라우저를 띄울 수 없어서, docket-gits가 샌드박스 밖에서 Chromium을 띄우고 실행 중인 Playwright 테스트가 거기에 접속합니다. 브라우저는 PR의 프론트엔드 코드를 실행합니다. 브라우저는 전용 샌드박스(macOS)에서 돌며, 실행과 마찬가지로 인증 정보나 docket 데이터를 읽을 수 없고 루프백에만 접속합니다(로컬 포트의 서비스에는 닿습니다). Linux에서는 쓸 수 없습니다. Cypress·Puppeteer는 지원하지 않습니다', 's.runEnv': 'AI 실행에 넘길 환경 변수 (한 줄에 KEY=VALUE)', 's.runEnv.help': '테스트가 쓰는 로컬 데이터베이스 비밀번호 등. PR 코드에서도 읽을 수 있으니 로컬 개발용 값만 적으세요. 설정 내보내기에는 포함되지 않습니다', 'pub.files': '파일 {n}개 변경', 'err.workspaceFailed': "작업용 폴더를 준비하지 못했습니다: {message}", 'err.setupFailed': "setup 명령이 실패했습니다:\n{message}", 's.setup': 'setup 명령', 's.setup.help': '실행마다 그 전에 docket-gits가 PR의 worktree에서 이 명령을 실행합니다 (예: <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>). 명령은 전용 샌드박스(macOS)에서 돌며 인증 정보를 읽을 수 없고, 네트워크는 docket-gits를 거쳐 패키지 레지스트리에만 닿습니다. ~/.npmrc로 로그인한 레지스트리에는 docket-gits가 토큰을 붙여 읽기만 통과시키므로 비공개 레지스트리 의존성도 설치할 수 있습니다(SSH 키는 쓸 수 없습니다). 읽기만으로도 공개 다운로드 수를 통해 조금씩 밖으로 보낼 수 있으니, --ignore-scripts처럼 PR의 코드를 실행하지 않는 옵션을 붙이세요. Linux에서는 실행하지 않습니다. 실패하면 실행이 멈춥니다. 비어 있으면 실행하지 않습니다',
+    's.runNet': 'AI 실행 네트워크', 's.runNet.help': 'AI 실행은 PR의 worktree 안에서 샌드박스에 갇혀 동작합니다. GitHub는 docket-gits를 거쳐 읽기만 할 수 있고, 게시나 push는 할 수 없습니다. 여기에 없는 곳은 모두 막힙니다', 's.runLocalhost': 'AI 실행이 로컬 포트를 쓰도록 허용 (테스트에 필요한 데이터베이스·서비스)', 's.runDomains': 'AI 실행이 의존성 설치에 접속할 수 있는 호스트 (한 줄에 하나)', 's.runNetRepos': '이 호스트에 접속할 수 있는 저장소', 's.runNetRepos.help': '샌드박스는 접속하는 호스트만 구분하고, 보내는 내용은 보지 않습니다. 그래서 실행은 접속을 허용한 레지스트리에 직접 준비한 토큰으로 publish해서 읽은 내용을 밖으로 내보낼 수 있습니다. PR을 열거나 코멘트를 쓸 수 있는 사람이 모두 신뢰할 수 있는 저장소만 켜세요. 꺼진 저장소의 실행은 의존성을 설치할 수 없습니다 (worktree에 이미 있는 것은 씁니다)', 's.runBrowser': 'AI 실행에 Playwright용 브라우저 제공', 's.runBrowser.help': '샌드박스 안에서는 브라우저를 띄울 수 없어서, docket-gits가 샌드박스 밖에서 Chromium을 띄우고 실행 중인 Playwright 테스트가 거기에 접속합니다. 브라우저는 PR의 프론트엔드 코드를 실행합니다. 브라우저는 전용 샌드박스(macOS)에서 돌며, 실행과 마찬가지로 인증 정보나 docket 데이터를 읽을 수 없고 루프백에만 접속합니다(로컬 포트의 서비스에는 닿습니다). Linux에서는 쓸 수 없습니다. Cypress·Puppeteer는 지원하지 않습니다', 's.runEnv': 'AI 실행에 넘길 환경 변수 (한 줄에 KEY=VALUE)', 's.runEnv.help': '테스트가 쓰는 로컬 데이터베이스 비밀번호 등. PR 코드에서도 읽을 수 있으니 로컬 개발용 값만 적으세요. 설정 내보내기에는 포함되지 않습니다', 'pub.files': '파일 {n}개 변경', 'err.workspaceFailed': "작업용 폴더를 준비하지 못했습니다: {message}", 'err.setupFailed': "setup 명령이 실패했습니다:\n{message}", 'unv.title': '환경 때문에 확인하지 못한 것', 'unv.suggest': 'setup 명령 제안받기', 'unv.suggest.help': 'AI가 이 PR의 worktree와 내 클론을 살펴보고, 빠진 것을 준비하는 setup 명령을 제안합니다. 설정은 적용을 누르기 전에는 바뀌지 않습니다', 'unv.running': 'setup 명령을 찾고 있습니다…', 'unv.applied': 'setup 명령을 적용했습니다. 다시 실행하면 사용됩니다', 'unv.noChange': 'setup 명령으로는 해결할 수 없습니다', 'unv.current': '현재 setup 명령', 'unv.proposed': '제안된 setup 명령', 'unv.none': '(없음)', 'unv.warn': '이 명령은 PR 내용을 읽은 AI가 썼습니다. 적용하기 전에 끝까지 읽고, PR의 코드를 실행하거나 인증 정보·민감한 파일을 복사하지 않는지 확인하세요.', 'unv.apply': '이 setup 명령 적용', 'unv.confirmApply': '한 번 더 누르면 적용', 'err.cannotSuggestSetup': '제안받을 수 있는 상태가 아닙니다', 'err.cannotApplySetup': '적용할 제안이 없습니다', 'err.setupChanged': '제안 이후에 setup 명령이 바뀌었습니다. 다시 제안받으세요', 's.setup': 'setup 명령', 's.setup.help': '실행마다 그 전에 docket-gits가 PR의 worktree에서 이 명령을 실행합니다 (예: <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>). 명령은 전용 샌드박스(macOS)에서 돌며 인증 정보를 읽을 수 없고, 네트워크는 docket-gits를 거쳐 패키지 레지스트리에만 닿습니다. ~/.npmrc로 로그인한 레지스트리에는 docket-gits가 토큰을 붙여 읽기만 통과시키므로 비공개 레지스트리 의존성도 설치할 수 있습니다(SSH 키는 쓸 수 없습니다). 읽기만으로도 공개 다운로드 수를 통해 조금씩 밖으로 보낼 수 있으니, --ignore-scripts처럼 PR의 코드를 실행하지 않는 옵션을 붙이세요. Linux에서는 실행하지 않습니다. 실패하면 실행이 멈춥니다. 비어 있으면 실행하지 않습니다',
   },
   en: {
     'agent.run': 'Execution & logs', 'agent.targets': 'Work targets', 'agent.prompts': 'Shared prompts',
@@ -902,7 +902,7 @@ const I18N = {
     'pub.issues': 'Issues to create', 'pub.parent': 'sub-issue of #{n}', 'pub.review': 'Self-review to post', 'pub.replies': 'Replies', 'pub.toFinding': 'finding #{no}',
     'pub.risky': 'This changes CI / repository settings or makes a file executable; these run with the repository\'s secrets when pushed:', 'pub.riskyOk': 'I checked these changes',
     'pub.publish': 'Publish', 'pub.discard': 'Discard', 'pub.confirmPublish': 'Click again to push and post', 'pub.confirmDiscard': 'Click again to discard the result', 'pub.linkReview': 'Review',
-    's.runNet': 'Network for AI runs', 's.runNet.help': 'AI runs work in a sandbox in a worktree of the pull request. They read GitHub only through docket-gits and cannot post or push. Everything not listed here is blocked', 's.runLocalhost': 'Let AI runs use local ports (databases and services tests need)', 's.runDomains': 'Hosts AI runs may reach to install dependencies (one per line)', 's.runNetRepos': 'Repositories that may reach these hosts', 's.runNetRepos.help': 'The sandbox tells hosts apart, not what is sent to them: a run can publish to an allowed registry with a token of its own, and so send out what it read. Turn this on only for repositories where everyone who can open a pull request or comment is trusted. Runs of other repositories can\'t install dependencies (what is already in the worktree is used)', 's.runBrowser': 'Give AI runs a browser for Playwright', 's.runBrowser.help': 'Browsers can\'t start inside the sandbox, so docket-gits starts Chromium outside it and the run\'s Playwright tests connect to it. The browser runs the pull request\'s front-end code. The browser runs in a sandbox of its own (macOS): like a run, it can\'t read credentials or docket data, and reaches only loopback (services on local ports included). Not available on Linux. Cypress and Puppeteer are not supported', 's.runEnv': 'Env vars for AI runs (KEY=VALUE per line)', 's.runEnv.help': 'Such as the password of a local database tests use. The pull request\'s code can read them too, so write local development values only. Not included when settings are exported', 'pub.files': '{n} files changed', 'err.workspaceFailed': "Couldn't prepare the working folder: {message}", 'err.setupFailed': "The setup command failed:\n{message}", 's.setup': 'Setup command', 's.setup.help': 'Before each run, docket-gits runs this command in the pull request\'s worktree (for example <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>). It runs in a sandbox of its own (macOS): it can\'t read credentials, and reaches only package registries, through docket-gits. For a registry you sign in to in ~/.npmrc, docket-gits adds your token and lets only reads through, so dependencies from private registries still install (SSH keys are not available). Even reading can send data out slowly through public download counts, so add flags that run none of the pull request\'s code, such as --ignore-scripts. Not run on Linux. If it fails, the run stops. Empty runs nothing',
+    's.runNet': 'Network for AI runs', 's.runNet.help': 'AI runs work in a sandbox in a worktree of the pull request. They read GitHub only through docket-gits and cannot post or push. Everything not listed here is blocked', 's.runLocalhost': 'Let AI runs use local ports (databases and services tests need)', 's.runDomains': 'Hosts AI runs may reach to install dependencies (one per line)', 's.runNetRepos': 'Repositories that may reach these hosts', 's.runNetRepos.help': 'The sandbox tells hosts apart, not what is sent to them: a run can publish to an allowed registry with a token of its own, and so send out what it read. Turn this on only for repositories where everyone who can open a pull request or comment is trusted. Runs of other repositories can\'t install dependencies (what is already in the worktree is used)', 's.runBrowser': 'Give AI runs a browser for Playwright', 's.runBrowser.help': 'Browsers can\'t start inside the sandbox, so docket-gits starts Chromium outside it and the run\'s Playwright tests connect to it. The browser runs the pull request\'s front-end code. The browser runs in a sandbox of its own (macOS): like a run, it can\'t read credentials or docket data, and reaches only loopback (services on local ports included). Not available on Linux. Cypress and Puppeteer are not supported', 's.runEnv': 'Env vars for AI runs (KEY=VALUE per line)', 's.runEnv.help': 'Such as the password of a local database tests use. The pull request\'s code can read them too, so write local development values only. Not included when settings are exported', 'pub.files': '{n} files changed', 'err.workspaceFailed': "Couldn't prepare the working folder: {message}", 'err.setupFailed': "The setup command failed:\n{message}", 'unv.title': 'Not checked for lack of something in the folder', 'unv.suggest': 'Suggest a setup command', 'unv.suggest.help': 'AI looks at this pull request\'s worktree and your clones and proposes a setup command that provides what was missing. Settings change only when you press Apply', 'unv.running': 'Working out a setup command…', 'unv.applied': 'Setup command applied. The next run uses it', 'unv.noChange': 'A setup command can\'t fix this', 'unv.current': 'Current setup command', 'unv.proposed': 'Proposed setup command', 'unv.none': '(none)', 'unv.warn': 'An AI that read the pull request wrote this command. Read all of it before applying: check that it runs none of the pull request\'s code and copies no credentials or private files.', 'unv.apply': 'Apply this setup command', 'unv.confirmApply': 'Press again to apply', 'err.cannotSuggestSetup': "Can't suggest in this state", 'err.cannotApplySetup': 'No suggestion to apply', 'err.setupChanged': 'The setup command changed after the suggestion. Ask for a new one', 's.setup': 'Setup command', 's.setup.help': 'Before each run, docket-gits runs this command in the pull request\'s worktree (for example <code>pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile</code>). It runs in a sandbox of its own (macOS): it can\'t read credentials, and reaches only package registries, through docket-gits. For a registry you sign in to in ~/.npmrc, docket-gits adds your token and lets only reads through, so dependencies from private registries still install (SSH keys are not available). Even reading can send data out slowly through public download counts, so add flags that run none of the pull request\'s code, such as --ignore-scripts. Not run on Linux. If it fails, the run stops. Empty runs nothing',
   },
 };
 // Fill {name} from params. Placeholders with non-\w characters like {pr-number} are left as is
@@ -1250,6 +1250,7 @@ function render() {
   if (openKey && $('#review-dlg').open) {
     const entry = [...board.prs, ...board.mine].find((p) => p.key === openKey);
     if (!entry || !['reviewed', 'planned', 'ready'].includes(entry.status)) $('#review-dlg').close();
+    else if (dlgRender?.key === openKey && JSON.stringify(entry.setupSuggestion ?? null) !== dlgRender.shown) dlgRender.render();
   }
 }
 
@@ -1501,6 +1502,43 @@ function saveDraft(key, draft) {
   try { localStorage.setItem(draftKey(key), JSON.stringify(draft)); } catch {}
 }
 
+// What the last review couldn't check for lack of something in its folder, and the setup command AI proposes for it.
+// The proposal is applied only when the user presses Apply
+let dlgRender = null; // { key, render, shown }: redraws the open review dialog when its setup suggestion changes
+function unverifiedHtml(e) {
+  if (!e.unverified?.length) return '';
+  const s = e.setupSuggestion;
+  const suggest = `<button data-setup-suggest>${tr('unv.suggest')}</button> <span class="muted">${tr('unv.suggest.help')}</span>`;
+  const body = !s ? suggest
+    : s.status === 'failed' ? `<p style="color:var(--danger)">${esc(errText(s.error))}</p>${suggest}`
+    : ['queued', 'running'].includes(s.status) ? `<p class="muted">${tr('unv.running')}</p>`
+    : s.status === 'applied' ? `<p>${tr('unv.applied')}</p>`
+    : !s.setup ? `<p>${esc(s.reason || tr('unv.noChange'))}</p>`
+    : `<p>${esc(s.reason)}</p>
+      <div class="muted">${tr('unv.current')}</div><pre class="raw">${esc(s.current || tr('unv.none'))}</pre>
+      <div class="muted">${tr('unv.proposed')}</div><pre class="raw">${esc(s.setup)}</pre>
+      <p>${tr('unv.warn')}</p><button data-setup-apply>${tr('unv.apply')}</button>`;
+  return `<div class="finding">
+    <div class="head"><span class="grow">${tr('unv.title')}</span></div>
+    <ul>${e.unverified.map((u) => `<li>${esc(u.check)}${u.reason ? ` <span class="muted">${esc(u.reason)}</span>` : ''}</li>`).join('')}</ul>
+    ${body}
+  </div>`;
+}
+// Clicks on the buttons of unverifiedHtml. true: handled
+async function setupClick(t, key) {
+  const action = t.matches('[data-setup-suggest]') ? 'suggest' : t.matches('[data-setup-apply]') ? 'apply' : null;
+  if (!action) return false;
+  if (action === 'apply' && !confirmTwice(t, `setup:${key}`, tr('unv.confirmApply'))) return true;
+  try {
+    await api(`/api/setup/${action}`, { method: 'POST', body: { key } });
+    await load();
+  } catch (err) {
+    toast(err.message);
+  }
+  return true;
+}
+const liveEntry = (key, fallback) => [...board.prs, ...board.mine].find((p) => p.key === key) || fallback;
+
 function openReview(key) {
   openKey = key;
   const e = board.prs.find((p) => p.key === key);
@@ -1512,6 +1550,8 @@ function openReview(key) {
     armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length;
+    const live = liveEntry(key, e);
+    dlgRender = { key, render: renderDlg, shown: JSON.stringify(live.setupSuggestion ?? null) };
     dlg.innerHTML = `
       <div class="dlg-head">
         <h3><a href="${esc(safeUrl(e.pr.url))}" target="docket-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
@@ -1520,6 +1560,7 @@ function openReview(key) {
       <div class="dlg-body">
         ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(errText(e.error))}</div>` : ''}
         ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
+        ${unverifiedHtml(live)}
         ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, undefined, true)).join('') : `<p class="muted">${tr('noFindings')}</p>`)
           : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
         ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
@@ -1540,6 +1581,7 @@ function openReview(key) {
     const t = ev.target;
     if (t.matches('[data-close]')) return dlg.close();
     if (t.matches('[data-log]')) return openLog(key);
+    if (await setupClick(t, key)) return;
     if (t.matches('[data-verdict]')) {
       const no = t.dataset.no;
       draft.decisions[no] = { ...draft.decisions[no], verdict: t.dataset.verdict };
@@ -1608,6 +1650,7 @@ const publishedLinks = (p) => [
 
 function openResult(key) {
   openKey = key;
+  dlgRender = null;
   const dlg = $('#review-dlg');
   const shown = new Set(); // branch keys whose diff is open
   let patches = null; // from /api/mine/patches, loaded on the first "Show diff"
@@ -1762,6 +1805,8 @@ function openMine(key) {
     armed = null; // Redrawing resets the button label, so also clear any pending "press again"
     const decided = findings ? findings.filter((f) => draft.decisions[f.no]?.verdict).length : 0;
     const ready = findings && decided === findings.length && draft.confirmed;
+    const live = liveEntry(key, e);
+    dlgRender = { key, render: renderDlg, shown: JSON.stringify(live.setupSuggestion ?? null) };
     dlg.innerHTML = `
       <div class="dlg-head">
         <h3><a href="${esc(safeUrl(e.pr.url))}" target="docket-viewer">${esc(e.pr.repo.split('/')[1])} #${e.pr.number}</a> ${esc(e.pr.title)}</h3>
@@ -1772,6 +1817,7 @@ function openMine(key) {
         ${newCount ? `<div class="banner" style="margin:0 0 12px">${esc(tr('newComments', { n: newCount }))}</div>` : ''}
         ${e.error ? `<div class="banner" style="margin:0 0 12px">${esc(errText(e.error))}</div>` : ''}
         ${e.summary ? `<p>${esc(e.summary)}</p>` : ''}
+        ${unverifiedHtml(live)}
         ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, MINE_PLACEHOLDER[e.mode])).join('') : `<p class="muted">${tr('noMineFindings')}</p>`)
           : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
         ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
@@ -1793,6 +1839,7 @@ function openMine(key) {
     const t = ev.target;
     if (t.matches('[data-close]')) return dlg.close();
     if (t.matches('[data-log]')) return openLog(key);
+    if (await setupClick(t, key)) return;
     if (t.matches('[data-verdict]')) {
       const no = t.dataset.no;
       draft.decisions[no] = { ...draft.decisions[no], verdict: t.dataset.verdict };
@@ -1855,6 +1902,7 @@ function openMine(key) {
 // Thread numbers are reassigned on every fetch, so judgments are keyed by URL
 function openTriage(key) {
   openKey = null; // Opened while idle, so keep it from closing on redraw
+  dlgRender = null;
   const e = board.mine.find((p) => p.key === key);
   const threads = e.threads || [];
   const draft = { decisions: {}, ...loadDraft(`triage:${key}`) };

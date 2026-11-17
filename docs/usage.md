@@ -55,6 +55,7 @@ flowchart LR
 ```
 
 - **Self-review** runs your self-review skill. Findings you agree with are fixed; after you check the result, they are posted, the fixes pushed, and each one answered with the commit SHA.
+- When a review or self-review could not run a check because its worktree lacked something (a file that isn't in git, such as a generated or linked spec), the result lists it. **Suggest a setup command** has a read-only AI run look at the worktree and your clones and propose a new setup command for the repository. Nothing changes until you read it and press **Apply**; then the next run uses it. See [The setup command](SECURITY.md#the-setup-command).
 - **Address comments** first lists the unanswered comments *without* the AI, so you form your own view before reading the AI's. For each one you agree, disagree (with a reason) or skip.
 - **Have the AI plan** returns a plan per comment without changing anything: fix, reply, defer, split into another pull request, create a follow-up issue, or rebut (when the AI thinks your disagreement is wrong).
 - You review the plans, then **Comment** has the AI carry them out in the pull request's worktree: it fixes, runs the tests and commits, and writes the replies, issues and split pull requests. It can't publish anything itself.
