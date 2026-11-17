@@ -1,6 +1,8 @@
 <p align="center"><img src="docs/icon.svg" width="96" alt=""></p>
 
-# docket-gits
+<h1 align="center">docket-gits</h1>
+
+<p align="center">Code review with an AI agent. Only what you agree to gets posted.</p>
 
 docket-gits is a local web app for code review with an AI agent. It collects the GitHub pull requests waiting on you into a kanban board, lets [Claude Code](https://claude.com/claude-code) do the review, and posts to GitHub only what you agreed to, one finding at a time.
 
