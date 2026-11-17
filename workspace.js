@@ -14,12 +14,14 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { SOCKET, ghConfig } = require('./github-proxy');
+const jail = require('./jail');
 
 const HOME = path.resolve(process.env.DOCKET_HOME || path.join(os.homedir(), '.docket-gits'));
 
-// Package registries runs may reach to install dependencies. Publishing needs credentials, which runs can't read.
+// Package registries runs may reach to install dependencies, for repositories the user turned on (repos[repo].network).
+// The sandbox sees hosts, not methods: a run can publish there with a token of its own, so a host here is a way out.
 // Not proxy.golang.org / sum.golang.org: the Go proxy fetches any module path from any host, so it would let a run send data anywhere
 const REGISTRIES = ['registry.npmjs.org', 'registry.yarnpkg.com', 'rubygems.org', 'index.rubygems.org', 'pypi.org', 'files.pythonhosted.org',
   'repo.maven.apache.org', 'repo1.maven.org', 'plugins.gradle.org', 'services.gradle.org', 'crates.io', 'static.crates.io', 'index.crates.io'];
@@ -29,7 +31,7 @@ const REGISTRIES = ['registry.npmjs.org', 'registry.yarnpkg.com', 'rubygems.org'
 const SECRET_PATHS = ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/Library/Keychains', '~/.aws', '~/.netrc', '~/.git-credentials',
   '~/.docker', '~/.kube', '~/.gnupg', '~/.npmrc', '~/.gem/credentials', '~/.pypirc', '~/.cargo/credentials.toml', '~/.codex', '~/.config/gcloud',
   '~/.claude.json', '~/.claude/.credentials.json', '~/.claude/settings.json', '~/.claude/settings.local.json',
-  '~/.config/git/credentials', '~/.config/github-copilot', '~/.config/hub', '~/.config/op', '~/.azure', '~/.terraform.d', '~/.vault-token', '~/.pgpass',
+  '~/.config/git/credentials', '~/.gitconfig', '~/.config/git/config', '~/.config/github-copilot', '~/.config/hub', '~/.config/op', '~/.azure', '~/.terraform.d', '~/.vault-token', '~/.pgpass',
   '~/.yarnrc.yml', '~/.bundle/config', '~/.m2/settings.xml', '~/.gradle/gradle.properties', '~/.composer/auth.json',
   ...(process.env.CLAUDE_CONFIG_DIR ? [path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), '.credentials.json')] : [])];
 
@@ -38,6 +40,9 @@ const SECRET_PATHS = ['~/.ssh', '~/.config/gh', '~/Library/Keychains', '/Library
 const DOCKET_DATA_PATHS = ['~/Library/Application Support/docket-jobs', '~/.local/share/docket-jobs',
   ...['docket', 'docket-jobs'].map((r) => path.join(path.dirname(__dirname), r, 'data')),
   ...[process.env.DOCKET_PORTAL_DATA, process.env.DOCKET_JOBS_DATA_DIR].filter(Boolean).map((p) => path.resolve(p))];
+
+// What runs, the setup command and the browser can't read: credentials and the data of the docket apps
+const deniedPaths = (dataDir) => [...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir].filter(Boolean);
 
 // Env vars a run keeps. Everything else (GITHUB_TOKEN, SSH_AUTH_SOCK, other tools' secrets) is dropped.
 // CLAUDECODE and the like are dropped too: claude refuses to start nested in another session
@@ -81,6 +86,9 @@ function agentEnv(env, { home = HOME, extra = {} } = {}) {
     YARN_CACHE_FOLDER: path.join(cache, 'yarn'),
     PIP_CACHE_DIR: path.join(cache, 'pip'),
     // No git hooks (a run could write one and commit to run it), no automatic gc (it rewrites shared files)
+    // The user's git config can hold credentials (url.<https://TOKEN@host>.insteadOf, http.extraHeader) and is
+    // denied: runs get a copy with only their name and email (gitConfigOf), for commits
+    GIT_CONFIG_GLOBAL: path.join(home, 'gitconfig'),
     GIT_CONFIG_COUNT: '2',
     GIT_CONFIG_KEY_0: 'core.hooksPath',
     GIT_CONFIG_VALUE_0: '/dev/null',
@@ -116,7 +124,7 @@ function agentSettings({ ws, workdir, dataDir, envPath, home = HOME, domains = R
         denyRead: [...SECRET_PATHS, ...DOCKET_DATA_PATHS, dataDir],
         allowWrite: [ws.cwd, path.join(home, 'cache'), ...PNPM_LOCKS, runTmpOf(ws), ...(git ? [path.join(git, 'objects'), ws.adminDir, path.join(git, 'refs', 'heads', 'docket'), path.join(git, 'logs', 'refs', 'heads', 'docket')] : [])],
         // The user's git runs these later, outside the sandbox; the server trusts the admin folder's links
-        denyWrite: [...(workdir ? [workdir] : []), ...(git ? [path.join(git, 'config'), path.join(git, 'hooks'), path.join(git, 'info'), path.join(git, 'packed-refs'),
+        denyWrite: [...(workdir ? [workdir] : []), ...(git ? [path.join(ws.cwd, '.git'), path.join(git, 'config'), path.join(git, 'hooks'), path.join(git, 'info'), path.join(git, 'packed-refs'),
           path.join(ws.adminDir, 'commondir'), path.join(ws.adminDir, 'gitdir'), path.join(ws.adminDir, 'config.worktree')] : [])],
       },
     },
@@ -225,6 +233,14 @@ function withLock(key, fn) {
   return next;
 }
 
+// The git config of runs and the setup command (GIT_CONFIG_GLOBAL): the user's name and email, nothing else
+async function writeGitConfig(home = HOME) {
+  const get = (key) => git(['config', '--global', '--get', key]).then((v) => v.trim(), () => '');
+  const [name, email] = await Promise.all([get('user.name'), get('user.email')]);
+  const quote = (v) => `"${v.replace(/[\\"]/g, (c) => `\\${c}`).replace(/\n/g, ' ')}"`;
+  fs.writeFileSync(path.join(home, 'gitconfig'), `[user]\n${name ? `\tname = ${quote(name)}\n` : ''}${email ? `\temail = ${quote(email)}\n` : ''}`);
+}
+
 // The admin folder git keeps for a worktree (<clone>/.git/worktrees/<id>). Found from its gitdir file, which runs
 // can't write, never from the worktree's own .git file, which they can
 function adminDirOf(gitDir, worktree) {
@@ -251,7 +267,7 @@ function workspaceNote(ws, pr, { browser = false } = {}) {
 - A dev server already answering on the project's usual port is the user's, running their clone, not this pull request: don't test against it (turn off any reuse of an existing server). Start this worktree's own on a free port and point the tests at that port.
 - Reach local servers by 127.0.0.1, not by a hostname: names don't resolve in the sandbox, and names that point to 127.0.0.1 (such as a dev server's local.* host) are refused. Start servers on 127.0.0.1 (curl --resolve maps a name if a Host header matters).
 ${browser
-    ? `- Browsers can't start in this sandbox on macOS, but a Chromium for Playwright runs outside it: PW_TEST_CONNECT_WS_ENDPOINT is set, so playwright test connects to it by itself (don't install browsers). Run the Playwright tests that cover the change. That browser reaches only hosts that resolve to 127.0.0.1, so a dev server's local.* host works from the page; the test runner itself is in the sandbox, so where it checks a URL (webServer url, health checks) point it at 127.0.0.1, for example through the env var the config reads. Cypress and Puppeteer still can't run here: if the project uses them, say so in the summary.`
+    ? `- Browsers can't start in this sandbox on macOS, but a Chromium for Playwright runs outside it: PW_TEST_CONNECT_WS_ENDPOINT is set, so playwright test connects to it by itself (don't install browsers). Run the Playwright tests that cover the change. That browser reaches only loopback: 127.0.0.1, localhost, *.localhost, and names /etc/hosts maps to 127.0.0.1 (so a dev server's local.* host set up there works from the page; names only DNS knows don't); the test runner itself is in the sandbox, so where it checks a URL (webServer url, health checks) point it at 127.0.0.1, for example through the env var the config reads. Cypress and Puppeteer still can't run here: if the project uses them, say so in the summary.`
     : '- Browsers (Playwright, Cypress, Puppeteer) can\'t start in this sandbox on macOS, so don\'t try browser or E2E tests: run unit and component tests, and say in the summary that browser tests were not run for this reason.'}`;
 }
 
@@ -287,7 +303,13 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
       await git([`--git-dir=${adminDir}`, `--work-tree=${cwd}`, 'checkout', '--quiet', '--force', '-B', branchOf(pr), headSha]);
       await git([`--git-dir=${adminDir}`, `--work-tree=${cwd}`, 'reset', '--quiet', '--hard', headSha]);
     }
+    // A run could leave its own .git here (a folder, or a link to a repository it made), and any git started in the
+    // worktree would take that repository's config (core.sshCommand, ...). Put back the link git made
+    const dotGit = path.join(cwd, '.git');
+    fs.rmSync(dotGit, { recursive: true, force: true });
+    fs.writeFileSync(dotGit, `gitdir: ${adminDir}\n`);
     fs.mkdirSync(path.join(home, 'cache'), { recursive: true });
+    await writeGitConfig(home);
     fs.mkdirSync(ghDirOf(home), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(ghDirOf(home), 'config.yml'), ghConfig());
     // sourceClone: the user's own clone, which the run may read (local settings, dependencies that aren't in git)
@@ -296,16 +318,59 @@ async function prepareWorkspace(pr, { workdir, home = HOME }) {
 }
 
 // The repository's setup command (config repos[repo].setup), run by the server in the worktree before the run.
-// It runs outside the sandbox with the server's env, so it can install what needs the user's credentials
-// (private registries, git+ssh). The command is the user's, but the files it reads (lockfile, .npmrc) are the
-// pull request's: use flags such as --ignore-scripts. ponytail: runs every time; pnpm/bundle are quick when installed
-function runSetup(cwd, command, { env = process.env, timeoutMs = 10 * 60 * 1000 } = {}) {
+// The command is the user's, but what it installs and how is up to the pull request (lockfile, .npmrc, install
+// code), so it runs in jail.js's sandbox like a run: it can't read credentials or docket data, writes only the
+// worktree, the package cache and its own temp folder, and reaches the network only through setup-proxy.js,
+// which lets it read registries (adding the user's registry tokens itself) and nothing else.
+// sandbox: { port, proxy (its URL with this command's secret), certFile, userconfig, denyRead } from the server; without it (no OS sandbox here) the command
+// is not run, and the run goes on without it. extra: the user's env vars for runs (runEnv).
+// ponytail: runs every time; pnpm/bundle are quick when installed
+function runSetup(cwd, command, { env = process.env, extra = {}, timeoutMs = 10 * 60 * 1000, sandbox = null, home = HOME } = {}) {
   if (!command || !command.trim()) return Promise.resolve({ ok: true });
+  if (!sandbox) return Promise.resolve({ ok: true, skipped: true });
+  const tmp = path.join(home, 'tmp', 'setup');
+  for (const dir of [tmp, path.join(home, 'cache'), ...PNPM_LOCKS]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const { proxy } = sandbox;
+  // The env of a run without what only claude needs (its API keys, cloud credentials). Every https request ends at
+  // the proxy, so tools trust its authority only
+  const base = Object.fromEntries(Object.entries(agentEnv(env, { home, extra })).filter(([k]) => !/^(ANTHROPIC_|CLAUDE_|AWS_|GOOGLE_|VERTEX_|CLOUD_ML_)/.test(k) || k in extra));
+  const ca = sandbox.certFile;
+  const setupEnv = { ...base, TMPDIR: tmp, npm_config_userconfig: sandbox.userconfig,
+    NODE_EXTRA_CA_CERTS: ca, SSL_CERT_FILE: ca, CURL_CA_BUNDLE: ca, GIT_SSL_CAINFO: ca, REQUESTS_CA_BUNDLE: ca, PIP_CERT: ca,
+    ...Object.fromEntries(['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'npm_config_proxy', 'npm_config_https_proxy'].map((k) => [k, proxy])),
+    NO_PROXY: '', no_proxy: '', ALL_PROXY: '', all_proxy: '',
+    // Settings that name a program npm runs while installing: env outranks the pull request's .npmrc
+    // (git=./x.sh would run for a git dependency even with --ignore-scripts)
+    npm_config_git: fs.existsSync('/usr/bin/git') ? '/usr/bin/git' : 'git', npm_config_script_shell: '/bin/sh', npm_config_node_options: '', npm_config_shell: '/bin/sh' };
+  // git settings that name a program, over any repository config git finds (env outranks it)
+  const gitPins = { 'core.hooksPath': '/dev/null', 'gc.auto': '0', 'core.sshCommand': 'ssh', 'core.fsmonitor': 'false', 'core.askPass': '', 'core.gitProxy': '',
+    'credential.helper': '', 'protocol.ext.allow': 'never', 'diff.external': '', 'core.pager': 'cat', 'uploadpack.packObjectsHook': '' };
+  Object.assign(setupEnv, { GIT_CONFIG_COUNT: String(Object.keys(gitPins).length), GIT_CONFIG_NOSYSTEM: '1',
+    ...Object.fromEntries(Object.entries(gitPins).flatMap(([k, v], i) => [[`GIT_CONFIG_KEY_${i}`, k], [`GIT_CONFIG_VALUE_${i}`, v]])) });
+  const [cmd, args] = jail.wrap('/bin/sh', ['-c', command], { denyRead: sandbox.denyRead, allowWrite: [cwd, path.join(home, 'cache'), tmp, ...PNPM_LOCKS],
+    denyWrite: [path.join(cwd, '.git')], ports: [sandbox.port] });
   return new Promise((resolve) => {
-    execFile('/bin/sh', ['-c', command], { cwd, env, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (!err) return resolve({ ok: true });
-      const output = `${stdout}${stderr}`.trim().split('\n').slice(-20).join('\n');
-      resolve({ ok: false, output: output || err.message });
+    // Its own process group, so nothing it starts in the background outlives it
+    const child = spawn(cmd, args, { cwd, env: setupEnv, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    const keep = (d) => { output = (output + d).slice(-64 * 1024); };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    const killGroup = () => {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+    };
+    const timer = setTimeout(() => { output += '\ntimed out'; killGroup(); }, timeoutMs);
+    child.on('error', (e) => { output += e.message; });
+    let code = null;
+    // On exit, not on close: something left in the background holds the output open
+    child.on('exit', (c) => {
+      code = c;
+      clearTimeout(timer);
+      killGroup();
+    });
+    child.on('close', () => {
+      if (code === 0) return resolve({ ok: true });
+      resolve({ ok: false, output: output.trim().split('\n').slice(-20).join('\n') || `exit ${code}` });
     });
   });
 }
@@ -322,4 +387,4 @@ async function removeWorkspace(pr, { workdir, home = HOME }) {
   });
 }
 
-module.exports = { HOME, REGISTRIES, SECRET_PATHS, workspaceNote, agentEnv, runEnv, runTmpOf, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, runSetup, worktreeOf, branchOf, git };
+module.exports = { HOME, REGISTRIES, SECRET_PATHS, deniedPaths, PNPM_LOCKS, workspaceNote, agentEnv, runEnv, runTmpOf, agentSettings, agentToolDeny, agentArgs, findClone, ensureClone, adminDirOf, prepareWorkspace, removeWorkspace, runSetup, worktreeOf, branchOf, git };

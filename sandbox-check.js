@@ -72,6 +72,8 @@ async function main() {
     ['plant a git hook', `touch ${git}/hooks/post-checkout 2>/dev/null`, false],
     ["move the user's branch", 'git branch -f main HEAD >/dev/null 2>&1', false],
     ["change the worktree's link to the clone", `echo /tmp > ${ws.adminDir}/commondir 2>/dev/null`, false],
+    ['read ~/.gitconfig (it can hold tokens)', 'cat ~/.gitconfig >/dev/null 2>&1', false],
+    ["replace the worktree's .git", `echo 'gitdir: /tmp' > ${ws.cwd}/.git 2>/dev/null`, false],
     ['write to the working directory', `touch ${workdir}/written 2>/dev/null`, false],
     ["change the user's clone", `echo '[core] x = y' >> ${userGit}/config 2>/dev/null`, false],
     ['write to the home directory', 'touch ~/.docket-gits-sandbox-check 2>/dev/null', false],

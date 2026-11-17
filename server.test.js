@@ -792,7 +792,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1184,6 +1184,14 @@ test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back 
   assert.equal(net({ runLocalhost: true }), true);
   // The browser for Playwright is on a local port, so turning it on opens local ports too
   assert.equal(net({ runLocalhost: false, runBrowser: true }), true);
+  // Registries are reached only by repositories turned on one by one: an allowed registry is a way out (publish)
+  const hosts = (cfg, repo) => JSON.parse(rulesOf(claudeArgs('read', run, cfg, repo), '--settings').join(',')).sandbox.network.allowedDomains;
+  const cfg = { runDomains: ['registry.npmjs.org'], repos: { 'o/on': { network: true }, 'o/off': {} } };
+  assert.deepEqual(hosts(cfg, 'o/on'), ['registry.npmjs.org']);
+  assert.deepEqual(hosts(cfg, 'o/off'), []);
+  assert.deepEqual(hosts(cfg, 'o/unknown'), []);
+  assert.deepEqual(hosts(cfg), []);
+  assert.deepEqual(hosts({ repos: { 'o/on': { network: true } } }, 'o/on'), []);
   const read = claudeArgs('read', run);
   assert.ok(!read.includes('--permission-mode'));
   for (const r of ['Write', 'Edit', 'NotebookEdit']) assert.ok(rulesOf(read, '--disallowedTools').includes(r), r);
@@ -1434,4 +1442,28 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   await wait('prs', 'reviewed');
   const last = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).at(-1).args;
   assert.match(last[last.indexOf('-p') + 1], /^\/docket-claude-review CLAUDE-1/);
+});
+
+test('setupSandbox: the setup command gets ~/.npmrc without its tokens and a proxy URL of its own; the key stays in data/', { skip: process.platform !== 'darwin' && 'macOS only' }, async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-')));
+  const npmrc = path.join(dir, 'user-npmrc');
+  fs.writeFileSync(npmrc, '@acme:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=user-token\n');
+  const script = `
+const http = require('node:http');
+require('./server').setupSandbox().then(async (s) => {
+  const lease = s.lease();
+  const connect = (auth) => new Promise((r) => http.request({ host: '127.0.0.1', port: s.port, method: 'CONNECT', path: 'evil.example.com:443', headers: auth ? { 'proxy-authorization': 'Basic ' + Buffer.from('docket:' + new URL(lease.url).password).toString('base64') } : {} }).on('connect', (res) => r(res.statusCode)).end());
+  const out = { config: require('fs').readFileSync(s.userconfig, 'utf8'), cert: s.certFile, deny: s.denyRead, noSecret: await connect(false), withSecret: await connect(true) };
+  console.log(JSON.stringify(out)); process.exit(0);
+});`;
+  const out = require('node:child_process').execFileSync(process.execPath, ['-e', script], { cwd: __dirname, encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, DOCKET_DATA: path.join(dir, 'data'), DOCKET_HOME: path.join(dir, 'home'), npm_config_userconfig: npmrc } });
+  const r = JSON.parse(out.trim().split('\n').pop());
+  assert.equal(r.config, '@acme:registry=https://npm.pkg.github.com\n');
+  assert.equal(r.cert, path.join(dir, 'home', 'setup', 'ca.pem'));
+  assert.ok(r.deny.includes(path.join(dir, 'data')) && r.deny.includes('~/.npmrc'));
+  assert.equal(r.noSecret, 407);
+  assert.equal(r.withSecret, 403, 'a host that is not a registry');
+  assert.equal(fs.statSync(path.join(dir, 'data', 'setup-ca', 'ca.key')).mode & 0o777, 0o600);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

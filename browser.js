@@ -5,16 +5,19 @@
 // so docket-gits starts it outside and the run's Playwright connects to it (PW_TEST_CONNECT_WS_ENDPOINT).
 // Client and browser server must be the same Playwright version, and what the project has installed is only known
 // when it connects, so the gateway reads the version from the connection and starts a browser of that version.
-// The browser runs the pull request's front-end code: Chromium's own sandbox stays on, and all its traffic goes
-// through a proxy here that only lets through hosts resolving to loopback (the dev server the run started).
+// The run drives that browser (it can open file:// URLs, and the Playwright server saves files and makes requests
+// for it), so the browser server runs in jail.js's sandbox like a run: it can't read credentials or docket data,
+// writes only its temp folder, and reaches only loopback. Page traffic goes through a proxy here that only lets
+// through hosts resolving to loopback (the dev server the run started). Without that sandbox (not macOS) there is
+// no browser, and runs are told so.
 
 const crypto = require('node:crypto');
-const dns = require('node:dns');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
+const jail = require('./jail');
 
 // Older Playwright brings an older Chromium. ponytail: fixed floor, raise it as old versions age out
 const MIN = [1, 45];
@@ -34,16 +37,27 @@ function splice(a, b) {
   b.pipe(a);
 }
 
-// The address host resolves to, if every address it has is loopback (connecting to that address, not the name, so it
-// can't change). IPv4 first: dev servers usually listen on 127.0.0.1, while localhost may also resolve to ::1
-async function loopback(host) {
+// The loopback address for host, or null. Never asks DNS: a lookup made here, outside any sandbox, would carry
+// whatever a run puts in the name to the resolver (and on to a name server anyone can run). So only loopback
+// addresses, localhost and *.localhost, and names /etc/hosts maps to loopback (a dev server's local.* host)
+const isLoopback = (a) => a === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
+async function loopback(host, hostsFile = '/etc/hosts') {
+  const name = host.replace(/^\[|\]$/g, '').toLowerCase();
+  if (isLoopback(name)) return name;
+  if (name === 'localhost' || name.endsWith('.localhost')) return '127.0.0.1';
+  let text = '';
   try {
-    const all = await dns.promises.lookup(host.replace(/^\[|\]$/g, ''), { all: true });
-    if (!all.length || !all.every(({ address }) => address === '::1' || address.startsWith('127.'))) return null;
-    return (all.find((a) => a.family === 4) || all[0]).address;
+    text = await fs.promises.readFile(hostsFile, 'utf8');
   } catch {
     return null;
   }
+  const found = [];
+  for (const line of text.split('\n')) {
+    const [address, ...names] = line.replace(/#.*/, '').trim().split(/\s+/);
+    if (names.map((n) => n.toLowerCase()).includes(name)) found.push(address);
+  }
+  if (!found.length || !found.every(isLoopback)) return null;
+  return found.find((a) => a !== '::1') || found[0];
 }
 
 function startEgressProxy() {
@@ -77,7 +91,8 @@ function startEgressProxy() {
 const run = (cmd, args) => new Promise((resolve, reject) => execFile(cmd, args, { maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60 * 1000 },
   (err, stdout, stderr) => (err ? reject(new Error((stderr || err.message).trim().split('\n').pop())) : resolve(stdout))));
 
-// playwright-core of that version from the registry (outside the sandbox, never the pull request's copy) and its Chromium
+// playwright-core of that version from the registry (outside the sandbox, never the pull request's copy) and its
+// Chromium. Returns the package folder
 async function playwrightOf(version, home) {
   const dir = path.join(home, 'playwright', version);
   const pkg = path.join(dir, 'node_modules', 'playwright-core');
@@ -85,21 +100,61 @@ async function playwrightOf(version, home) {
     await run('npm', ['install', '--prefix', dir, '--no-save', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', `playwright-core@${version}`]);
   }
   await run(process.execPath, [path.join(pkg, 'cli.js'), 'install', 'chromium']);
-  return require(pkg);
+  return pkg;
+}
+
+// Starts browser-server.js in the sandbox and resolves with { wsEndpoint(), close() } once it is listening.
+// script: the server to start (tests pass a stand-in)
+function launchJailed({ pkg, proxyPort, home, denyRead, script = path.join(__dirname, 'browser-server.js'), timeoutMs = 120000 }) {
+  const tmp = path.join(home, 'tmp', 'browser');
+  fs.mkdirSync(tmp, { recursive: true, mode: 0o700 });
+  const [cmd, args] = jail.wrap(process.execPath, [script, pkg, String(proxyPort)], { denyRead, allowWrite: [tmp], ports: '*' });
+  // Only what Chromium needs: none of the server's env (tokens) reaches it
+  const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: process.env.LANG || 'en_US.UTF-8', TMPDIR: tmp };
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('the browser did not start in time')); }, timeoutMs);
+    child.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
+    child.stdout.on('data', (d) => {
+      out += d;
+      const line = out.split('\n')[0];
+      if (!out.includes('\n')) return;
+      clearTimeout(timer);
+      let ws;
+      try {
+        ws = JSON.parse(line).ws;
+      } catch { /* below */ }
+      if (!ws) {
+        child.kill('SIGKILL');
+        return reject(new Error(`the browser did not start: ${line}`));
+      }
+      resolve({ wsEndpoint: () => ws, close: () => child.kill(), child });
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`the browser stopped (${code}): ${err.trim().split('\n').pop() || ''}`));
+    });
+  });
 }
 
 // browserFor(version) -> ws endpoint of a browser server of that version (tests pass their own)
-async function startGateway({ home, browserFor } = {}) {
+// denyRead: what the browser can't read (the same paths a run can't)
+async function startGateway({ home, browserFor, denyRead = [] } = {}) {
   const token = crypto.randomBytes(16).toString('hex');
   let proxy = null;
   const servers = new Map();
   browserFor = browserFor || ((version) => {
     if (!servers.has(version)) {
       const started = (async () => {
+        if (!jail.available()) throw new Error('the browser for AI runs needs the macOS sandbox (sandbox-exec)');
         proxy = proxy || await startEgressProxy();
-        const { chromium } = await playwrightOf(version, home);
-        return chromium.launchServer({ host: '127.0.0.1', port: 0, chromiumSandbox: true, proxy: { server: `http://127.0.0.1:${proxy.address().port}` },
-          args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] });
+        const pkg = await playwrightOf(version, home);
+        const server = await launchJailed({ pkg, proxyPort: proxy.address().port, home, denyRead });
+        // A browser that stopped is started again next time
+        server.child.on('exit', () => servers.delete(version));
+        return server;
       })();
       // A failed start (no network, ...) is tried again next time
       started.catch(() => servers.delete(version));
@@ -140,4 +195,4 @@ async function startGateway({ home, browserFor } = {}) {
   };
 }
 
-module.exports = { versionOf, startEgressProxy, startGateway };
+module.exports = { versionOf, loopback, startEgressProxy, startGateway, launchJailed };

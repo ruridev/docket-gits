@@ -22,7 +22,17 @@ const MAX_BODY = 1024 * 1024;
 // or a comment, refuse the request, so no lexer quirk can hide an operation
 function isRead(method, url, body) {
   if (!url.startsWith('/') || url.startsWith('//')) return false;
-  if (method === 'GET' || method === 'HEAD') return true;
+  // GraphQL only by POST, where the query is checked below; by GET it would ride in the URL unchecked
+  if (method === 'GET' || method === 'HEAD') {
+    // Checked on the decoded path with dot segments refused, so /./graphql or /%67raphql can't pass for another path
+    let p;
+    try {
+      p = decodeURIComponent(url.split('?')[0]);
+    } catch {
+      return false;
+    }
+    return !/(^|\/)\.{1,2}(\/|$)/.test(p) && !/^\/+graphql(?![\w-])/i.test(p);
+  }
   if (method !== 'POST' || url !== '/graphql') return false;
   let doc;
   try {

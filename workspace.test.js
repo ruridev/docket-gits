@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const jail = require('./jail');
 const { agentEnv, runEnv, runTmpOf, agentSettings, agentArgs, findClone, prepareWorkspace, removeWorkspace, workspaceNote, runSetup } = require('./workspace');
 
 const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...a], { cwd, encoding: 'utf8' }).trim();
@@ -183,6 +184,9 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   sh(ws.cwd, 'commit', '-q', '-am', 'local');
   fs.mkdirSync(path.join(ws.cwd, 'node_modules'));
   fs.writeFileSync(path.join(ws.cwd, 'node_modules', 'dep.js'), '');
+  // A .git of the run's own (here a repository folder) is replaced by git's link
+  fs.rmSync(path.join(ws.cwd, '.git'));
+  sh(ws.cwd, 'init', '-q');
   // The clone's head moves on GitHub
   sh(seed, 'commit', '-q', '--allow-empty', '-m', 'more');
   sh(seed, 'push', '-q', origin, 'feature');
@@ -191,6 +195,12 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.equal(again.adminDir, ws.adminDir);
   assert.equal(again.headSha, sh(origin, 'rev-parse', 'feature'));
   assert.equal(sh(again.cwd, 'rev-parse', 'HEAD'), again.headSha);
+  assert.equal(fs.readFileSync(path.join(again.cwd, '.git'), 'utf8'), `gitdir: ${again.adminDir}\n`);
+  // Runs' git config: only the name and email of the user's
+  const gc = fs.readFileSync(path.join(home, 'gitconfig'), 'utf8');
+  assert.match(gc, /^\[user\]\n/);
+  assert.doesNotMatch(gc, /url|insteadOf|extraHeader|credential/i);
+  assert.equal(agentEnv({ PATH: '/bin' }, { home }).GIT_CONFIG_GLOBAL, path.join(home, 'gitconfig'));
   // The run is told where the user's clone is, to copy local settings from
   assert.equal(again.sourceClone, userClone);
   assert.match(workspaceNote(again, pr), new RegExp(`user's own clone of this repository is at ${userClone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(read-only\\)`));
@@ -226,14 +236,96 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.deepEqual(userState(), before);
 });
 
-test('runSetup: runs the repository\'s setup command in the worktree with the server\'s env; failure gives the output tail', async (t) => {
+test('runSetup: nothing to run, or no OS sandbox to run it in, is not an error', async (t) => {
   const cwd = tmpdir(t);
   assert.deepEqual(await runSetup(cwd, ''), { ok: true });
-  assert.deepEqual(await runSetup(cwd, 'echo "$DOCKET_SETUP_T" > out.txt', { env: { ...process.env, DOCKET_SETUP_T: 'secret-ok' } }), { ok: true });
-  assert.equal(fs.readFileSync(path.join(cwd, 'out.txt'), 'utf8').trim(), 'secret-ok');
-  const bad = await runSetup(cwd, 'echo first; echo boom >&2; exit 3');
+  assert.deepEqual(await runSetup(cwd, 'touch ran'), { ok: true, skipped: true });
+  assert.equal(fs.existsSync(path.join(cwd, 'ran')), false);
+});
+
+test('runSetup: runs in the sandbox, with no credentials and the network only through the setup proxy', { skip: !jail.available() && 'macOS only' }, async (t) => {
+  const root = tmpdir(t);
+  const cwd = path.join(root, 'wt');
+  const home = path.join(root, 'home');
+  const secret = path.join(root, 'secret');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(secret);
+  fs.writeFileSync(path.join(secret, 'token'), 'TOKEN');
+  const userconfig = path.join(root, 'npmrc');
+  fs.writeFileSync(userconfig, 'registry=https://registry.npmjs.org/\n');
+  // A stand-in for the setup proxy: the only port the command may reach
+  const proxy = require('node:http').createServer((q, s) => s.end('via proxy'));
+  await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
+  t.after(() => proxy.close());
+  const sandbox = { port: proxy.address().port, proxy: `http://docket:s@127.0.0.1:${proxy.address().port}`, certFile: userconfig, userconfig, denyRead: [secret] };
+  const env = { ...process.env, NPM_TOKEN: 'server-secret', ANTHROPIC_API_KEY: 'claude-key', AWS_SECRET_ACCESS_KEY: 'aws', CLAUDE_CODE_USE_BEDROCK: '1' };
+  const opts = { env, sandbox, home, extra: { DB_URL: 'postgres://localhost/test' } };
+
+  const ok = await runSetup(cwd, [
+    'echo "$DB_URL|$NPM_TOKEN$ANTHROPIC_API_KEY$AWS_SECRET_ACCESS_KEY|$HTTPS_PROXY|$npm_config_userconfig|$SSL_CERT_FILE" > out.txt',
+    `cat ${secret}/token > read.txt 2>&1 || echo denied > read.txt`,
+    `(echo x > ${root}/outside.txt) 2>/dev/null || echo denied > write.txt`,
+    `curl -s -m 3 http://127.0.0.1:${sandbox.port}/ > proxy.txt`,
+    'curl -s -m 3 https://1.1.1.1/ >/dev/null 2>&1 || echo denied > net.txt',
+  ].join('; '), opts);
+  assert.deepEqual(ok, { ok: true });
+  const read = (f) => fs.readFileSync(path.join(cwd, f), 'utf8').trim();
+  assert.equal(read('out.txt'), `postgres://localhost/test||${sandbox.proxy}|${userconfig}|${sandbox.certFile}`);
+  assert.equal(read('read.txt'), 'denied');
+  assert.equal(read('write.txt'), 'denied');
+  assert.equal(fs.existsSync(path.join(root, 'outside.txt')), false);
+  assert.equal(read('proxy.txt'), 'via proxy');
+  assert.equal(read('net.txt'), 'denied');
+
+  // Nothing it starts outlives it
+  await runSetup(cwd, '(sleep 3; touch late.txt) & echo started', opts);
+  await new Promise((r) => setTimeout(r, 3500));
+  assert.equal(fs.existsSync(path.join(cwd, 'late.txt')), false);
+
+  const bad = await runSetup(cwd, 'echo first; echo boom >&2; exit 3', opts);
   assert.equal(bad.ok, false);
   assert.match(bad.output, /boom/);
-  const slow = await runSetup(cwd, 'sleep 5', { timeoutMs: 100 });
+  const slow = await runSetup(cwd, 'sleep 5', { ...opts, timeoutMs: 200 });
   assert.equal(slow.ok, false);
+});
+
+test('runSetup: a pull request\'s .npmrc can\'t name the programs npm runs (git=./x.sh runs even with --ignore-scripts)', { skip: !jail.available() && 'macOS only' }, async (t) => {
+  const root = tmpdir(t);
+  const cwd = path.join(root, 'wt');
+  fs.mkdirSync(cwd);
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'p', version: '1.0.0', dependencies: { dep: 'git+ssh://git@example.com/x/dep.git' } }));
+  fs.writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify({ name: 'p', version: '1.0.0', lockfileVersion: 3, requires: true, packages: {
+    '': { name: 'p', version: '1.0.0', dependencies: { dep: 'git+ssh://git@example.com/x/dep.git' } },
+    'node_modules/dep': { version: '1.0.0', resolved: 'git+ssh://git@example.com/x/dep.git#a151093f2eb7dee1d699cfae7767890767cad630' } } }));
+  fs.writeFileSync(path.join(cwd, 'evil.sh'), '#!/bin/sh\ntouch "$(dirname "$0")/ran"\nexec /usr/bin/git "$@"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(cwd, '.npmrc'), 'git=./evil.sh\nscript-shell=./evil.sh\n');
+  const userconfig = path.join(root, 'npmrc');
+  fs.writeFileSync(userconfig, '');
+  const sandbox = { port: 1, proxy: 'http://docket:s@127.0.0.1:1', certFile: userconfig, userconfig, denyRead: [] };
+  await runSetup(cwd, 'npm ci --ignore-scripts --no-audit --no-fund', { sandbox, home: path.join(root, 'home') });
+  assert.equal(fs.existsSync(path.join(cwd, 'ran')), false);
+});
+
+test('runSetup: a .git a run left in the worktree can\'t hand git a config of its own', { skip: !jail.available() && 'macOS only' }, async (t) => {
+  const root = tmpdir(t);
+  const cwd = path.join(root, 'wt');
+  fs.mkdirSync(cwd);
+  fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'p', version: '1.0.0', dependencies: { dep: 'git+ssh://git@example.com/x/dep.git' } }));
+  fs.writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify({ name: 'p', version: '1.0.0', lockfileVersion: 3, requires: true, packages: {
+    '': { name: 'p', version: '1.0.0', dependencies: { dep: 'git+ssh://git@example.com/x/dep.git' } },
+    'node_modules/dep': { version: '1.0.0', resolved: 'git+ssh://git@example.com/x/dep.git#a151093f2eb7dee1d699cfae7767890767cad630' } } }));
+  fs.writeFileSync(path.join(cwd, 'evil.sh'), '#!/bin/sh\ntouch "$(dirname "$0")/ran"\nexit 1\n', { mode: 0o755 });
+  // What a run could do: a repository of its own whose config names a program, and a .git pointing at it
+  execFileSync('git', ['init', '-q', '--bare', path.join(cwd, '.evil')]);
+  execFileSync('git', ['--git-dir', path.join(cwd, '.evil'), 'config', 'core.sshCommand', path.join(cwd, 'evil.sh')]);
+  fs.writeFileSync(path.join(cwd, '.git'), 'gitdir: .evil\n');
+  const userconfig = path.join(root, 'npmrc');
+  fs.writeFileSync(userconfig, '');
+  const sandbox = { port: 1, proxy: 'http://docket:s@127.0.0.1:1', certFile: userconfig, userconfig, denyRead: [] };
+  const home = path.join(root, 'home');
+  await runSetup(cwd, 'npm ci --ignore-scripts --no-audit --no-fund', { sandbox, home });
+  assert.equal(fs.existsSync(path.join(cwd, 'ran')), false);
+  // ... nor write one
+  await runSetup(cwd, 'echo "gitdir: elsewhere" > .git || true', { sandbox, home });
+  assert.equal(fs.readFileSync(path.join(cwd, '.git'), 'utf8'), 'gitdir: .evil\n');
 });

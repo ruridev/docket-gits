@@ -21,6 +21,15 @@ test('isRead: GET and GraphQL queries read; other methods, mutations and odd req
   assert.equal(isRead('POST', '/graphql', gql('query { viewer { login } } # no mutation here')), false);
   // An escaped \""" inside a block string must not end it early and hide the mutation after it
   assert.equal(isRead('POST', '/graphql', gql('query A { search(query: """\\"""""", type: ISSUE, first: 1) { issueCount } } mutation B { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } } query C { search(query: """x""", type: ISSUE, first: 1) { issueCount } }')), false);
+  // GraphQL only by POST, whose body is checked: a GET or HEAD would carry the query unchecked in the URL
+  for (const m of ['GET', 'HEAD']) {
+    assert.equal(isRead(m, '/graphql?query=mutation%7BaddStar(input:%7BstarrableId:%22x%22%7D)%7BclientMutationId%7D%7D', Buffer.alloc(0)), false, m);
+    assert.equal(isRead(m, '/graphql', Buffer.alloc(0)), false, m);
+    assert.equal(isRead(m, '/GraphQL/?query=x', Buffer.alloc(0)), false, m);
+  }
+  // ... nor under another spelling of the same path
+  for (const p of ['/./graphql', '/x/../graphql', '/%67raphql?query=x', '//graphql', '/%2e/graphql', '/%zz']) assert.equal(isRead('GET', p, Buffer.alloc(0)), false, p);
+  assert.equal(isRead('GET', '/repos/o/r/contents/a%20b.md', Buffer.alloc(0)), true);
   // A query string on /graphql could carry another query
   assert.equal(isRead('POST', '/graphql?query=mutation%7Bx%7D', gql('{ viewer { login } }')), false);
   assert.equal(isRead('POST', '/graphql', gql('mutation { addComment(input:{subjectId:"x", body:"y"}) { clientMutationId } }')), false);

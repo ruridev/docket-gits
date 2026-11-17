@@ -8,7 +8,9 @@ const { execFile, execFileSync, spawn } = require('node:child_process');
 const { MAX_DEPTH, parsePlan, serializePlan, flatten, syncSnapshot, fieldsOf, snapshotFields, mergeRemote, same, validFile } = require('./plans');
 const { createAuth } = require('./auth');
 const { startGateway } = require('./browser');
-const { HOME: DOCKET_HOME, REGISTRIES, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git: serverGit } = require('./workspace');
+const jail = require('./jail');
+const { GITHUB_HOSTS, parseNpmrc, startSetupProxy } = require('./setup-proxy');
+const { HOME: DOCKET_HOME, REGISTRIES, deniedPaths, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git: serverGit } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -750,9 +752,12 @@ function modelOptions(cfg) {
 // clone and hands back patches; compose: writes the text of a post, with no tools at all.
 // Bash runs in the sandbox, so no command list is needed: what a run can't do is decided by the token and the sandbox
 // ws: the run's workspace (see workspace.js), with workdir
-function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG) {
+// repo: the run's repository. Registries are reached only by repositories turned on (repos[repo].network): an
+// allowed registry also takes uploads, so a run could publish what it read with a token of its own
+function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG, repo = '') {
+  const network = cfg.repos?.[repo]?.network === true;
   const env = agentArgs({ ws, workdir: ws.workdir, dataDir: DATA_DIR, envPath: process.env.PATH, deny: mode === 'read' ? ['Write', 'Edit', 'NotebookEdit'] : [],
-    network: { allowLocal: cfg.runLocalhost === true || cfg.runBrowser === true, domains: Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : REGISTRIES } });
+    network: { allowLocal: cfg.runLocalhost === true || cfg.runBrowser === true, domains: network && Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : [] } });
   if (mode === 'compose') return ['--tools', '', '--json-schema', JSON.stringify(POST_SCHEMA), ...env];
   // Every Bash command runs in the sandbox (it can't leave it), so allow them all: without this, claude still asks
   // about commands it can't check up front (shell variables, $(...)), and a run can't answer
@@ -784,9 +789,50 @@ async function withWorkspace(pr, workdir, fn, clone = true) {
   } catch (e) {
     return { ok: false, error: E('workspaceFailed', { message: e.message }) };
   }
-  const setup = await runSetup(ws.cwd, repoTool(config.repos[pr.repo]).setup);
+  const command = repoTool(config.repos[pr.repo]).setup;
+  let sandbox = null;
+  try {
+    sandbox = command?.trim() ? await setupSandbox(pr.repo) : null;
+  } catch (e) {
+    return { ok: false, error: E('setupFailed', { message: `docket-gits could not start the setup sandbox: ${e.message}` }) };
+  }
+  const lease = sandbox && sandbox.lease();
+  const setup = await runSetup(ws.cwd, command, { extra: runEnv(config.runEnv), sandbox: sandbox && { ...sandbox, proxy: lease.url } }).finally(() => lease?.release());
+  if (setup.skipped) console.warn(`setup ${pr.repo}: not run, the setup command needs the macOS sandbox (sandbox-exec)`);
   if (!setup.ok) return { ok: false, error: E('setupFailed', { message: setup.output }) };
   return fn({ ...ws, workdir });
+}
+
+// The setup command's sandbox (runSetup in workspace.js). The proxy starts once; before each setup it is told which
+// hosts it may reach and which of the user's ~/.npmrc tokens to add, and the command gets ~/.npmrc without them.
+// null where there is no OS sandbox
+let setupProxy = null;
+async function setupSandbox(repo = '') {
+  if (!jail.available()) return null;
+  setupProxy = setupProxy || startSetupProxy({ keyDir: path.join(DATA_DIR, 'setup-ca'), certFile: path.join(DOCKET_HOME, 'setup', 'ca.pem'),
+    log: (m) => console.log(`setup proxy: ${m}`) }).catch((e) => {
+    setupProxy = null;
+    throw e;
+  });
+  const proxy = await setupProxy;
+  let text = '';
+  try {
+    text = fs.readFileSync(process.env.npm_config_userconfig || process.env.NPM_CONFIG_USERCONFIG || path.join(os.homedir(), '.npmrc'), 'utf8');
+  } catch { /* no ~/.npmrc */ }
+  const npmrc = parseNpmrc(text);
+  const userconfig = path.join(DOCKET_HOME, 'setup', 'npmrc');
+  fs.mkdirSync(path.dirname(userconfig), { recursive: true });
+  fs.writeFileSync(userconfig, npmrc.config);
+  const cfg = config || DEFAULT_CONFIG;
+  // Even reading can send data out where downloads are counted in public (a package version per bit). So the
+  // public registries runs may reach (repos[repo].network) are the setup command's only for repositories turned
+  // on; otherwise only what ~/.npmrc names (or the default npm registry), and GitHub's download hosts
+  const open_ = cfg.repos?.[repo]?.network === true;
+  const domains = open_ && Array.isArray(cfg.runDomains) ? cfg.runDomains.filter((d) => typeof d === 'string' && /^[\w.*-]+$/.test(d)) : [];
+  const npmDefault = /(^|\n)\s*registry\s*=/.test(npmrc.config) ? [] : ['registry.npmjs.org'];
+  await proxy.update({ auth: npmrc.auth });
+  const hosts = [...(open_ ? REGISTRIES : []), ...domains, ...npmDefault, ...GITHUB_HOSTS, ...npmrc.hosts];
+  return { port: proxy.port, lease: () => proxy.lease(hosts), certFile: proxy.certFile, userconfig, denyRead: deniedPaths(DATA_DIR) };
 }
 
 // Agents must run inside a project, never in the home directory or / (their tools could reach everything)
@@ -1915,7 +1961,7 @@ function waitForExit(pid) {
 // One gateway for every run, started the first time a run needs it
 let browserGateway = null;
 function browserEndpoint() {
-  browserGateway = browserGateway || startGateway({ home: DOCKET_HOME }).catch((e) => {
+  browserGateway = browserGateway || startGateway({ home: DOCKET_HOME, denyRead: deniedPaths(DATA_DIR) }).catch((e) => {
     browserGateway = null;
     throw e;
   });
@@ -1939,7 +1985,7 @@ function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang
       const mode = forced || (readOnly ? 'read' : 'apply');
       // Runs in a worktree are told what it lacks and where the user's clone is (a post's text needs no folder)
       const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr, { browser: Boolean(browser) })}` : prompt, lang);
-      const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, ws)];
+      const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, ws, config, pr?.repo)];
       if (resume) args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
       const base = path.join(LOG_DIR, logName);
@@ -2638,4 +2684,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { reapLeftovers, reapWorktree, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { setupSandbox, reapLeftovers, reapWorktree, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
