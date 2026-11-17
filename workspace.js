@@ -70,6 +70,10 @@ function agentEnv(env, { home = HOME, extra = {} } = {}) {
   const cache = path.join(home, 'cache');
   return {
     ...out,
+    // claude's Bash tool stops a command after 2 minutes by default, too short for a test suite that boots an app;
+    // runEnv can change these
+    BASH_DEFAULT_TIMEOUT_MS: '300000',
+    BASH_MAX_TIMEOUT_MS: '600000',
     ...extra,
     // gh sends every request to the gatekeeper, which adds the user's token; the placeholder only makes gh try
     GH_TOKEN: 'docket-gits',

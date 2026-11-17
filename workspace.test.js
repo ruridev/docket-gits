@@ -329,3 +329,10 @@ test('runSetup: a .git a run left in the worktree can\'t hand git a config of it
   await runSetup(cwd, 'echo "gitdir: elsewhere" > .git || true', { sandbox, home });
   assert.equal(fs.readFileSync(path.join(cwd, '.git'), 'utf8'), 'gitdir: .evil\n');
 });
+
+test('agentEnv: gives the Bash tool a longer time limit by default, which runEnv can change', () => {
+  const env = agentEnv({ PATH: '/bin', BASH_DEFAULT_TIMEOUT_MS: '1' }, { home: '/d' });
+  assert.equal(env.BASH_DEFAULT_TIMEOUT_MS, '300000');
+  assert.equal(env.BASH_MAX_TIMEOUT_MS, '600000');
+  assert.equal(agentEnv({ PATH: '/bin' }, { home: '/d', extra: { BASH_DEFAULT_TIMEOUT_MS: '120000' } }).BASH_DEFAULT_TIMEOUT_MS, '120000');
+});
