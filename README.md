@@ -9,199 +9,55 @@ docket-gits is a local web app for code review with an AI agent. It collects the
 
 Everything runs on your machine. There are no dependencies to install, and state is kept in plain JSON files.
 
-## Requirements
-
-- Node.js 22 or later
-- macOS or Linux (Windows is not supported). On Linux the repository setup command and the browser for Playwright are not available, since they need macOS `sandbox-exec`
-- [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`
-- `claude` (Claude Code), logged in. AI runs use its [sandbox](https://docs.anthropic.com/en/docs/claude-code/sandboxing), which is built in on macOS and needs `bubblewrap` and `socat` on Linux; runs refuse to start without it
-- `git`. AI runs work in a git worktree of the pull request; tests that need a database or other service use the one you already run on `localhost` (turn on **Let AI runs use local ports** in Claude settings for that)
-
 ## Getting started
 
-1. Clone the repository and start the server:
+Needs Node.js 22+, macOS or Linux, and a logged-in [GitHub CLI](https://cli.github.com/) and [Claude Code](https://claude.com/claude-code).
 
-   ```bash
-   git clone https://github.com/ruridev/docket-gits.git
-   cd docket-gits
-   npm start
-   ```
+```bash
+git clone https://github.com/ruridev/docket-gits.git
+cd docket-gits
+npm start
+```
 
-   There are no dependencies, so there is no `npm install`.
-
-2. Open http://localhost:4649 and create your account (see [Signing in](#signing-in)).
-3. Read the notice about the risks and agree to it. Nothing that starts `claude` works until you do.
-4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
-   - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.
-   - **Claude settings**: pick a review skill per repository, or use the built-in review prompt. You can also choose whether AI runs may use local ports (for test databases) and which repositories' runs may reach package registries to install dependencies (none by default); see [How AI runs are contained](#how-ai-runs-are-contained).
-5. Press **Refresh** in the left sidebar. Review requests show up under **Requested**.
-
-| Environment variable | Default | |
-| --- | --- | --- |
-| `PORT` | `4649` | Port to listen on |
-| `DOCKET_DATA` | `./data` | Where settings, state and logs are stored (created with mode 0700) |
-| `DOCKET_HOME` | `~/.docket-gits` | docket-gits' clones of your repositories, the worktree of each pull request, and the package cache of AI runs |
-| `DOCKET_FRAME_ANCESTORS` | `'self' http://localhost:4600 http://127.0.0.1:4600` | Pages allowed to embed docket-gits in a frame (`Content-Security-Policy: frame-ancestors`); the default is the docket portal. Set `"'self'"` if you don't use docket |
-
-If you start the server without a login shell (from launchd, for example), `gh` and `claude` may not be on `PATH` (`spawn claude ENOENT`). Add the directories that `which gh claude` prints to `PATH`.
+Open http://localhost:4649, create your account, then set your working directory and repositories in **Settings**. Details: [docs/setup.md](docs/setup.md).
 
 ## How AI runs are contained
 
-AI runs read pull requests that anyone can write, so they are kept from doing anything you haven't checked:
-
-- **The pull request's own Claude settings are not loaded.** Runs start Claude with your user settings only (`--setting-sources user`), so a `.claude/settings.json`, hook, skill or plugin committed in the pull request can't run commands outside the sandbox or widen it.
-- **Each pull request gets a git worktree.** docket-gits keeps a clone of each repository under `~/.docket-gits/repos` (borrowing the objects of your own clone under the working directory, if it finds one, so it is quick) and makes a worktree per pull request under `~/.docket-gits/worktrees`, on a branch `docket/pr-<number>`. Each run starts it at the pull request head. Untracked files such as installed dependencies stay, so they are installed once per pull request. The worktree is removed when the pull request leaves the board. Your own clones are never written to.
-- **Runs read GitHub only through docket-gits.** `gh` in a run sends every request to docket-gits, which lets reads through with your `gh` login and refuses anything that writes (any method but `GET`, GraphQL by `GET`, and GraphQL mutations). Runs hold no token, and need none set up.
-- **Runs can't publish.** Posting reviews, pushing, replying and creating issues or pull requests are done by docket-gits itself with your `gh` login, after you check them on the board.
-- **Runs work in Claude Code's sandbox.** They can't read credentials, reach the internet, or write outside their worktree and the package cache. By default they reach no package registry and no local port. Local ports can be turned on if your tests need a database or other service you run as usual, and package registries per repository, under **Settings → Agent settings → Claude settings**. The sandbox tells hosts apart, not what is sent to them: a run can publish to an allowed registry with a token of its own (`npm publish`, `gem push`, `cargo publish`), and so send out anything it read. Turn registries on only for repositories where everyone who can open a pull request or comment is trusted; runs of other repositories can't install dependencies, and use only what is already in their worktree. A host that fetches URLs for you is a way out to any host: the Go module proxy (`proxy.golang.org`) is not allowed by default for that reason, so add it only for repositories you trust. Tests that start containers themselves (for example `docker compose run`) can't run inside the sandbox: start the services first.
-- **Dependencies that need your credentials are installed by a setup command.** A run can't read `~/.npmrc` or your SSH keys, so it can't install from a private registry (for example GitHub Packages). Give the repository a setup command under **Settings → Agent settings → Claude settings** (for example `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile`): docket-gits runs it in the worktree before each run, and the run starts with the dependencies in place. If it fails, the run stops with its output. What it installs and how is up to the pull request (the lockfile, `.npmrc`, install code) and to files earlier runs left in the worktree, so the command runs in a sandbox of its own (macOS `sandbox-exec`), like a run: it can't read credentials (`~/.npmrc` included) or docket data, can't open apps or send Apple events, writes only the worktree, the package cache and its own temp folder, and reaches the network only through docket-gits. docket-gits lets it reach the registries in your `~/.npmrc` (or the npm registry when it names none) and GitHub's download hosts (git dependencies as tarballs, GitHub Packages downloads); the other package registries and the hosts you allow for runs only for repositories whose runs may reach registries. For a registry you sign in to in `~/.npmrc`, docket-gits adds your token itself: it ends TLS with a certificate authority of its own (made in `data/`, trusted only by the setup command through `NODE_EXTRA_CA_CERTS`), and it does so for every host: only reads (GET and HEAD, without a body) go through, with your token added for the registry it belongs to, so the command never holds the token and can upload nothing anywhere. The command gets your `~/.npmrc` without its tokens, the env vars of runs (not the server's), and a proxy address that works only while it runs. Credentials other than `~/.npmrc` tokens (SSH keys for `git+ssh` dependencies, `~/.bundle/config`, ...) are not available to it. Without `sandbox-exec` (Linux) the setup command is not run, and the run goes on without it. Reading is still a way out where downloads are counted in public (a package version fetched per bit of a secret): a command that runs the pull request's code (install scripts, a `Gemfile`, a `yarnPath`, `pip install -e`) can send out slowly what it reads, such as other files of yours or the environment of your other processes, which macOS lets any process of your user read. So give the setup command flags that run nothing from the pull request: `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile` (checked against the pull request's `.npmrc`, `pnpm-workspace.yaml`, config dependencies and git dependencies), or `npm ci --ignore-scripts` (docket-gits pins the programs npm runs, such as `git` and `script-shell`, which a `.npmrc` could otherwise point at the pull request's files). Count any other command (yarn, bundler, pip, ...) as running the pull request's code, and use it only for repositories where everyone who can open a pull request or comment is trusted.
-
-`npm run check:sandbox` checks all this with one short real run.
-
-## Signing in
-
-The first time you open docket-gits, it asks you to create an account: a name and a password of 8 characters or more. There is one account and no email, because nothing is ever sent out and the account only guards this app on this PC. From then on every API call needs the signed-in session.
-
-- Creating the account needs a setup code. While there is no account, the server prints a link with the code when it starts (`Create the account: http://localhost:4649/?setup=...`), and the code is also in `data/setup-code` (readable by your user only). Opening the link fills in the code; the code is removed once the account exists.
-- The account is kept in `data/auth.json` (0600): a scrypt hash of the password and the secret that signs the session cookie. A session lasts 30 days and survives restarts.
-- Browsers send `localhost` cookies to every port, so the cookie alone is not a session: signing in also gives the page an API token, kept in this browser's storage for this address only and sent with every API call. Another browser or a cleared storage asks you to sign in again.
-- **Sign out** ends every session of this account, in every browser.
-- Forgot the password? Run `node server.js --reset-password` in this folder. It removes only the account and prints a new setup code; your data stays.
-- docket, docket-gits and docket-jobs each have their own account. Inside the docket portal, each tool shows its own sign-in page the first time.
-
-## How it works
-
-### Review
+Anyone who can open a pull request or write a comment can put instructions in it for the AI. So only the server holds your `gh` login: AI runs work in a sandbox with no credentials, read GitHub through a proxy that refuses writes, and nothing is posted or pushed until you check it on the board.
 
 ```mermaid
-flowchart LR
-  R[Requested] -->|Review| V[Reviewing]
-  V -->|AI runs your skill| D[Needs decision]
-  D -->|agree / disagree per finding, then Comment| C[Done]
-  R -->|Skip| C
-  D -->|Skip| C
-  C -->|review requested again| R
+flowchart TB
+  B["Your browser<br/>session cookie + API token"]
+  GH["GitHub API"]
+  REG["Package registries"]
+  subgraph S["docket-gits server: 127.0.0.1 only, holds your gh login"]
+    API["API and sign-in<br/>Host check, API token, CSP"]
+    PUB["Publish<br/>push and post after you approve"]
+    GK["GitHub gatekeeper<br/>reads only, adds your token"]
+    SP["Setup proxy<br/>own CA, GET and HEAD only"]
+    EP["Browser egress proxy<br/>loopback hosts only"]
+  end
+  subgraph J["Sandboxed: no credentials, no docket-gits data"]
+    RUN["AI run, claude -p<br/>Claude Code sandbox, no token"]
+    SET["Setup command<br/>sandbox-exec"]
+    PW["Browser for Playwright<br/>sandbox-exec"]
+  end
+  B --> API
+  PUB --> GH
+  RUN -->|gh over a Unix socket| GK --> GH
+  SET --> SP --> REG
+  PW --> EP
+  RUN -.->|only repositories you allow| REG
 ```
 
-1. **Review** runs your skill (for example `claude -p "/<skill> <args>"`) and tells it not to post, but to return its findings as JSON.
-2. You decide on each finding:
-   - **Agree**: it is posted. A reason you add is reflected in the text.
-   - **Disagree with a reason**: your reason is posted as your own opinion, marked with `🙅💭`.
-   - **Disagree without a reason**: nothing is posted.
-3. **Comment** has a new AI session with no tools write the text from the findings and your decisions only (it never sees the pull request), and docket-gits posts it as one review with your `gh` login.
+The server listens on `127.0.0.1` only. Don't run docket-gits on a PC you share with other people. Details and remaining risks: [docs/SECURITY.md](docs/SECURITY.md).
 
-The board lists open pull requests matching `user-review-requested:@me` (requests to a team are not included). It fetches every 5 minutes by default while the page is open (you can limit it to certain hours in **Settings → Refresh**) (and right away when you come back to it), and the **Refresh** button fetches at any time. Each fetch lists the pull requests first and reads full details only for those updated since the last fetch. A pull request comes back to **Requested** when a review is requested again, or when the author has answered all of your comments.
+## Documentation
 
-You can drag cards between lanes. Dragging to **Done** skips the pull request, and dragging from **Done** to **Reviewing** reviews it again.
-
-On both boards, **+** in the sidebar adds filters: repository, author, approved, merged, labels and milestone. Each tab keeps its own filters in this browser.
-
-### Get reviewed
-
-```mermaid
-flowchart LR
-  M[My PR / Has comments] -->|Self-review| R[Running]
-  M -->|Address comments| T[Triage each comment]
-  T -->|Have the AI plan| R
-  R --> P[Needs decision]
-  P -->|agree / disagree, then Comment| A[Running: fix and commit]
-  A --> K[Check the result]
-  K -->|Publish: push, open, post, reply| M
-```
-
-- **Self-review** runs your self-review skill. Findings you agree with are fixed; after you check the result, they are posted, the fixes pushed, and each one answered with the commit SHA.
-- **Address comments** first lists the unanswered comments *without* the AI, so you form your own view before reading the AI's. For each one you agree, disagree (with a reason) or skip.
-- **Have the AI plan** returns a plan per comment without changing anything: fix, reply, defer, split into another pull request, create a follow-up issue, or rebut (when the AI thinks your disagreement is wrong).
-- You review the plans, then **Comment** has the AI carry them out in the pull request's worktree: it fixes, runs the tests and commits, and writes the replies, issues and split pull requests. It can't publish anything itself.
-- **Check and publish** shows what it made: the commits with their diff, the replies, the issues and the Draft pull requests. Changes to CI or repository settings (`.github/`, `.gitattributes`, ...) and executable files are flagged and need an extra confirmation, since they run with the repository's secrets once pushed. **Publish** pushes exactly those commits (never forced; it stops if the branch moved since the run), then creates the issues and pull requests and posts the replies with your `gh` login. If something fails, publishing again does only the rest.
-
-A comment counts as unanswered while you are not the last one to have written in its thread. Fix runs on your own pull requests go one at a time per repository.
-
-### Roadmap
-
-A plan is one Markdown file. Heading depth is the issue tree, the text under a heading is the issue description, and attributes go in `{...}` at the end of the heading:
-
-```markdown
-# Notification settings screen {issue=#314 start=2026-11-05 end=2026-11-13 @alice labels=backend,ui sprint="Sprint 12"}
-
-Description
-
-## API {start=2026-11-05 end=2026-11-07}
-
-## Docs {issue=#41 repo=acme/docs}
-```
-
-- The first time you open a GitHub Project, choose which of its Date fields hold the start and end dates, and which Iteration field holds the plan's iteration (`sprint=` in the Markdown). Nothing is guessed from field names, and **Field settings** changes the choice later. A field left as **Not used** stays in the plan only.
-- A Project without Date fields can still be planned. Add Date fields to it later and choose them in **Field settings**: the plan's dates then show as changes, and the next **Push changes** writes them to GitHub.
-- Filters also offer the Project's own fields: text (contains), number and date (range), single select and iteration.
-- Edit plans on a timeline: drag bars to move them or change their dates, add sub-issues, or import existing issues by URL.
-- **Apply to GitHub** creates the issues (parents first), links sub-issues and can add them to a GitHub Project with dates and iteration. **Push changes** updates them later.
-- Changes made on GitHub are pulled back in. A field changed on both sides is shown as a conflict for you to resolve, and pushing stops instead of overwriting newer changes on GitHub.
-- Plans are stored under `~/docket-plans` by default, one folder per GitHub Project, in a git repository so you can see what changed.
-
-## Configuration
-
-All settings are in **Settings**, from the account menu at the top right. They are saved when you press **Save**, and can be exported to and imported from `docket-settings.json`.
-
-- **Execution & logs**: how many runs at once (2), how long to keep logs (30 days).
-- **Work targets**: working directory, repositories (each can have its own working directory), pull request authors to show, how long merged and done pull requests stay on the board.
-- **Shared prompts**: the built-in review and address-comments prompts, for repositories without a skill of their own.
-- **Claude settings**: model, effort, and the skills per repository for review, self-review and addressing comments.
-- **Roadmap**: GitHub Projects, iterations and periods to list, plan folder.
-- **Refresh**: how often the screen and GitHub are refreshed, and during which hours.
-- **Language**: display language (English / 日本語 / 한국어), the language the AI writes in, a language per pull request author, and the agree / disagree marks.
-- **Theme** and **Terms** (lane names).
-
-Skill arguments can use `{pr-number}`, `{pr-url}`, `{repo-name}`, `{owner-name}` and `{full-repo-name}`, for example `{pr-number} --repo {repo-name}`.
-
-### Claude
-
-- Skills are read from `.claude/skills` in the working directories and your home directory.
-- Every run works in the pull request's worktree (see [How AI runs are contained](#how-ai-runs-are-contained)), with your working directory added read-only so its other repositories can be read. Its skills are passed to the run as a plugin (still invoked as `/<skill>`); the settings, hooks, skills and plugins in the pull request's own `.claude/` are not loaded (its `CLAUDE.md` still is, as text like the rest of the code). Bash commands run in Claude Code's sandbox and need no allow list; `allowed-tools` in a skill is not needed for docket-gits (it still applies when you use the skill yourself).
-- Steps of a skill that write outside the worktree (for example `git fetch` or `git worktree add` in a clone under your working directory) fail. The worktree is already at the pull request head, with the base branch fetched (`origin/<base>`), so skills can work in the current directory.
-- Steps that publish (posting, pushing, replying, opening pull requests, creating issues) fail too, since `gh` in a run can only read. docket-gits tells fix runs to hand those back instead, and publishes them after you check them.
-
-### Several GitHub accounts
-
-docket-gits uses whichever account is active in `gh`: it fetches, posts and pushes as that account (pushes go over HTTPS with `gh`'s credentials), and AI runs read GitHub as that account through docket-gits. To switch, make sure nothing is running, run `gh auth switch`, then press **Refresh**.
-
-`data/` is not split per account. To keep accounts apart, run a second instance:
-
-```bash
-DOCKET_DATA=~/docket-data-other PORT=4650 node server.js
-```
-
-## Security
-
-docket-gits runs an AI agent on pull requests that anyone can write, so it assumes the agent can be steered by them (prompt injection) and limits what the agent can reach instead of what it is told:
-
-- **The agent can't write to GitHub.** Its `gh` reaches GitHub only through docket-gits, which lets reads through with your `gh` login and refuses every write; the agent holds no token. Posting, pushing, replying and creating issues or pull requests are done by docket-gits itself, after you approve them on the board.
-- **The agent runs in a sandbox.** Its Bash commands run in [Claude Code's sandbox](https://docs.anthropic.com/en/docs/claude-code/sandboxing): it can't read credential stores (`~/.ssh`, `~/.config/gh`, the macOS keychain, `~/.aws`, `~/.netrc`, `~/.npmrc`, `~/.gitconfig` (runs get a copy with only your name and email), ...), `data/`, or the data of docket and docket-jobs in their default places (so a run can't use their sign-in to reach them on local ports), it can reach no host but, if allowed, local ports and the package registries you turned on for that repository, and it can write only to its worktree, to what a commit needs in docket-gits' clone, and to the package cache. It can't change that clone's git config or hooks, or any branch outside `docket/`. Runs refuse to start if the sandbox is unavailable. Claude's own tools follow the same rules: reading those paths and editing your working directory are denied, web fetch and search are off, and your MCP servers are not loaded. Only an allow list of environment variables reaches a run, so tokens in the server's environment don't (`AWS_*` and `GOOGLE_*` only when Claude itself uses Bedrock or Vertex). The pull request's `.claude/` settings, hooks and plugins are not loaded. `npm run check:sandbox` checks all this with a real run.
-- **What is pushed is what you checked.** docket-gits reads the run's commits from its clone, checks that they build on the pull request head, shows them, and pushes exactly those commits from that clone without force. Agent runs never run git hooks (`core.hooksPath` is `/dev/null`).
-- **Check before you publish.** The agent's commits are code you push to your repository: read the diff. Changes to CI or repository settings and executable files are flagged and need an extra confirmation, because they run with the repository's secrets once pushed. Protect your default branches.
-- **Comments that anyone can write are read only by runs that change nothing** (review, self-review, fix plan). A fix run starts a new session that gets only the plan you approved (or, with **Follow PR comments**, your own last comment, which docket-gits fetches by your login) and the code. The plan was written by an AI that read the comments, so read it before you approve it. A post is written by a run with no tools that sees only the findings and your decisions.
-- **What a run can still do:** read what your `gh` login can read on GitHub and the files your user can read outside the denied paths (for example other repositories in your working directory, shell history, or other tools' settings in your home directory; if you keep docket or docket-jobs data somewhere else, deny it with `DOCKET_PORTAL_DATA` / `DOCKET_JOBS_DATA_DIR` in docket-gits' environment), reach the local ports you allow (a local service without authentication would be reachable), send what it read to the package registries you turned on for the repository (by publishing with a token of its own), and put what it read into the text it hands back. Only configure repositories you trust, and read findings, replies and diffs before you publish them.
-- **Give AI runs a browser for Playwright** (off by default) starts Chromium for runs outside Claude Code's sandbox (Chromium can't start inside it on macOS), so docket-gits puts the browser and its Playwright server in a sandbox of their own (macOS `sandbox-exec`): they can't read what a run can't (credentials, docket data), write only their temp folder, can't open apps or send Apple events, and reach only loopback, with page traffic going through a proxy that lets through only hosts resolving to loopback. Chromium's own sandbox can't start inside another macOS sandbox, so it is off there; the outer sandbox is the fence. Without `sandbox-exec` (Linux) there is no browser, and runs are told so.
-- **AI runs cost money.** Costs are shown per pull request and in total.
-- The server listens on `127.0.0.1` only, and rejects requests from other web pages. The API needs the signed-in session (see [Signing in](#signing-in)); a program running as your user can still read `data/`, so this is no defense against malware on your account. Don't run docket-gits on a PC you share with other people.
-- Fix runs may edit files under `.claude/skills` of their worktree without asking only when **Let fix runs edit .claude/skills** is on in Claude settings (off by default), so an instruction hidden in a comment can't slip into a skill unnoticed; such edits are part of the commits you check before publishing.
-- Importing `docket-settings.json` never changes skill edits or local folders (working directories, plan folder). **Extra claude args** and **Read-only tools** were removed: saved values are ignored and dropped on the next save.
-- `data/` (settings, state, logs, results waiting to be published) is readable only by you (0700, files 0600).
-- Found a security problem? Please report it privately through [GitHub's private vulnerability reporting](https://github.com/ruridev/docket-gits/security/advisories/new), not in a public issue.
-
-## Related
-
-- [docket](https://github.com/ruridev/docket): one page to open, start and stop the local web tools on your PC.
-- [docket-jobs](https://github.com/ruridev/docket-jobs): manage the background jobs that start with your PC.
-
-## Development
-
-```bash
-npm test
-npm run check:sandbox   # one short real Claude run: checks what runs can and can't reach
-```
-
-The whole app is `server.js`, `workspace.js` (where and how AI runs work), `github-proxy.js` (their read-only way to GitHub), `publish.js` (checking and publishing their work), `browser.js` (the browser for Playwright), `jail.js` and `setup-proxy.js` (the sandbox and the way out of the setup command and the browser) and `index.html`, with no build step.
+- [Setup](docs/setup.md): requirements, first run, environment variables
+- [Usage](docs/usage.md): signing in, the boards, settings
+- [Security](docs/SECURITY.md): how AI runs are contained, and how to report a vulnerability
+- [Development](docs/development.md): tests and code layout
 
 ## License
 
