@@ -262,7 +262,7 @@ test('runSetup: runs in the sandbox, with no credentials and the network only th
   const opts = { env, sandbox, home, extra: { DB_URL: 'postgres://localhost/test' } };
 
   const ok = await runSetup(cwd, [
-    'echo "$DB_URL|$NPM_TOKEN$ANTHROPIC_API_KEY$AWS_SECRET_ACCESS_KEY|$HTTPS_PROXY|$npm_config_userconfig|$SSL_CERT_FILE" > out.txt',
+    'echo "$DB_URL|$NPM_TOKEN$ANTHROPIC_API_KEY$AWS_SECRET_ACCESS_KEY|$HTTPS_PROXY|$npm_config_userconfig|$SSL_CERT_FILE|$CI" > out.txt',
     `cat ${secret}/token > read.txt 2>&1 || echo denied > read.txt`,
     `(echo x > ${root}/outside.txt) 2>/dev/null || echo denied > write.txt`,
     `curl -s -m 3 http://127.0.0.1:${sandbox.port}/ > proxy.txt`,
@@ -270,7 +270,7 @@ test('runSetup: runs in the sandbox, with no credentials and the network only th
   ].join('; '), opts);
   assert.deepEqual(ok, { ok: true });
   const read = (f) => fs.readFileSync(path.join(cwd, f), 'utf8').trim();
-  assert.equal(read('out.txt'), `postgres://localhost/test||${sandbox.proxy}|${userconfig}|${sandbox.certFile}`);
+  assert.equal(read('out.txt'), `postgres://localhost/test||${sandbox.proxy}|${userconfig}|${sandbox.certFile}|true`);
   assert.equal(read('read.txt'), 'denied');
   assert.equal(read('write.txt'), 'denied');
   assert.equal(fs.existsSync(path.join(root, 'outside.txt')), false);

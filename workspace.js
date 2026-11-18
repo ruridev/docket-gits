@@ -339,7 +339,9 @@ function runSetup(cwd, command, { env = process.env, extra = {}, timeoutMs = 10 
   // the proxy, so tools trust its authority only
   const base = Object.fromEntries(Object.entries(agentEnv(env, { home, extra })).filter(([k]) => !/^(ANTHROPIC_|CLAUDE_|AWS_|GOOGLE_|VERTEX_|CLOUD_ML_)/.test(k) || k in extra));
   const ca = sandbox.certFile;
-  const setupEnv = { ...base, TMPDIR: tmp, npm_config_userconfig: sandbox.userconfig,
+  // CI: no terminal to answer prompts. pnpm asks before replacing a node_modules installed with another store
+  // (and pnpm 10 reads its confirmModulesPurge setting from no env var or user config), then gives up
+  const setupEnv = { ...base, CI: 'true', TMPDIR: tmp, npm_config_userconfig: sandbox.userconfig,
     NODE_EXTRA_CA_CERTS: ca, SSL_CERT_FILE: ca, CURL_CA_BUNDLE: ca, GIT_SSL_CAINFO: ca, REQUESTS_CA_BUNDLE: ca, PIP_CERT: ca,
     ...Object.fromEntries(['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'npm_config_proxy', 'npm_config_https_proxy'].map((k) => [k, proxy])),
     NO_PROXY: '', no_proxy: '', ALL_PROXY: '', all_proxy: '',
