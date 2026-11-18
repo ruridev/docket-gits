@@ -594,6 +594,9 @@ function unverifiedHtml(e) {
     : s.status === 'failed' ? `<p style="color:var(--danger)">${esc(errText(s.error))}</p>${suggest}`
     : ['queued', 'running'].includes(s.status) ? `<p class="muted">${tr('unv.running')}</p>`
     : s.status === 'applied' ? `<p>${tr('unv.applied')}</p>`
+    : !s.setup && s.run ? `<p>${esc(s.reason)}</p>
+      <div class="muted">${tr('unv.run')}</div><pre class="raw">${esc(s.run)}</pre>
+      <p>${tr('unv.runWarn')}</p><button data-setup-rerun>${tr('unv.rerun')}</button>`
     : !s.setup ? `<p>${esc(s.reason || tr('unv.noChange'))}</p>`
     : `<p>${esc(s.reason)}</p>
       <div class="muted">${tr('unv.current')}</div><pre class="raw">${esc(s.current || tr('unv.none'))}</pre>
@@ -607,9 +610,10 @@ function unverifiedHtml(e) {
 }
 // Clicks on the buttons of unverifiedHtml. true: handled
 async function setupClick(t, key) {
-  const action = t.matches('[data-setup-suggest]') ? 'suggest' : t.matches('[data-setup-apply]') ? 'apply' : null;
+  const action = t.matches('[data-setup-suggest]') ? 'suggest' : t.matches('[data-setup-apply]') ? 'apply' : t.matches('[data-setup-rerun]') ? 'rerun' : null;
   if (!action) return false;
   if (action === 'apply' && !confirmTwice(t, `setup:${key}`, tr('unv.confirmApply'))) return true;
+  if (action === 'rerun' && !confirmTwice(t, `setup:${key}`, tr('unv.confirmRerun'))) return true;
   try {
     await api(`/api/setup/${action}`, { method: 'POST', body: { key } });
     await load();

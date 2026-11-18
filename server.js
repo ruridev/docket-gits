@@ -1275,12 +1275,12 @@ function finishPost(key, res) {
   updateEntry(key, { status: 'commented', commentedAt: Date.now(), postedUrl: res.url || null, postRaw: res.result || null, skipped: false });
 }
 
-function enqueueReview(key) {
+function enqueueReview(key, hint = '') {
   const entry = state.prs[key];
   const mapping = repoTool(config.repos[entry.pr.repo]);
   const cwd = repoCwd(entry.pr.repo);
   const runId = newRunId();
-  const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'));
+  const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'), hint);
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
@@ -1310,7 +1310,10 @@ function setupSuggestionOf(res, current) {
   const parsed = extractTagJson(res.result, 'docket-setup');
   const setup = typeof parsed?.setup === 'string' && parsed.setup.trim() ? parsed.setup.trim() : null;
   if (!parsed || (setup && (/[\r\n]/.test(setup) || setup.length > 4000))) return { status: 'failed', current, error: E('resultParseFailed') };
-  return { status: 'done', current, setup: setup === current ? null : setup, reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 2000) : '' };
+  const result = { status: 'done', current, setup: setup === current ? null : setup, reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 2000) : '' };
+  // run: how the review can run the checks itself, offered when no setup command is needed
+  const run = typeof parsed.run === 'string' ? parsed.run.trim().slice(0, 2000) : '';
+  return !result.setup && run ? { ...result, run } : result;
 }
 
 // Wait for claude started by the previous server process to exit and collect its result
@@ -1446,11 +1449,11 @@ function skipThreads(key, triage) {
 }
 
 // mode: 'self' (self-review) / 'fix' (plan for handling comments; triage: human pre-judgment)
-function enqueueMine(key, mode, triage = null) {
+function enqueueMine(key, mode, triage = null, hint = '') {
   const entry = state.mine[key];
   const mapping = repoTool(config.repos[entry.pr.repo]);
   const cwd = repoCwd(entry.pr.repo);
-  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt')) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'));
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt'), hint) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'));
   const runId = newRunId();
   updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
@@ -1738,7 +1741,7 @@ async function handle(req, res) {
   }
 
   // A setup command for what the card's last review could not check: proposed by AI, applied only by the user
-  if (req.method === 'POST' && ['/api/setup/suggest', '/api/setup/apply'].includes(url.pathname)) {
+  if (req.method === 'POST' && ['/api/setup/suggest', '/api/setup/apply', '/api/setup/rerun'].includes(url.pathname)) {
     const target = own(mapOf(String(body.key)), body.key);
     if (!target) return send(res, 404, { error: 'not found' });
     const s = target.setupSuggestion;
@@ -1746,6 +1749,14 @@ async function handle(req, res) {
       if (!hasResult(target) || !target.unverified?.length) return send(res, 409, { error: E('cannotSuggestSetup') });
       if (suggesting(target)) return send(res, 409, { error: E('running') });
       enqueueSetupSuggestion(body.key);
+      return send(res, 200, { ok: true });
+    }
+    // No setup command needed: run the review again, told once how to run the checks (the user read it first)
+    if (url.pathname === '/api/setup/rerun') {
+      if (s?.status !== 'done' || s.setup || !s.run || !hasResult(target)) return send(res, 409, { error: E('cannotApplySetup') });
+      if (!body.key.startsWith('mine:')) enqueueReview(body.key, s.run);
+      else if (target.mode === 'self' && repoTool(config.repos[target.pr.repo]).selfSkill) enqueueMine(body.key, 'self', null, s.run);
+      else return send(res, 409, { error: E('cannotApplySetup') });
       return send(res, 200, { ok: true });
     }
     if (s?.status !== 'done' || !s.setup) return send(res, 409, { error: E('cannotApplySetup') });
