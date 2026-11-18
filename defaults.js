@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
   refreshSeconds: 5,
   // How many days to keep showing merged PRs that still have my review request (0 hides them)
   mergedDays: 7,
-  maxConcurrent: 2,
+  maxConcurrent: 10,
   // Empty = everyone. If set, only PRs by these authors are shown (e.g. ["alice", "dependabot[bot]"])
   authors: [],
   // { "owner/name": { skill: "be-review", args: "{pr-number}", cwd: "", selfSkill: "", selfArgs: "", fixSkill: "", fixArgs: "", setup: "" } }

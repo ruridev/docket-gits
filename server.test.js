@@ -639,9 +639,9 @@ test('i18n: every language has the same keys and all server error codes are tran
 test('concurrencyLimit: empty, 0 or invalid gives the default, negative gives 1', () => {
   assert.equal(concurrencyLimit(3), 3);
   assert.equal(concurrencyLimit('3'), 3);
-  assert.equal(concurrencyLimit(''), 2);
-  assert.equal(concurrencyLimit(0), 2);
-  assert.equal(concurrencyLimit(undefined), 2);
+  assert.equal(concurrencyLimit(''), 10);
+  assert.equal(concurrencyLimit(0), 10);
+  assert.equal(concurrencyLimit(undefined), 10);
   assert.equal(concurrencyLimit(-1), 1);
 });
 
