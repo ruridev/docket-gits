@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { readTail, pruneLogs, logStats, logLines } = require('./logs');
 const { killRun, isAgentRun, isAlive } = require('./procs');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, logKeepMs, readRun, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { DEFAULT_CONFIG, DEFAULT_PROMPTS, sharedPrompt } = require('./defaults');
+const { CONSENT_VERSION, logKeepMs, readRun, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -794,7 +795,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'logs.js', 'procs.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'defaults.js', 'logs.js', 'procs.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1198,7 +1199,7 @@ test('latestAuthorComment: picks the newest non-empty comment by the PR author o
 const rulesOf = (args, flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1].split(',') : []);
 
 test('claudeArgs: every run is sandboxed; reviews edit nothing, fixes hand back a schema, posts have no tools', () => {
-  const { claudeArgs, DEFAULT_CONFIG } = require('./server');
+  const { claudeArgs } = require('./server');
   assert.ok(!('claudeArgs' in DEFAULT_CONFIG) && !('readOnlyTools' in DEFAULT_CONFIG));
   const run = { runDir: '/run', workdir: '/ws' };
   for (const mode of ['read', 'apply', 'compose']) {
