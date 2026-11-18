@@ -2392,6 +2392,12 @@ function readBody(req) {
 // Lanes cards can be moved to by hand. Running cards aren't moved, so the run stays visible
 const MOVE_LANES = { prs: ['requested', 'reviewing', 'reviewed', 'commented'], mine: ['mine', 'pending', 'running', 'planned'] };
 const RUNNING = ['queued', 'reviewing', 'posting', 'running', 'applying', 'publishing'];
+// A review card whose run (or post) is queued or going
+const REVIEW_BUSY = ['queued', 'reviewing', 'posting'];
+// A card with a review, self-review or plan waiting for the user's decisions
+const hasResult = (e) => ['reviewed', 'planned'].includes(e.status);
+// A setup suggestion for the card is queued or running (reviews of the card wait for it)
+const suggesting = (e) => ['queued', 'running'].includes(e.setupSuggestion?.status);
 // If state, unaddressed count, Draft, or PR updates (commits, comments, etc.) change after a manual move, return to the automatic lane
 const laneSnapshot = (e) => ({ status: e.status, pending: e.pending ?? null, isDraft: !!e.pr?.isDraft, prUpdatedAt: e.pr?.updatedAt ?? null });
 function manualLane(e) {
@@ -2408,7 +2414,7 @@ function boardEntry(key, { postRaw, decisions, triage, raw, applyRaw, findings, 
   return {
     key, ...e, ...(lane && { manualLane: lane }),
     ...(e.threads && { newCount: e.threads.filter((t) => !planned.has(skipKey(t))).length }),
-    ...(['reviewed', 'planned'].includes(e.status) && { raw, applyRaw, findings, summary }),
+    ...(hasResult(e) && { raw, applyRaw, findings, summary }),
   };
 }
 
@@ -2597,8 +2603,8 @@ async function handle(req, res) {
     if (!target) return send(res, 404, { error: 'not found' });
     const s = target.setupSuggestion;
     if (url.pathname === '/api/setup/suggest') {
-      if (!['reviewed', 'planned'].includes(target.status) || !target.unverified?.length) return send(res, 409, { error: E('cannotSuggestSetup') });
-      if (['queued', 'running'].includes(s?.status)) return send(res, 409, { error: E('running') });
+      if (!hasResult(target) || !target.unverified?.length) return send(res, 409, { error: E('cannotSuggestSetup') });
+      if (suggesting(target)) return send(res, 409, { error: E('running') });
       enqueueSetupSuggestion(body.key);
       return send(res, 200, { ok: true });
     }
@@ -2612,7 +2618,7 @@ async function handle(req, res) {
     // Re-run what the suggestion was for, so it uses the new command. Runs that can't be rebuilt keep 'applied'
     // (not when a run started meanwhile; repoTool always gives a review skill)
     const tool = repoTool(config.repos[repo]);
-    const idle = ['reviewed', 'planned'].includes(target.status);
+    const idle = hasResult(target);
     if (idle && !body.key.startsWith('mine:')) enqueueReview(body.key);
     else if (idle && (target.mode === 'self' ? tool.selfSkill : tool.fixSkill && target.triage)) enqueueMine(body.key, target.mode, target.triage);
     return send(res, 200, { ok: true });
@@ -2633,7 +2639,7 @@ async function handle(req, res) {
     if (url.pathname === '/api/mine/run') {
       const skill = repoTool(config.repos[mine.pr.repo])[body.mode === 'self' ? 'selfSkill' : 'fixSkill'];
       if (!['self', 'fix'].includes(body.mode) || !skill) return send(res, 400, { error: E('skillMissing', { repo: mine.pr.repo }) });
-      if (!['idle', 'planned'].includes(mine.status) || ['queued', 'running'].includes(mine.setupSuggestion?.status)) return send(res, 409, { error: E('running') });
+      if (!['idle', 'planned'].includes(mine.status) || suggesting(mine)) return send(res, 409, { error: E('running') });
       let triage = null;
       if (body.mode === 'fix') {
         triage = triageFrom(mine.threads, body.decisions);
@@ -2686,7 +2692,7 @@ async function handle(req, res) {
 
   if (url.pathname === '/api/review') {
     if (!repoTool(config.repos[entry.pr.repo]).skill) return send(res, 400, { error: E('skillMissing', { repo: entry.pr.repo }) });
-    if (['queued', 'reviewing', 'posting'].includes(entry.status) || ['queued', 'running'].includes(entry.setupSuggestion?.status)) return send(res, 409, { error: E('running') });
+    if (REVIEW_BUSY.includes(entry.status) || suggesting(entry)) return send(res, 409, { error: E('running') });
     enqueueReview(body.key);
     return send(res, 200, { ok: true });
   }
@@ -2709,7 +2715,7 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/dismiss') {
     // Deleting while running leaves claude running, and a post's result wouldn't be recorded
-    if (['queued', 'reviewing', 'posting'].includes(entry.status)) return send(res, 409, { error: E('running') });
+    if (REVIEW_BUSY.includes(entry.status)) return send(res, 409, { error: E('running') });
     delete state.prs[body.key];
     saveState();
     return send(res, 200, { ok: true });
@@ -2728,7 +2734,7 @@ function main() {
   state = { mine: {}, ...readJson(STATE_FILE, { prs: {} }) };
   // A setup suggestion isn't recovered after a restart: drop it, so it doesn't hold back reviews of its card
   for (const e of [...Object.values(state.prs), ...Object.values(state.mine)]) {
-    if (['queued', 'running'].includes(e.setupSuggestion?.status)) e.setupSuggestion = { ...e.setupSuggestion, status: 'failed', error: E('runFailed') };
+    if (suggesting(e)) e.setupSuggestion = { ...e.setupSuggestion, status: 'failed', error: E('runFailed') };
   }
   // Jobs whose claude already started keep running in their own process group, so collect their results
   // Unstarted reviews and plans have no side effects, so requeue them; posts and fixes are reverted to avoid running twice
