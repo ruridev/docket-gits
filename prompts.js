@@ -38,7 +38,8 @@ function buildReviewPrompt(pr, mapping, reviewPrompt = DEFAULT_PROMPTS.en.review
 - You cannot ask the user anything. Do not post to the pull request or approve it yet; stop at the preview.
 - In the summary and findings, state only what you confirmed. If you could not confirm something (a command was denied or failed), do not turn it into a risk or a request to the author; say plainly that you could not confirm it, or leave it out.
 - If a check fails because of this folder or sandbox rather than the pull request (a file that is not in git, a denied command, a service that is not running, an app that won't start here), spend no more than a few minutes on it: don't debug the environment, and don't edit tracked files to work around it. Put a time limit on commands that may hang (tests, servers).
-- In unverified, list each check of the pull request you could not run that way, with the command and its error in reason. Leave out cleanup (stopping servers, removing files): docket-gits stops what a run leaves when it ends. If there are none, make it an empty array.
+- Run the checks that cover the change yourself: its tests and, when the folder notes below say a browser is available, the Playwright tests of the changed pages against this worktree's own dev server. A check you did not try is not unverified: try it first.
+- In unverified, list only the checks you ran that failed because of this folder or sandbox, with the command and its error in reason. Leave out cleanup (stopping servers, removing files): docket-gits stops what a run leaves when it ends. If there are none, make it an empty array.
 - When the review is done, end the final answer with the findings you would post, in the format below. If there are none, make findings an empty array.
 - Only the last message is read as the result. If the answer goes on (for example after a subagent's completion notice), repeat this block in full in the last message.
 
