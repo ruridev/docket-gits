@@ -14,7 +14,7 @@ const { HOME: DOCKET_HOME, REGISTRIES, deniedPaths, workspaceNote, agentArgs, ag
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 const { DEFAULT_CONFIG, DEFAULT_PROMPTS, sharedPrompt } = require('./defaults');
-const { repoTool, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, postable, buildComposePrompt, POST_SCHEMA, reviewPayload, triageFrom, triageTargets, prAuthor, buildFixPlanPrompt, latestAuthorComment, applyRun, withOutputLang, postLang, extractTagJson } = require('./prompts');
+const { repoTool, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, postable, buildComposePrompt, POST_SCHEMA, reviewPayload, triageFrom, triageTargets, prAuthor, buildFixPlanPrompt, latestAuthorComment, applyChecks, applyRun, withOutputLang, postLang, extractTagJson } = require('./prompts');
 const { doneKeepMs, LIST_QUERY, DETAIL_FIELDS, DETAIL_CHUNK, detailQuery, staleIds, withDetails, searchQueries, authorKey, filterByAuthors, mergeBoard, skipKey, mergeMine } = require('./board');
 const { parseLines, logLines, readTail, logStats, pruneLogs } = require('./logs');
 const { isAgentRun, reapLeftovers, reapWorktree, killRun, waitForExit } = require('./procs');
@@ -1283,11 +1283,12 @@ function enqueueReview(key, hint = '') {
   const mapping = repoTool(config.repos[entry.pr.repo]);
   const cwd = repoCwd(entry.pr.repo);
   const runId = newRunId();
-  const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'), hint);
+  const checks = config.reviewChecks === true;
+  const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'), hint, checks);
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag('docket-findings', prompt, { key, ws, pr: entry.pr, readOnly: true, checks: false, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), true, false), runId);
+    finishReview(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag('docket-findings', prompt, { key, ws, pr: entry.pr, readOnly: true, checks, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), true, checks), runId);
   } });
   pump();
 }
@@ -1456,12 +1457,14 @@ function enqueueMine(key, mode, triage = null, hint = '') {
   const entry = state.mine[key];
   const mapping = repoTool(config.repos[entry.pr.repo]);
   const cwd = repoCwd(entry.pr.repo);
-  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt'), hint) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'));
+  // A fix plan only reads the comments and the code; a self-review runs checks only when reviews do
+  const checks = mode === 'self' && config.reviewChecks === true;
+  const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt'), hint, checks) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'));
   const runId = newRunId();
   updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, ws, pr: entry.pr, readOnly: true, checks: mode !== 'self', logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), true, mode !== 'self'), runId);
+    finishMine(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, ws, pr: entry.pr, readOnly: true, checks, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), true, checks), runId);
   } });
   pump();
 }
@@ -1470,11 +1473,13 @@ function enqueueMine(key, mode, triage = null, hint = '') {
 function enqueueApply(key, decisions, comment = '') {
   const entry = state.mine[key];
   updateEntry(key, { status: 'applying', error: null, decisions });
+  // Only a run that may change code runs the tests (and the setup command they need)
+  const checks = applyChecks(entry, decisions);
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     finishApply(key, await withWorkspace(entry.pr, entry.cwd || repoCwd(entry.pr.repo), async (ws) => {
       const { prompt } = applyRun(entry, decisions, comment, config);
-      return collectApply(await runAgent(prompt, { ws, key, pr: entry.pr, logName: logName(key, 'apply') }), ws, entry.pr);
-    }));
+      return collectApply(await runAgent(prompt, { ws, key, pr: entry.pr, checks, logName: logName(key, 'apply') }), ws, entry.pr);
+    }, true, checks));
   } });
   pump();
 }

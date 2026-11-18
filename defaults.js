@@ -17,6 +17,8 @@ const DEFAULT_CONFIG = {
   runEnv: '',
   // A Chromium for the runs' Playwright tests, started outside the sandbox (browser.js). Off: browser tests can't run
   runBrowser: false,
+  // Reviews and self-reviews run the tests themselves (off: they only read the code; the author ran them)
+  reviewChecks: false,
   // Empty = claude's default. Subagents use this model too
   model: '',
   effort: '',

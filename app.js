@@ -1133,6 +1133,8 @@ async function openSettings() {
           <p class="muted">${tr('s.runEnv.help')}</p>
           <div class="form-row"><label><input type="checkbox" data-cfg="runBrowser" ${cfg.runBrowser === true ? 'checked' : ''}> ${tr('s.runBrowser')}</label></div>
           <p class="muted">${tr('s.runBrowser.help')}</p>
+          <div class="form-row"><label><input type="checkbox" data-cfg="reviewChecks" ${cfg.reviewChecks === true ? 'checked' : ''}> ${tr('s.reviewChecks')}</label></div>
+          <p class="muted">${tr('s.reviewChecks.help')}</p>
           <h4>${tr('s.repoSkills')}</h4>
           <p class="muted">${tr('s.repoSkills.help')}</p>
           <table class="repos">
@@ -1161,12 +1163,12 @@ async function openSettings() {
   const PANES = ['agent-run', 'agent-targets', 'agent-prompts', 'agent-claude', 'agent-roadmap', 'refresh', 'lang', 'theme', 'terms'];
   // Settings restored by "Reset all to defaults" (terms and UI language are handled separately)
   const PANE_KEYS = {
-    agent: ['workdir', 'model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
+    agent: ['workdir', 'model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser', 'reviewChecks', 'maxConcurrent', 'logKeepDays', 'mergedDays', 'doneKeepDays', 'authors', 'projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir', 'repos', 'reviewPrompt', 'fixPrompt'],
     'agent-run': ['maxConcurrent', 'logKeepDays'],
     'agent-targets': ['workdir', 'repos', 'authors', 'mergedDays', 'doneKeepDays'],
     'agent-prompts': ['reviewPrompt', 'fixPrompt'],
     'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir'],
-    'agent-claude': ['model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser'],
+    'agent-claude': ['model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser', 'reviewChecks'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
     lang: ['outputLang', 'authorLangs', 'agreeIcon', 'disagreeIcon', 'noteIcon'],
   };
@@ -1325,7 +1327,7 @@ async function openSettings() {
         const data = JSON.parse(await file.text());
         const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
         // A shared file must not change what runs or where: agent args, tools and local folders stay as they are
-        const LOCAL = ['claudeArgs', 'readOnlyTools', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser', 'workdir', 'plansDir'];
+        const LOCAL = ['claudeArgs', 'readOnlyTools', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser', 'reviewChecks', 'workdir', 'plansDir'];
         const imported = data.config && typeof data.config === 'object' ? data.config : {};
         skipped = Object.keys(imported).filter((k) => LOCAL.includes(k));
         for (const [k, v] of Object.entries(imported)) if (k in board.defaults && k !== 'consentVersion' && !LOCAL.includes(k) && kind(v) === kind(board.defaults[k])) cfg[k] = v;

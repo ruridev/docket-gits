@@ -207,6 +207,7 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.match(workspaceNote({ ...again, sourceClone: null }, pr), /no local clone/);
   assert.match(workspaceNote(again, pr), /don't link dependency folders such as node_modules/);
   assert.match(workspaceNote(again, pr), /CI results don't replace this/);
+  assert.match(workspaceNote(again, pr), /spend no more than a few minutes on it: don't debug the environment/);
   assert.match(workspaceNote(again, pr), /stop them with kill <PID> before your final answer/);
   assert.match(workspaceNote(again, pr), /is the user's, running their clone, not this pull request/);
   assert.match(workspaceNote(again, pr), /Browsers \(Playwright, Cypress, Puppeteer\) can't start in this sandbox/);
