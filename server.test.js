@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { readTail, pruneLogs, logStats, logLines } = require('./logs');
+const { killRun, isAgentRun, isAlive } = require('./procs');
+const { CONSENT_VERSION, sharedPrompt, DEFAULT_PROMPTS, logKeepMs, readRun, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -792,7 +794,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'logs.js', 'procs.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -841,7 +843,7 @@ test('POST /api/auth/setup: answers 413 to a body over 1 MB, before any session 
 });
 
 test('reapLeftovers: once the answer is out, stops processes a run left running so claude can exit', async () => {
-  const { reapLeftovers } = require('./server');
+  const { reapLeftovers } = require('./procs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-reap-'));
   const out = path.join(dir, 'run.out');
   fs.writeFileSync(out, '{"type":"assistant"}\n');
@@ -866,7 +868,7 @@ test('reapLeftovers: once the answer is out, stops processes a run left running 
 });
 
 test('reapLeftovers: an answer given while a background task runs is not the last one', async () => {
-  const { reapLeftovers } = require('./server');
+  const { reapLeftovers } = require('./procs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-reap-'));
   const out = path.join(dir, 'run.out');
   // claude -p answers, then waits for its background task (a test suite) and goes on when it ends
@@ -896,7 +898,7 @@ test('reapLeftovers: an answer given while a background task runs is not the las
 });
 
 test('reapWorktree: stops processes still working in a run\'s worktree after it ends', async () => {
-  const { reapWorktree } = require('./server');
+  const { reapWorktree } = require('./procs');
   const wt = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-wt-')));
   const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docket-other-')));
   // A dev server the run started, detached from claude, and an unrelated process

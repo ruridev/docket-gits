@@ -13,6 +13,8 @@ const { GITHUB_HOSTS, parseNpmrc, startSetupProxy } = require('./setup-proxy');
 const { HOME: DOCKET_HOME, REGISTRIES, deniedPaths, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
+const { parseLines, logLines, readTail, logStats, pruneLogs } = require('./logs');
+const { isAgentRun, reapLeftovers, reapWorktree, killRun, waitForExit } = require('./procs');
 
 const PORT = Number(process.env.PORT || 4649);
 const DATA_DIR = path.resolve(process.env.DOCKET_DATA || path.join(__dirname, 'data'));
@@ -1806,51 +1808,6 @@ let running = 0;
 // Fixes on my PRs switch branches in the same clone, so run one per repo at a time
 const busyRepos = new Set();
 
-function parseLines(text) {
-  return text.split('\n').flatMap((line) => {
-    try {
-      return [JSON.parse(line)];
-    } catch {
-      return [];
-    }
-  });
-}
-
-// From a running stream-json output, make one line each for the last `limit` Claude messages and tool calls
-function logLines(text, limit = 50) {
-  const lines = [];
-  for (const ev of parseLines(text)) {
-    if (ev.type === 'item.completed' || ev.type === 'item.started') {
-      const item = ev.item || {};
-      if (ev.type === 'item.completed' && item.type === 'agent_message' && item.text?.trim()) lines.push(`💬 ${item.text.trim()}`);
-      if (ev.type === 'item.started' && item.type === 'command_execution') lines.push(`🔧 ${item.command}`);
-      if (ev.type === 'item.completed' && item.type === 'file_change') lines.push(`🔧 ${JSON.stringify(item.changes)}`);
-    }
-    if (ev.type !== 'assistant') continue;
-    const indent = ev.parent_tool_use_id ? '  ↳ ' : '';
-    for (const c of ev.message?.content || []) {
-      if (c.type === 'text' && c.text.trim()) lines.push(`${indent}💬 ${c.text.trim()}`);
-      if (c.type === 'tool_use') lines.push(`${indent}🔧 ${c.name} ${JSON.stringify(c.input).slice(0, 200)}`);
-    }
-  }
-  return lines.slice(-limit);
-}
-
-// The log view shows only recent lines, so read just the tail instead of the whole file every 3s (drop the cut-off first line)
-function readTail(file, bytes = 1024 * 1024) {
-  const fd = fs.openSync(file, 'r');
-  try {
-    const { size } = fs.fstatSync(fd);
-    const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
-    fs.readSync(fd, buf, 0, buf.length, start);
-    const text = buf.toString('utf8');
-    return start ? text.slice(text.indexOf('\n') + 1) : text;
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
 // Read a claude result written to stdout/stderr files. Merge them into .log and delete the originals
 function readRun(dir, logName, code) {
   const base = path.join(dir, logName);
@@ -1873,136 +1830,8 @@ function readRun(dir, logName, code) {
   return { ok: code === 0 && !parsed.is_error, result: parsed.result || '', structured: parsed.structured_output ?? null, sessionId: parsed.session_id, usage: usageOf(parsed), error: parsed.is_error ? parsed.result : null };
 }
 
-// Count / delete only .log files of finished runs (leave running .out / .err alone)
-function logFiles(dir) {
-  let names = [];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-  // Skip broken links and files deleted meanwhile (throwing in the daily cleanup takes down the server)
-  return names.filter((n) => n.endsWith('.log')).flatMap((n) => {
-    const file = path.join(dir, n);
-    try {
-      const { size, mtimeMs } = fs.statSync(file);
-      return [{ file, size, mtimeMs }];
-    } catch {
-      return [];
-    }
-  });
-}
-
-const sumLogs = (list) => ({ count: list.length, bytes: list.reduce((n, f) => n + f.size, 0) });
-const logStats = (dir) => sumLogs(logFiles(dir));
-
-// These pile up, so delete ones older than keepMs. 0 deletes all finished .log files ("Delete all" in settings)
-function pruneLogs(dir, now, keepMs) {
-  // With 0, don't compare times (mtime right after writing can be slightly after now)
-  const old = logFiles(dir).filter((f) => keepMs === 0 || now - f.mtimeMs >= keepMs);
-  for (const f of old) fs.rmSync(f.file, { force: true });
-  return sumLogs(old);
-}
-
 // Configured retention days. Reset under 1 day to the default so empty or 0 doesn't make auto-cleanup delete everything
 const logKeepMs = (days) => (Number(days) >= 1 ? Number(days) : DEFAULT_CONFIG.logKeepDays) * 24 * 60 * 60 * 1000;
-
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
-}
-
-// After a server or machine restart, a saved PID may have been reused by another process.
-// Also check it's still claude, so we don't wait on or kill an unrelated process
-// Also check for the stream-json flags runAgent adds, so the user's own claude isn't killed (-ww: don't truncate long prompts)
-function isAgentRun(pid) {
-  if (!isAlive(pid)) return false;
-  try {
-    const command = execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
-    return /claude/.test(command) && /--output-format stream-json/.test(command);
-  } catch {
-    return false;
-  }
-}
-
-// claude started detached leads its process group, so kill the whole group to leave no Bash tool children behind
-// If it exited right after the check, kill throws ESRCH and cancel can't restore state, so ignore it
-// pid's descendants. ps sees them from here; inside the sandbox a run can't list processes, so pkill fails there
-function descendants(pid) {
-  let rows = [];
-  try {
-    rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' }).trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
-  } catch {}
-  const out = [];
-  for (let front = [pid]; front.length; ) {
-    front = rows.filter(([, ppid]) => front.includes(ppid)).map(([p]) => p);
-    out.push(...front);
-  }
-  return out;
-}
-
-// A server a run started in the background and didn't stop keeps claude waiting after its answer, and the run never
-// ends. Called every few seconds: once the answer (the result line) is the last turn for afterMs, stop what is left.
-// claude also answers while a background task it started (a test suite) runs, then goes on when the task ends: while
-// it has one, wait taskMs instead. seen: { at, id } kept between calls
-function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000, taskMs = 30 * 60 * 1000) {
-  let tail = '';
-  try { tail = readTail(outFile, 256 * 1024); } catch {}
-  let result = null;
-  let tasks = [];
-  for (const line of tail.split('\n')) {
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (e.type === 'result') result = e;
-    else if (e.type === 'assistant' || e.type === 'user') result = null;
-    else if (e.subtype === 'background_tasks_changed') tasks = e.tasks || [];
-  }
-  if (!result) return Object.assign(seen, { at: 0, id: null });
-  if (seen.id !== result.uuid || !seen.at) return Object.assign(seen, { at: Date.now(), id: result.uuid });
-  if (Date.now() - seen.at < (tasks.length ? taskMs : afterMs)) return;
-  for (const p of descendants(pid)) killRun(p);
-}
-
-// Processes whose working directory is in a run's worktree once the run has ended: servers it started that left
-// claude's process tree (a run can't stop them itself: kill and pkill are refused or blind in the sandbox)
-function reapWorktree(dir) {
-  if (!dir) return;
-  let out = '';
-  try {
-    out = execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch (e) {
-    out = e.stdout || '';
-  }
-  let pid = 0;
-  for (const line of out.split('\n')) {
-    if (line[0] === 'p') pid = Number(line.slice(1));
-    else if (line[0] === 'n' && pid !== process.pid && (line.slice(1) === dir || line.slice(1).startsWith(`${dir}/`))) killRun(pid);
-  }
-}
-
-function killRun(pid) {
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {}
-  }
-}
-
-function waitForExit(pid) {
-  return new Promise((resolve) => {
-    const timer = setInterval(() => {
-      if (isAgentRun(pid)) return;
-      clearInterval(timer);
-      resolve();
-    }, 5000);
-  });
-}
 
 // Start claude in its own process group writing output to files, so a server restart neither stops it nor loses its result
 // ws: the run's workspace from withWorkspace. Claude runs in ws.cwd; it reaches GitHub only through the gatekeeper
@@ -2795,4 +2624,4 @@ if (require.main === module && process.argv.includes('--reset-password')) {
   console.log(auth.reset() ? 'Removed the account. Open docket-gits and create it again with setup code ' + auth.setupCode() + '.' : 'There is no account.');
 } else if (require.main === module) main();
 
-module.exports = { setupSandbox, reapLeftovers, reapWorktree, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, killRun, readTail, isAgentRun, pruneLogs, logStats, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, logLines, isAlive, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
+module.exports = { setupSandbox, postable, buildComposePrompt, reviewPayload, postReview, applyRun, latestAuthorComment, DEFAULT_CONFIG, repoOptions, fieldMutation, normalizePr, staleIds, withDetails, detailQuery, LIST_QUERY, claudeArgs, cwdError, validRepo, CONSENT_VERSION, withPlanLock, sharedPrompt, DEFAULT_PROMPTS, repoTool, listSkills, logKeepMs, periodAt, periodWindows, pickIterations, parseProjectUrl, detectFields, clearSynced, readRun, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, withOutputLang, postLang, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS };
