@@ -8,7 +8,8 @@ const path = require('node:path');
 const { readTail, pruneLogs, logStats, logLines } = require('./logs');
 const { killRun, isAgentRun, isAlive } = require('./procs');
 const { DEFAULT_CONFIG, DEFAULT_PROMPTS, sharedPrompt } = require('./defaults');
-const { CONSENT_VERSION, logKeepMs, readRun, searchQueries, isTruncated, filterByAuthors, usageOf, addUsage, modelOptions, permissionArgs, mergeBoard, mergeMine, pendingThreads, pendingComments, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, DONE_KEEP_MS, doneKeepMs, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours, RE_REQUEST_GRACE_MS } = require('./server');
+const { CONSENT_VERSION, logKeepMs, readRun, isTruncated, usageOf, addUsage, modelOptions, permissionArgs, fillTemplate, buildReviewPrompt, normalizeUnverified, buildSetupPrompt, setupSuggestionOf, PROMPT_SKILL, buildFixPlanPrompt, triageFrom, triageTargets, buildFixApplyPrompt, buildSelfApplyPrompt, buildCommentApplyPrompt, extractTagJson, runForTag, normalizeNos, boardEntry, manualLane, laneSnapshot, canDecideAll, sanitizeConfig, pollIntervalMs, concurrencyLimit, inPollHours } = require('./server');
+const { searchQueries, filterByAuthors, mergeBoard, mergeMine, pendingThreads, pendingComments, DONE_KEEP_MS, doneKeepMs, RE_REQUEST_GRACE_MS } = require('./board');
 
 // Creates the account on a fresh server (setup code from its data folder) and returns the API headers:
 // the session cookie and its token.
@@ -795,7 +796,7 @@ test('filterByAuthors: does not throw when config has non-string values', () => 
 
 test('GET /: returns 500 when index.html cannot be read, and the server stays up', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-'));
-  for (const f of ['server.js', 'defaults.js', 'logs.js', 'procs.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
+  for (const f of ['server.js', 'defaults.js', 'board.js', 'logs.js', 'procs.js', 'plans.js', 'auth.js', 'workspace.js', 'publish.js', 'github-proxy.js', 'browser.js', 'jail.js', 'setup-proxy.js']) fs.copyFileSync(path.join(__dirname, f), path.join(dir, f));
   const port = await new Promise((resolve) => { const srv = require('node:net').createServer().listen(0, '127.0.0.1', () => { const { port: p } = srv.address(); srv.close(() => resolve(p)); }); });
   const child = require('node:child_process').spawn(process.execPath, [path.join(dir, 'server.js')], { env: { DOCKET_DATA: path.join(dir, 'data'), PORT: String(port), PATH: '' } });
   try {
@@ -1113,13 +1114,13 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
 });
 
 test('normalizePr: keeps what the board filters need, and tolerates PRs fetched before those fields existed', () => {
-  const { normalizePr } = require('./server');
+  const { normalizePr } = require('./board');
   assert.equal(normalizePr({ ...node(1), milestone: { title: 'v2' } }).milestone, 'v2');
   assert.equal(normalizePr(node(2)).milestone, null);
 });
 
 test('staleIds / withDetails: details are fetched only for new or updated PRs, and rebuilt in search order', () => {
-  const { staleIds, withDetails } = require('./server');
+  const { staleIds, withDetails } = require('./board');
   const now = Date.parse('2026-11-12T12:00:00Z');
   const cache = new Map([['open:A', { updatedAt: 't1', at: now - 60000, node: { id: 'A', number: 1, mergeable: 'UNKNOWN' } }], ['open:B', { updatedAt: 't1', at: now, node: { id: 'B', number: 2 } }], ['mine:C', { updatedAt: 't1', at: now, node: { id: 'C' } }]]);
   const items = [{ id: 'B', updatedAt: 't2' }, { id: 'A', updatedAt: 't1' }, { id: 'C', updatedAt: 't1' }, null];
@@ -1132,7 +1133,7 @@ test('staleIds / withDetails: details are fetched only for new or updated PRs, a
 });
 
 test('detailQuery: asks only for the given ids, with the fields of that search', () => {
-  const { detailQuery, LIST_QUERY } = require('./server');
+  const { detailQuery, LIST_QUERY } = require('./board');
   const q = detailQuery('mine', ['PR_a', 'PR_b']);
   assert.match(q, /nodes\(ids: \["PR_a","PR_b"\]\)/);
   assert.match(q, /reviewThreads/);
