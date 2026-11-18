@@ -19,7 +19,8 @@ const DATA_DIR = path.resolve(process.env.DOCKET_DATA || path.join(__dirname, 'd
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
-const SPRINT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
+// GitHub Project fields, items and repository options read for the plan screen (the file name is older than the plan screen)
+const PROJECT_CACHE_FILE = path.join(DATA_DIR, 'sprint-cache.json');
 // What fix runs handed back (patches, replies...), waiting for the user to publish them
 const RESULTS_DIR = path.join(DATA_DIR, 'results');
 const auth = createAuth({ file: path.join(DATA_DIR, 'auth.json'), cookie: 'docket_gits_session', header: 'x-docket' });
@@ -1078,7 +1079,7 @@ async function fetchFromGitHub() {
   saveState();
 }
 
-// ---------- Sprints ----------
+// ---------- GitHub Projects ----------
 
 function ghqlArgs(query, vars) {
   const args = ['api', 'graphql', '-f', `query=${query}`];
@@ -1149,24 +1150,24 @@ function normIssue(n, projectId) {
 }
 
 // Also save to a file so a server restart doesn't refetch
-const sprintCache = new Map(Object.entries(readJson(SPRINT_CACHE_FILE, {})));
+const projectCache = new Map(Object.entries(readJson(PROJECT_CACHE_FILE, {})));
 // This is for an overall schedule view, so no auto-refetch. The UI's "Refresh now" sends refresh=1 to get the latest
-const SPRINT_CACHE_MS = 24 * 60 * 60 * 1000;
+const PROJECT_CACHE_MS = 24 * 60 * 60 * 1000;
 // Drop caches whose key starts with prefix (after writing to GitHub, so stale values aren't shown)
 function dropCached(prefix) {
-  for (const k of sprintCache.keys()) if (k.startsWith(prefix)) sprintCache.delete(k);
-  writeJson(SPRINT_CACHE_FILE, Object.fromEntries(sprintCache));
+  for (const k of projectCache.keys()) if (k.startsWith(prefix)) projectCache.delete(k);
+  writeJson(PROJECT_CACHE_FILE, Object.fromEntries(projectCache));
 }
 
 async function cached(key, refresh, fn) {
-  const hit = sprintCache.get(key);
-  if (!refresh && hit && Date.now() - hit.at < SPRINT_CACHE_MS) return hit.data;
+  const hit = projectCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < PROJECT_CACHE_MS) return hit.data;
   const data = await fn();
   // Don't keep partial results (refetch next time it's opened)
   if (data?.partial) return data;
-  sprintCache.set(key, { at: Date.now(), data });
-  for (const [k, v] of sprintCache) if (Date.now() - v.at >= SPRINT_CACHE_MS) sprintCache.delete(k);
-  writeJson(SPRINT_CACHE_FILE, Object.fromEntries(sprintCache));
+  projectCache.set(key, { at: Date.now(), data });
+  for (const [k, v] of projectCache) if (Date.now() - v.at >= PROJECT_CACHE_MS) projectCache.delete(k);
+  writeJson(PROJECT_CACHE_FILE, Object.fromEntries(projectCache));
   return data;
 }
 
