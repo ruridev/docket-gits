@@ -20,7 +20,7 @@
 
    There are no dependencies, so there is no `npm install`.
 
-2. Open http://localhost:4649 and create your account (see [Signing in](usage.md#signing-in)).
+2. Open http://127.0.0.1:4649 and create your account (see [Signing in](usage.md#signing-in)).
 3. Read the notice about the risks and agree to it. Nothing that starts `claude` works until you do.
 4. Open **Settings** from the account menu at the top right, then under **Agent settings**:
    - **Work targets**: set the working directory where your skills live, and the repositories to watch (`owner/name`, one per line). Runs refuse to start until a working directory is set, and never run in your home directory or `/`.

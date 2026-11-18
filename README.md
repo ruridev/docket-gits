@@ -23,7 +23,7 @@ cd docket-gits
 npm start
 ```
 
-Open http://localhost:4649, create your account, then set your working directory and repositories in **Settings**. Details: [docs/setup.md](docs/setup.md).
+Open http://127.0.0.1:4649, create your account, then set your working directory and repositories in **Settings**. Details: [docs/setup.md](docs/setup.md).
 
 ## How AI runs are contained
 
