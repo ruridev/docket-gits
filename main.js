@@ -47,6 +47,21 @@ async function review(key) {
 }
 
 $('#banner').addEventListener('click', (ev) => { if (ev.target.matches('[data-settings-pane]')) nextSettingsPane = ev.target.dataset.settingsPane; });
+// Inside the docket portal, ask the portal to open docket-viewer links. A tab opened by this iframe
+// can't be found again once the portal page reloads (the iframe is recreated), so the next click would
+// open a new tab. The portal's own window survives a reload, so tabs it opens stay reusable.
+let portalOpens = false;
+window.addEventListener('message', (ev) => {
+  if (ev.source === window.parent && ev.source !== window && ev.data?.type === 'docket:portal') portalOpens = true;
+});
+document.addEventListener('click', (ev) => {
+  const a = ev.target.closest?.('a[target="docket-viewer"]');
+  if (!portalOpens || !a || ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  ev.preventDefault();
+  // '*' is fine: the link is already on screen, and frame-ancestors limits which pages can frame us
+  window.parent.postMessage({ type: 'docket:open', url: a.href }, '*');
+});
+
 $('#board').addEventListener('click', async (ev) => {
   const t = ev.target;
   if (t.matches('[data-settings-pane]')) nextSettingsPane = t.dataset.settingsPane;
