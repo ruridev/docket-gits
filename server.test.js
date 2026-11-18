@@ -853,13 +853,43 @@ test('reapLeftovers: once the answer is out, stops processes a run left running 
     for (let i = 0; i < 50 && !require('node:child_process').execFileSync('ps', ['-A', '-o', 'ppid=']).toString().split('\n').some((l) => Number(l) === run.pid); i++) await new Promise((r) => setTimeout(r, 50));
     const seen = {};
     reapLeftovers(run.pid, out, seen, 0);
-    assert.equal(seen.at, undefined, 'no answer yet: nothing is stopped');
+    assert.ok(!seen.at, 'no answer yet: nothing is stopped');
     fs.appendFileSync(out, '{"type":"result","result":"done"}\n');
     reapLeftovers(run.pid, out, seen, 0);
     assert.ok(seen.at, 'the answer is seen first');
     reapLeftovers(run.pid, out, seen, 0);
     const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('still running'), 5000))]);
     assert.notEqual(code, 'still running');
+  } finally {
+    killRun(run.pid);
+  }
+});
+
+test('reapLeftovers: an answer given while a background task runs is not the last one', async () => {
+  const { reapLeftovers } = require('./server');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'docket-reap-'));
+  const out = path.join(dir, 'run.out');
+  // claude -p answers, then waits for its background task (a test suite) and goes on when it ends
+  fs.writeFileSync(out, '{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"t1"}]}\n{"type":"result","uuid":"r1"}\n');
+  const run = require('node:child_process').spawn('sh', ['-c', 'sleep 300 & wait'], { detached: true, stdio: 'ignore' });
+  let exited = false;
+  run.on('exit', () => { exited = true; });
+  try {
+    for (let i = 0; i < 50 && !require('node:child_process').execFileSync('ps', ['-A', '-o', 'ppid=']).toString().split('\n').some((l) => Number(l) === run.pid); i++) await new Promise((r) => setTimeout(r, 50));
+    const seen = {};
+    reapLeftovers(run.pid, out, seen, 0);
+    reapLeftovers(run.pid, out, seen, 0);
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal(exited, false, 'the task is still running: nothing is stopped');
+    // The task ends and claude goes on: a new turn, then a new answer starts the wait again
+    fs.appendFileSync(out, '{"type":"system","subtype":"background_tasks_changed","tasks":[]}\n{"type":"assistant"}\n');
+    reapLeftovers(run.pid, out, seen, 0);
+    assert.ok(!seen.at);
+    fs.appendFileSync(out, '{"type":"result","uuid":"r2"}\n');
+    reapLeftovers(run.pid, out, seen, 0);
+    assert.ok(seen.at, 'the new answer is seen first');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(exited, false);
   } finally {
     killRun(run.pid);
   }
@@ -1330,7 +1360,8 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
     // gh: only the review post the server makes (recorded), and an empty list of existing reviews
     const ghLog = ${JSON.stringify(path.join(dir, 'gh.jsonl'))};
     cp.execFile = (command, args, options, callback) => {
-      if (command === 'git') return execFile(command, args, options, callback);
+      // Anything but gh runs for real (git, and openssl for the setup command's proxy)
+      if (command !== 'gh') return execFile(command, args, options, callback);
       const post = command === 'gh' && args[0] === 'api' && args[1] === '-X' && args[2] === 'POST';
       const list = command === 'gh' && args[0] === 'api' && (args[1] || '').endsWith('/reviews?per_page=100');
       let input = '';
@@ -1464,10 +1495,16 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   await api('/api/config', { repos: { 'acme/api': { ...repoConfig, setup: 'echo other' } } }, 'PUT');
   assert.equal((await api('/api/setup/apply', { key: 'acme/api#1' })).data.error.code, 'setupChanged');
   await api('/api/config', { repos: { 'acme/api': repoConfig } }, 'PUT');
+  const before = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').length;
   assert.equal((await api('/api/setup/apply', { key: 'acme/api#1' })).status, 200);
+  // Applying re-runs the review with the new command
+  assert.ok(['queued', 'reviewing'].includes((await api('/api/board')).data.prs[0].status));
+  await wait('prs', 'reviewed');
+  const rerun = fs.readFileSync(path.join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(rerun.length, before + 1);
+  assert.match(rerun.at(-1).args[rerun.at(-1).args.indexOf('-p') + 1], /^\/docket-claude-review CLAUDE-1/);
   const board = (await api('/api/board')).data;
   assert.equal(board.config.repos['acme/api'].setup, 'echo ready');
-  assert.equal(board.prs[0].setupSuggestion.status, 'applied');
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).repos['acme/api'].setup, 'echo ready');
 });
 

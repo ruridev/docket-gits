@@ -1944,16 +1944,24 @@ function descendants(pid) {
 }
 
 // A server a run started in the background and didn't stop keeps claude waiting after its answer, and the run never
-// ends. Called every few seconds: once the answer (the result line) is in the output for afterMs, stop what is left
-// seen: { at } kept between calls
-function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000) {
-  if (!seen.at) {
-    let tail = '';
-    try { tail = readTail(outFile, 64 * 1024); } catch {}
-    if (/"type":"result"/.test(tail)) seen.at = Date.now();
-    return;
+// ends. Called every few seconds: once the answer (the result line) is the last turn for afterMs, stop what is left.
+// claude also answers while a background task it started (a test suite) runs, then goes on when the task ends: while
+// it has one, wait taskMs instead. seen: { at, id } kept between calls
+function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000, taskMs = 30 * 60 * 1000) {
+  let tail = '';
+  try { tail = readTail(outFile, 256 * 1024); } catch {}
+  let result = null;
+  let tasks = [];
+  for (const line of tail.split('\n')) {
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e.type === 'result') result = e;
+    else if (e.type === 'assistant' || e.type === 'user') result = null;
+    else if (e.subtype === 'background_tasks_changed') tasks = e.tasks || [];
   }
-  if (Date.now() - seen.at < afterMs) return;
+  if (!result) return Object.assign(seen, { at: 0, id: null });
+  if (seen.id !== result.uuid || !seen.at) return Object.assign(seen, { at: Date.now(), id: result.uuid });
+  if (Date.now() - seen.at < (tasks.length ? taskMs : afterMs)) return;
   for (const p of descendants(pid)) killRun(p);
 }
 
@@ -2603,6 +2611,12 @@ async function handle(req, res) {
     config = { ...config, repos: { ...config.repos, [repo]: { ...config.repos[repo], setup: s.setup } } };
     writeJson(CONFIG_FILE, config);
     updateEntry(body.key, { setupSuggestion: { ...s, status: 'applied' } });
+    // Re-run what the suggestion was for, so it uses the new command. Runs that can't be rebuilt keep 'applied'
+    // (not when a run started meanwhile; repoTool always gives a review skill)
+    const tool = repoTool(config.repos[repo]);
+    const idle = ['reviewed', 'planned'].includes(target.status);
+    if (idle && !body.key.startsWith('mine:')) enqueueReview(body.key);
+    else if (idle && (target.mode === 'self' ? tool.selfSkill : tool.fixSkill && target.triage)) enqueueMine(body.key, target.mode, target.triage);
     return send(res, 200, { ok: true });
   }
 
