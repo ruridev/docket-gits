@@ -2,7 +2,7 @@
 
 // The processes of AI runs: whether a saved PID is still a run, and stopping runs and what they left behind
 
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const { readTail } = require('./logs');
 
 function isAlive(pid) {
@@ -67,14 +67,15 @@ function reapLeftovers(pid, outFile, seen, afterMs = 60 * 1000, taskMs = 30 * 60
 
 // Processes whose working directory is in a run's worktree once the run has ended: servers it started that left
 // claude's process tree (a run can't stop them itself: kill and pkill are refused or blind in the sandbox)
-function reapWorktree(dir) {
+// lsof scans every process and can take seconds on a busy machine, so it runs async: a sync call stops the server
+// answering, and the portal shows it as stopped
+async function reapWorktree(dir) {
   if (!dir) return;
-  let out = '';
-  try {
-    out = execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  } catch (e) {
-    out = e.stdout || '';
-  }
+  // lsof exits 1 when it can't read some processes; what it printed is still good
+  const out = await new Promise((resolve) => {
+    const child = execFile('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf8' }, (err, stdout) => resolve(stdout || ''));
+    child.stdin.end();
+  });
   let pid = 0;
   for (const line of out.split('\n')) {
     if (line[0] === 'p') pid = Number(line.slice(1));

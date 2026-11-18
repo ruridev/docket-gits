@@ -910,7 +910,12 @@ test('reapWorktree: stops processes still working in a run\'s worktree after it 
   const leftExit = new Promise((r) => left.on('exit', r));
   try {
     await new Promise((r) => setTimeout(r, 200));
-    reapWorktree(wt);
+    // lsof is slow; the server must keep answering meanwhile (timers still fire)
+    let ticks = 0;
+    const tick = setInterval(() => ticks++, 5);
+    await reapWorktree(wt);
+    clearInterval(tick);
+    assert.ok(ticks > 0);
     const code = await Promise.race([leftExit, new Promise((r) => setTimeout(() => r('still running'), 5000))]);
     assert.notEqual(code, 'still running');
     assert.equal(isAlive(keep.pid), true);

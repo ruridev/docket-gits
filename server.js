@@ -1185,9 +1185,10 @@ function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang
       child.on('error', (e) => resolve({ ok: false, error: e.message }));
       const seen = {};
       const reaper = setInterval(() => reapLeftovers(child.pid, `${base}.out`, seen), 10 * 1000);
-      child.on('close', (code) => {
+      child.on('close', async (code) => {
         clearInterval(reaper);
-        reapWorktree(ws.gitDir && ws.cwd);
+        // Finish before resolving: the next run in this worktree must not start while leftovers are being stopped
+        await reapWorktree(ws.gitDir && ws.cwd);
         const result = readRun(LOG_DIR, logName, code);
         resolve({ ...result, sessionId: result.sessionId || resume });
       });
