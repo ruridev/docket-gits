@@ -1345,15 +1345,15 @@ function cancelRun(key, status) {
 }
 
 // An AI run with no tools writes the text; docket-gits posts it with the user's gh login
-function enqueuePost(key, decisions, approve, humanRead) {
+function enqueuePost(key, decisions, approve, humanRead, note = '') {
   const entry = state.prs[key];
   updateEntry(key, { status: 'posting', error: null, decisions, approve, humanRead });
   queue.push({ key, run: async () => {
     const items = postable(entry.findings, decisions);
     let res = { ok: true, result: null, usage: null };
     let text = { body: '', comments: [] };
-    if (items.length || entry.summary?.trim()) {
-      const prompt = buildComposePrompt(entry.pr, items, decisions, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary);
+    if (items.length || entry.summary?.trim() || note.trim()) {
+      const prompt = buildComposePrompt(entry.pr, items, decisions, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary, note);
       res = await withWorkspace(entry.pr, entry.cwd || repoCwd(entry.pr.repo),
         (ws) => runAgent(prompt, { key, ws, pr: entry.pr, mode: 'compose', logName: logName(key, 'post'), lang: postLang(entry.pr.author?.login, config) }), false);
       text = res.ok && res.structured && typeof res.structured === 'object' ? res.structured : null;
@@ -1852,7 +1852,7 @@ async function handle(req, res) {
   if (url.pathname === '/api/post') {
     if (entry.status !== 'reviewed' || !entry.findings || !entry.sessionId) return send(res, 409, { error: E('cannotPost') });
     if (!canDecideAll(entry.findings, body.decisions, true)) return send(res, 400, { error: E('undecided') });
-    enqueuePost(body.key, body.decisions, !!body.approve, !!body.humanRead);
+    enqueuePost(body.key, body.decisions, !!body.approve, !!body.humanRead, typeof body.note === 'string' ? body.note : '');
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/cancel') {

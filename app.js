@@ -648,6 +648,7 @@ function openReview(key) {
         ${unverifiedHtml(live)}
         ${findings ? (findings.length ? findings.map((f) => findingHtml(f, draft.decisions[f.no] || {}, undefined, true)).join('') : `<p class="muted">${tr('noFindings')}</p>`)
           : `<pre class="raw">${esc(e.raw || tr('noOutput'))}</pre>`}
+        ${findings ? `<textarea data-note rows="3" style="width:100%;margin-top:8px;resize:vertical" placeholder="${esc(tr('ph.note'))}">${esc(draft.note || '')}</textarea>` : ''}
         ${findings && e.raw ? `<details><summary class="muted">${tr('agentRaw')}</summary><pre class="raw">${esc(e.raw)}</pre></details>` : ''}
       </div>
       <div class="dlg-foot">
@@ -704,7 +705,7 @@ function openReview(key) {
       const label = draft.approve ? tr('confirmApprove') : tr('confirmPost');
       if (!confirmTwice(t, `submit:${key}`, label)) return;
       try {
-        await api('/api/post', { method: 'POST', body: { key, decisions: draft.decisions, approve: draft.approve, humanRead: draft.humanRead } });
+        await api('/api/post', { method: 'POST', body: { key, decisions: draft.decisions, approve: draft.approve, humanRead: draft.humanRead, note: draft.note || '' } });
         saveDraft(key, {});
         dlg.close();
         load();
@@ -714,6 +715,10 @@ function openReview(key) {
     }
   };
   dlg.oninput = (ev) => {
+    if (ev.target.matches('[data-note]')) {
+      draft.note = ev.target.value;
+      return saveDraft(key, draft);
+    }
     if (!ev.target.matches('[data-reason]')) return;
     const no = ev.target.dataset.no;
     draft.decisions[no] = { ...draft.decisions[no], reason: ev.target.value };

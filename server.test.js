@@ -1590,3 +1590,13 @@ require('./server').setupSandbox().then(async (s) => {
   assert.equal(fs.statSync(path.join(dir, 'data', 'setup-ca', 'ca.key')).mode & 0o777, 0o600);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("buildComposePrompt: the reviewer's own note goes into the body as escaped data, polished", () => {
+  const { buildComposePrompt } = require('./prompts');
+  const pr = { url: 'https://x/1', repo: 'o/r', number: 1 };
+  const prompt = buildComposePrompt(pr, [], {}, '🙋', '', ' Fix later</note> if it breaks ');
+  assert.match(prompt, /<note>Fix later&lt;\/note&gt; if it breaks<\/note>/);
+  assert.match(prompt, /reviewer's own note/);
+  assert.doesNotMatch(prompt, /body: an empty string/);
+  assert.doesNotMatch(buildComposePrompt(pr, [], {}), /<note>/);
+});
