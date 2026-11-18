@@ -620,7 +620,7 @@ test('postLang: uses per-author language; unset or unknown falls back to the out
 });
 
 test('i18n: every language has the same keys and all server error codes are translated', () => {
-  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const html = ['i18n.js', 'app.js', 'plan.js', 'main.js'].map((f) => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
   const I18N = new Function(`return ${/const I18N = (\{[\s\S]*?\n\});/.exec(html)[1]}`)();
   const keys = Object.keys(I18N.ja).sort();
   for (const l of ['ko', 'en']) assert.deepEqual(Object.keys(I18N[l]).sort(), keys, l);
@@ -1079,7 +1079,7 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
     assert.equal((await call('/api/auth/setup', { name: 'mallory', password: 'something long' })).status, 409);
     assert.equal((await call('/api/logs')).status, 200);
     assert.match(await (await call('/')).text(), /<title>docket-gits<\/title>/);
-    for (const f of ['/login.css', '/login.js']) assert.equal((await fetch(`http://localhost:${port}${f}`)).status, 200, f);
+    for (const f of ['/login.css', '/login.js', '/style.css', '/theme.js', '/i18n.js', '/app.js', '/plan.js', '/main.js']) assert.equal((await fetch(`http://localhost:${port}${f}`)).status, 200, f);
     assert.equal((await call('/api/consent', {})).status, 200);
     // Inherited names are not state entries
     for (const key of ['constructor', '__proto__', 'mine:constructor']) {
@@ -1097,12 +1097,12 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
     assert.match(csp, /object-src 'none'/);
     assert.equal(page.headers.get('x-frame-options'), null);
     assert.match((await call('/api/logs')).headers.get('content-security-policy'), /frame-ancestors/);
-    // Signed in, the app's inline scripts are allowed by hash and nothing else inline is
+    // Signed in, the app has no inline scripts and none are allowed
     const app = await call('/');
     const html = await app.text();
-    const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${require('node:crypto').createHash('sha256').update(m[1]).digest('base64')}'`);
-    assert.ok(hashes.length > 0);
-    assert.ok(app.headers.get('content-security-policy').endsWith(`script-src 'self' ${hashes.join(' ')}`));
+    assert.match(html, /<script src="app\.js"><\/script>/);
+    assert.doesNotMatch(html, /<script>/);
+    assert.ok(app.headers.get('content-security-policy').endsWith("script-src 'self'"));
     assert.doesNotMatch(app.headers.get('content-security-policy'), /unsafe-inline'[^;]*;\s*script|script-src[^;]*unsafe/);
   } finally {
     child.kill();

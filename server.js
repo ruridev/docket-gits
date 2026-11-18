@@ -2488,14 +2488,15 @@ async function handlePlan(req, res, url) {
 
 // Font for the pixel-font theme (Fusion Pixel 12px Korean, subset to the characters used. OFL)
 const FONTS = { '/fonts/pixel.ttf': 'fusion-pixel-12px-ko.ttf' };
-// The sign-in page and its files. Serve only fixed files (never build paths)
-const LOGIN_FILES = { '/login.css': 'text/css; charset=utf-8', '/login.js': 'text/javascript; charset=utf-8' };
+// Files of the sign-in page and the app. Serve only fixed files (never build paths). They hold no data, so they are
+// served signed out too; the app's data comes from the API
+const CSS = 'text/css; charset=utf-8';
+const JS = 'text/javascript; charset=utf-8';
+const PAGE_FILES = { '/login.css': CSS, '/login.js': JS, '/style.css': CSS, '/theme.js': JS, '/i18n.js': JS, '/app.js': JS, '/plan.js': JS, '/main.js': JS };
 
-// Scripts only from this server: the page's inline <script> blocks are allowed by hash. Images may come from
-// anywhere (avatars, images in PR text); images cannot run code
+// Scripts only from this server, none inline. Images may come from anywhere (avatars, images in PR text); images
+// cannot run code
 const CSP = `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors ${FRAME_ANCESTORS}`;
-const scriptHashes = (html) => [...String(html).matchAll(/<script>([\s\S]*?)<\/script>/g)]
-  .map((m) => `'sha256-${require('node:crypto').createHash('sha256').update(m[1]).digest('base64')}'`).join(' ');
 
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
@@ -2506,12 +2507,12 @@ async function handle(req, res) {
   if (req.method === 'GET' && url.pathname === '/') {
     // Read before sending headers so we can return 500 if it fails. Signed out, the page is the sign-in page
     const html = fs.readFileSync(path.join(__dirname, auth.user(req) ? 'index.html' : 'login.html'));
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': `${CSP}; script-src ${['\'self\'', scriptHashes(html)].join(' ').trim()}` });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(html);
   }
-  if (req.method === 'GET' && LOGIN_FILES[url.pathname]) {
+  if (req.method === 'GET' && Object.hasOwn(PAGE_FILES, url.pathname)) {
     const file = fs.readFileSync(path.join(__dirname, url.pathname.slice(1)));
-    res.writeHead(200, { 'Content-Type': LOGIN_FILES[url.pathname], 'X-Content-Type-Options': 'nosniff' });
+    res.writeHead(200, { 'Content-Type': PAGE_FILES[url.pathname], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     return res.end(file);
   }
   // Theme font. Serve only fixed files (never build paths)
