@@ -101,7 +101,8 @@ function dropWorktrees(before, after) {
 
 // Runs fn(ws) in the pull request's worktree (see workspace.js). clone: false gives an empty folder (a post's text needs no code).
 // workdir: the user's working directory: where their clones are found, read-only for runs
-async function withWorkspace(pr, workdir, fn, clone = true) {
+// withSetup: false skips the repository's setup command (a review only reads the code)
+async function withWorkspace(pr, workdir, fn, clone = true, withSetup = true) {
   const unsafe = cwdError(workdir);
   if (unsafe) return { ok: false, error: unsafe };
   if (!clone) {
@@ -115,7 +116,7 @@ async function withWorkspace(pr, workdir, fn, clone = true) {
   } catch (e) {
     return { ok: false, error: E('workspaceFailed', { message: e.message }) };
   }
-  const command = repoTool(config.repos[pr.repo]).setup;
+  const command = withSetup ? repoTool(config.repos[pr.repo]).setup : '';
   let sandbox = null;
   try {
     sandbox = command?.trim() ? await setupSandbox(pr.repo) : null;
@@ -1156,11 +1157,12 @@ function browserEndpoint() {
 
 function runAgent(prompt, opts) {
   // A run without the browser it was promised still runs, and is told browsers can't start
-  const browser = config.runBrowser === true && opts.ws.gitDir ? browserEndpoint().catch((e) => (console.error(`browser gateway: ${e.message}`), null)) : Promise.resolve(null);
+  const browser = config.runBrowser === true && opts.ws.gitDir && opts.checks !== false ? browserEndpoint().catch((e) => (console.error(`browser gateway: ${e.message}`), null)) : Promise.resolve(null);
   return browser.then((endpoint) => startAgent(prompt, { ...opts, browser: endpoint }));
 }
 
-function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, pr, mode: forced, browser }) {
+// checks: false for a review, which runs no tests (see workspaceNote)
+function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang, readOnly = false, pr, mode: forced, browser, checks = true }) {
   return new Promise((resolve) => {
     // Throwing (e.g. log file can't be opened) would leave the caller's card stuck running, so return a failure
     // If it throws after starting (e.g. saving state fails), claude is running, so return the result on close
@@ -1170,7 +1172,7 @@ function startAgent(prompt, { key, ws, resume, logName, lang = config.outputLang
       // Only fix runs may edit skills, and only when turned on: review and post runs read other people's PRs
       const mode = forced || (readOnly ? 'read' : 'apply');
       // Runs in a worktree are told what it lacks and where the user's clone is (a post's text needs no folder)
-      const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr, { browser: Boolean(browser) })}` : prompt, lang);
+      const instruction = withOutputLang(ws.gitDir ? `${prompt}\n\n${workspaceNote(ws, pr, { browser: Boolean(browser), checks })}` : prompt, lang);
       const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose', ...model.args, ...(mode === 'apply' && config.skillEdits ? permissionArgs(ws.cwd) : []), ...claudeArgs(mode, ws, config, pr?.repo)];
       if (resume) args.push('--resume', resume);
       fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
@@ -1284,7 +1286,7 @@ function enqueueReview(key, hint = '') {
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, run: async () => {
     updateEntry(key, { status: 'reviewing', startedAt: Date.now() });
-    finishReview(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag('docket-findings', prompt, { key, ws, pr: entry.pr, readOnly: true, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' })), runId);
+    finishReview(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag('docket-findings', prompt, { key, ws, pr: entry.pr, readOnly: true, checks: false, logName: logName(key, 'review'), cancelled: () => state.prs[key]?.runId !== runId || state.prs[key]?.status !== 'reviewing' }), true, false), runId);
   } });
   pump();
 }
@@ -1458,7 +1460,7 @@ function enqueueMine(key, mode, triage = null, hint = '') {
   updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
     updateEntry(key, { status: 'running', startedAt: Date.now() });
-    finishMine(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, ws, pr: entry.pr, readOnly: true, logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' })), runId);
+    finishMine(key, cwd, await withWorkspace(entry.pr, cwd, (ws) => runForTag(mode === 'self' ? 'docket-findings' : 'docket-fix-plan', prompt, { key, ws, pr: entry.pr, readOnly: true, checks: mode !== 'self', logName: logName(key, mode), cancelled: () => state.mine[key]?.runId !== runId || state.mine[key]?.status !== 'running' }), true, mode !== 'self'), runId);
   } });
   pump();
 }

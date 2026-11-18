@@ -259,10 +259,15 @@ function adminDirOf(gitDir, worktree) {
 
 // What a run is told about its folder. The AI knows its stack: it copies or installs what the project needs
 // browser: a Chromium for Playwright runs outside the sandbox (browser.js), its address in PW_TEST_CONNECT_WS_ENDPOINT
-function workspaceNote(ws, pr, { browser = false } = {}) {
-  return `## The folder of this run
+// checks: false for a review, which only reads the code (the author has run the tests), so the note leaves out
+// how to install, test, start servers and use browsers
+function workspaceNote(ws, pr, { browser = false, checks = true } = {}) {
+  const head = `## The folder of this run
 - The current directory is a git worktree of the pull request at its head, on branch ${ws.branch}${ws.base ? `; the base branch is at origin/${ws.base}` : ''}.
-- Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only): copy from it what you need to build or test, only files that are not in git (the tracked ones are already here, at this pull request's version).` : 'There is no local clone of this repository to copy them from.'} Install missing dependencies here (for example pnpm install / bundle install): don't link dependency folders such as node_modules from the user's clone, since tools write into them and the clone can't be written.
+- Files that are not in git (local settings such as .env files, installed dependencies, build output) are not here. ${ws.sourceClone ? `The user's own clone of this repository is at ${ws.sourceClone} (read-only)${checks ? ': copy from it what you need to build or test, only files that are not in git (the tracked ones are already here, at this pull request\'s version).' : '.'}` : 'There is no local clone of this repository to copy them from.'}`;
+  if (!checks) return `${head}
+- This run only reads the code: don't install dependencies or run tests, linters, servers or browsers.`;
+  return `${head} Install missing dependencies here (for example pnpm install / bundle install): don't link dependency folders such as node_modules from the user's clone, since tools write into them and the clone can't be written.
 - Run the tests that cover the changed code here, installing dependencies first if they are missing. CI results don't replace this: a missing node_modules or vendor/bundle is a reason to install, not to skip.
 - Before running tests, find out how this project runs them and what they connect to (README, bin/ and scripts, config files, and the local settings in the user's clone). Services such as databases may already be running on local ports. Check, don't guess; if something still can't run, say exactly what you tried and what failed.
 - Use the project's usual test setup (for example its usual test database) rather than creating new ones. If you do create anything outside this worktree (a database, files elsewhere), remove it before you finish; if you can't, list what is left in the summary.

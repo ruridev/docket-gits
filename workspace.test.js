@@ -211,6 +211,10 @@ test('prepareWorkspace: a worktree per pull request at its head, reset each run,
   assert.match(workspaceNote(again, pr), /is the user's, running their clone, not this pull request/);
   assert.match(workspaceNote(again, pr), /Browsers \(Playwright, Cypress, Puppeteer\) can't start in this sandbox/);
   // With the browser setting on, Playwright tests are run against the browser docket-gits starts outside
+  // A review runs no checks: the note leaves out how to run tests, servers and browsers
+  const noChecks = workspaceNote(again, pr, { checks: false });
+  assert.match(noChecks, /user's own clone of this repository is at/);
+  assert.doesNotMatch(noChecks, /CI results don't replace this|kill <PID>|Browsers|Playwright/);
   const withBrowser = workspaceNote(again, pr, { browser: true });
   assert.match(withBrowser, /PW_TEST_CONNECT_WS_ENDPOINT/);
   assert.match(withBrowser, /Cypress and Puppeteer still can't run/);
