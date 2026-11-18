@@ -1067,7 +1067,7 @@ test('HTTP: API needs the custom header and the session; data is private; CSP al
   const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'server.js')], { env: { DOCKET_DATA: data, PORT: String(port), PATH: '' } });
   try {
     const line = await new Promise((resolve) => child.stdout.on('data', (d) => /docket-gits:/.test(d) && resolve(String(d))));
-    assert.ok(line.includes(`docket-gits: http://localhost:${port}\n`));
+    assert.ok(line.includes(`docket-gits: http://127.0.0.1:${port}\n`));
     assert.equal(fs.existsSync(path.join(data, 'token')), false);
     assert.equal(fs.statSync(data).mode & 0o777, 0o700);
     assert.equal((await fetch(`http://localhost:${port}/api/logs`, { headers: { 'X-Docket': '1' } })).status, 401);
@@ -1409,7 +1409,7 @@ test('HTTP flow: review, post, self-review, apply and fix plan run claude, and l
   });
   const address = await new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.stdout.on('data', (chunk) => { const match = /docket-gits: (http:\/\/localhost:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
+    child.stdout.on('data', (chunk) => { const match = /docket-gits: (http:\/\/127\.0\.0\.1:\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
     child.once('exit', () => reject(new Error(stderr)));
   });
   const headers = await signUp(new URL(address).port, dir);

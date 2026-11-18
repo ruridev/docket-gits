@@ -2779,8 +2779,8 @@ function main() {
     .listen(PORT, '127.0.0.1', () => {
       // Make the setup code before announcing the server, so it exists once the address is printed
       const code = !auth.hasAccount() && auth.setupCode();
-      console.log(`docket-gits: http://localhost:${PORT}`);
-      if (code) console.log(`Create the account: http://localhost:${PORT}/?setup=${code}`);
+      console.log(`docket-gits: http://127.0.0.1:${PORT}`);
+      if (code) console.log(`Create the account: http://127.0.0.1:${PORT}/?setup=${code}`);
     });
 }
 
