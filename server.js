@@ -808,7 +808,7 @@ function claudeArgs(mode = 'apply', ws = {}, cfg = config || DEFAULT_CONFIG, rep
 // Worktrees of pull requests that left the board (closed, merged, no longer requested)
 function dropWorktrees(before, after) {
   for (const [key, e] of Object.entries(before)) {
-    if (!after[key] && e.pr) removeWorkspace(e.pr, { workdir: repoTool(config.repos[e.pr.repo]).cwd || config.workdir }).catch((err) => console.error(`worktree ${key}: ${err.message}`));
+    if (!after[key] && e.pr) removeWorkspace(e.pr, { workdir: repoCwd(e.pr.repo) }).catch((err) => console.error(`worktree ${key}: ${err.message}`));
   }
 }
 
@@ -2074,6 +2074,11 @@ async function runForTag(tag, prompt, opts, run = runAgent) {
   return { ...res, usage, sessionId: retry.sessionId || res.sessionId, result: `${res.result}\n\n${retry.result}` };
 }
 
+// The folder a repository's runs start from: its own working directory, else the shared one
+const repoCwd = (repo) => repoTool(config.repos[repo]).cwd || config.workdir;
+// The last line of a command's error (gh prints the reason last)
+const lastLine = (text) => text.trim().split('\n').pop();
+
 const newRunId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function logName(key, kind) {
@@ -2134,7 +2139,7 @@ function finishPost(key, res) {
 function enqueueReview(key) {
   const entry = state.prs[key];
   const mapping = repoTool(config.repos[entry.pr.repo]);
-  const cwd = mapping.cwd || config.workdir;
+  const cwd = repoCwd(entry.pr.repo);
   const runId = newRunId();
   const prompt = buildReviewPrompt(entry.pr, mapping, sharedPrompt(config, 'reviewPrompt'));
   updateEntry(key, { status: 'queued', runId, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
@@ -2154,7 +2159,7 @@ function enqueueSetupSuggestion(key) {
   updateEntry(key, { setupSuggestion: { status: 'queued', current } });
   queue.push({ key, run: async () => {
     updateEntry(key, { setupSuggestion: { status: 'running', current } });
-    const res = await withWorkspace(entry.pr, mapping.cwd || config.workdir, (ws) => runForTag('docket-setup', buildSetupPrompt(entry.pr, current, entry.unverified || []), { key: null, ws, pr: entry.pr, readOnly: true, logName: logName(key, 'setup') }));
+    const res = await withWorkspace(entry.pr, repoCwd(entry.pr.repo), (ws) => runForTag('docket-setup', buildSetupPrompt(entry.pr, current, entry.unverified || []), { key: null, ws, pr: entry.pr, readOnly: true, logName: logName(key, 'setup') }));
     updateEntry(key, { usage: addUsage(mapOf(key)[key]?.usage, res.usage), setupSuggestion: setupSuggestionOf(res, current) });
   } });
   pump();
@@ -2185,13 +2190,14 @@ function recoverRun(run, finish, repo) {
     });
 }
 
-// Stopping a post midway can leave the PR partly posted, so only reviews can be cancelled
-function cancelReview(key) {
+// Drops a queued job or stops its claude, and puts the card back to status. Stopping posts and fixes (push,
+// replies) midway can leave them partly done, so only reviews, plans and self-reviews are cancelled (see the API)
+function cancelRun(key, status) {
   const i = queue.findIndex((job) => job.key === key);
   if (i >= 0) queue.splice(i, 1);
-  const pid = state.prs[key]?.run?.pid;
+  const pid = mapOf(key)[key]?.run?.pid;
   if (pid && isAgentRun(pid)) killRun(pid);
-  updateEntry(key, { status: 'requested', error: null });
+  updateEntry(key, { status, error: null });
 }
 
 // An AI run with no tools writes the text; docket-gits posts it with the user's gh login
@@ -2204,7 +2210,7 @@ function enqueuePost(key, decisions, approve, humanRead) {
     let text = { body: '', comments: [] };
     if (items.length || entry.summary?.trim()) {
       const prompt = buildComposePrompt(entry.pr, items, decisions, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary);
-      res = await withWorkspace(entry.pr, entry.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir,
+      res = await withWorkspace(entry.pr, entry.cwd || repoCwd(entry.pr.repo),
         (ws) => runAgent(prompt, { key, ws, pr: entry.pr, mode: 'compose', logName: logName(key, 'post'), lang: postLang(entry.pr.author?.login, config) }), false);
       text = res.ok && res.structured && typeof res.structured === 'object' ? res.structured : null;
       if (!text) return finishPost(key, { ...res, error: res.error || E('postTextMissing') });
@@ -2213,7 +2219,7 @@ function enqueuePost(key, decisions, approve, humanRead) {
     try {
       finishPost(key, { ...res, posted: true, url: review ? await postReview(entry.pr, review, entry.reviewedAt || 0) : null });
     } catch (e) {
-      finishPost(key, { ...res, error: E('postFailed', { message: e.message.trim().split('\n').pop() }) });
+      finishPost(key, { ...res, error: E('postFailed', { message: lastLine(e.message) }) });
     }
   } });
   pump();
@@ -2285,7 +2291,7 @@ function enqueuePublish(key) {
       fs.rmSync(resultFile(key), { force: true });
       updateEntry(key, { status: 'idle', error: null, findings: null, summary: null, raw: null, sessionId: null, result: null, publishProgress: null, published: progress, appliedAt: Date.now() });
     } catch (e) {
-      updateEntry(key, { status: 'ready', error: E('publishFailed', { message: e.message.trim().split('\n').pop() }) });
+      updateEntry(key, { status: 'ready', error: E('publishFailed', { message: lastLine(e.message) }) });
     }
   } });
   pump();
@@ -2304,7 +2310,7 @@ function skipThreads(key, triage) {
 function enqueueMine(key, mode, triage = null) {
   const entry = state.mine[key];
   const mapping = repoTool(config.repos[entry.pr.repo]);
-  const cwd = mapping.cwd || config.workdir;
+  const cwd = repoCwd(entry.pr.repo);
   const prompt = mode === 'self' ? buildReviewPrompt(entry.pr, { skill: mapping.selfSkill, args: mapping.selfArgs }, sharedPrompt(config, 'reviewPrompt')) : buildFixPlanPrompt(entry.pr, mapping, triage, sharedPrompt(config, 'fixPrompt'));
   const runId = newRunId();
   updateEntry(key, { status: 'queued', mode, runId, triage, error: null, findings: null, summary: null, raw: null, decisions: {}, unverified: null, setupSuggestion: null });
@@ -2320,7 +2326,7 @@ function enqueueApply(key, decisions, comment = '') {
   const entry = state.mine[key];
   updateEntry(key, { status: 'applying', error: null, decisions });
   queue.push({ key, repo: entry.pr.repo, run: async () => {
-    finishApply(key, await withWorkspace(entry.pr, entry.cwd || repoTool(config.repos[entry.pr.repo]).cwd || config.workdir, async (ws) => {
+    finishApply(key, await withWorkspace(entry.pr, entry.cwd || repoCwd(entry.pr.repo), async (ws) => {
       const { prompt } = applyRun(entry, decisions, comment, config);
       return collectApply(await runAgent(prompt, { ws, key, pr: entry.pr, logName: logName(key, 'apply') }), ws, entry.pr);
     }));
@@ -2328,14 +2334,6 @@ function enqueueApply(key, decisions, comment = '') {
   pump();
 }
 
-// Stopping fixes (push, replies) midway can leave them partly applied, so only plans and self-reviews can be cancelled
-function cancelMine(key) {
-  const i = queue.findIndex((job) => job.key === key);
-  if (i >= 0) queue.splice(i, 1);
-  const pid = state.mine[key]?.run?.pid;
-  if (pid && isAgentRun(pid)) killRun(pid);
-  updateEntry(key, { status: 'idle', error: null });
-}
 
 // ---------- Skill candidates ----------
 
@@ -2677,7 +2675,7 @@ async function handle(req, res) {
     }
     if (url.pathname === '/api/mine/cancel') {
       if (!['queued', 'running'].includes(mine.status)) return send(res, 409, { error: E('cannotCancel') });
-      cancelMine(body.key);
+      cancelRun(body.key, 'idle');
       return send(res, 200, { ok: true });
     }
     return send(res, 404, { error: 'not found' });
@@ -2700,7 +2698,7 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/cancel') {
     if (!['queued', 'reviewing'].includes(entry.status)) return send(res, 409, { error: E('cannotCancel') });
-    cancelReview(body.key);
+    cancelRun(body.key, 'requested');
     return send(res, 200, { ok: true });
   }
   if (url.pathname === '/api/skip') {
