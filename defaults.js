@@ -60,6 +60,8 @@ const DEFAULT_CONFIG = {
   // Icon prefixed to the reviewer's own opinion when posting a disagreed finding with a reason
   disagreeIcon: '🙅💭',
   agreeIcon: '🙆💭',
+  // Icon placed before the reviewer's own note at the top of the overall review comment
+  noteIcon: '💬',
   // Days to keep logs (.log) of finished runs. Older ones are deleted daily
   logKeepDays: 30,
   // Days to keep Done cards whose request was removed. Counted from the day posted or skipped

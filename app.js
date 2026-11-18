@@ -1168,7 +1168,7 @@ async function openSettings() {
     'agent-roadmap': ['projects', 'sprintPast', 'roadmapPeriod', 'sprintFuture', 'plansDir'],
     'agent-claude': ['model', 'effort', 'skillEdits', 'runLocalhost', 'runDomains', 'runEnv', 'runBrowser'],
     refresh: ['refreshSeconds', 'pollMinutes', 'pollStartHour', 'pollEndHour'],
-    lang: ['outputLang', 'authorLangs', 'agreeIcon', 'disagreeIcon'],
+    lang: ['outputLang', 'authorLangs', 'agreeIcon', 'disagreeIcon', 'noteIcon'],
   };
   const resetBtn = (p) => `<p><button data-pane-reset="${p}">${tr('pane.reset')}</button></p>`;
   let terms = laneNames();
@@ -1266,6 +1266,7 @@ async function openSettings() {
           <div class="form-row"><label>${tr('s.authorLangs')}</label><div><textarea data-cfg="authorLangs" rows="4" placeholder="tanaka ja&#10;nguyen en">${esc(Object.entries(cfg.authorLangs || {}).map(([a, l]) => `${a} ${l}`).join('\n'))}</textarea><p class="muted" style="margin:4px 0 0">${tr('s.authorLangs.hint')}</p></div></div>
           <div class="form-row"><label title="${esc(tr('s.agreeIcon.title'))}">${tr('s.agreeIcon')}</label><input data-cfg="agreeIcon" placeholder="🙆💭" style="width:8em" value="${esc(cfg.agreeIcon ?? '🙆💭')}"></div>
           <div class="form-row"><label title="${esc(tr('s.disagreeIcon.title'))}">${tr('s.disagreeIcon')}</label><input data-cfg="disagreeIcon" placeholder="🙅💭" style="width:8em" value="${esc(cfg.disagreeIcon ?? '🙅💭')}"></div>
+          <div class="form-row"><label title="${esc(tr('s.noteIcon.title'))}">${tr('s.noteIcon')}</label><input data-cfg="noteIcon" placeholder="💬" style="width:8em" value="${esc(cfg.noteIcon ?? '💬')}"></div>
           ${resetBtn('lang')}
         </div>
         <div class="settings-pane" data-pane-body="theme">

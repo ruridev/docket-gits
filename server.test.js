@@ -1600,3 +1600,12 @@ test("buildComposePrompt: the reviewer's own note goes into the body as escaped 
   assert.doesNotMatch(prompt, /body: an empty string/);
   assert.doesNotMatch(buildComposePrompt(pr, [], {}), /<note>/);
 });
+
+test("buildComposePrompt: the reviewer's note comes first with its icon, then --- and the AI summary", () => {
+  const { buildComposePrompt } = require('./prompts');
+  const pr = { url: 'https://x/1', repo: 'o/r', number: 1 };
+  const body = buildComposePrompt(pr, [], {}, '🙋', 'Looks fine', 'Ship it', '🗨️').match(/- body: .*/)[0];
+  assert.match(body, /^- body: start with "🗨️ " .*reviewer's own note.*Then a `---` separator, then the summary rewritten/);
+  assert.match(buildComposePrompt(pr, [], {}, '🙋', '', 'Ship it'), /- body: start with "💬 "/);
+  assert.doesNotMatch(buildComposePrompt(pr, [], {}, '🙋', 'Looks fine').match(/- body: .*/)[0], /💬|---/);
+});

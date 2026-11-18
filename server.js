@@ -1353,7 +1353,7 @@ function enqueuePost(key, decisions, approve, humanRead, note = '') {
     let res = { ok: true, result: null, usage: null };
     let text = { body: '', comments: [] };
     if (items.length || entry.summary?.trim() || note.trim()) {
-      const prompt = buildComposePrompt(entry.pr, items, decisions, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary, note);
+      const prompt = buildComposePrompt(entry.pr, items, decisions, config.disagreeIcon.trim() || DEFAULT_CONFIG.disagreeIcon, entry.summary, note, config.noteIcon?.trim() || DEFAULT_CONFIG.noteIcon);
       res = await withWorkspace(entry.pr, entry.cwd || repoCwd(entry.pr.repo),
         (ws) => runAgent(prompt, { key, ws, pr: entry.pr, mode: 'compose', logName: logName(key, 'post'), lang: postLang(entry.pr.author?.login, config) }), false);
       text = res.ok && res.structured && typeof res.structured === 'object' ? res.structured : null;
