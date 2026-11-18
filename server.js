@@ -10,7 +10,7 @@ const { createAuth } = require('./auth');
 const { startGateway } = require('./browser');
 const jail = require('./jail');
 const { GITHUB_HOSTS, parseNpmrc, startSetupProxy } = require('./setup-proxy');
-const { HOME: DOCKET_HOME, REGISTRIES, deniedPaths, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git: serverGit } = require('./workspace');
+const { HOME: DOCKET_HOME, REGISTRIES, deniedPaths, workspaceNote, agentArgs, agentEnv, runEnv, runTmpOf, prepareWorkspace, removeWorkspace, runSetup, git } = require('./workspace');
 const { APPLY_SCHEMA, applyHandback, collectResult, branchPatch, publish } = require('./publish');
 const { startGitHubProxy } = require('./github-proxy');
 
@@ -1226,16 +1226,17 @@ function ensureDir(dir) {
   }
   fs.mkdirSync(dir, { recursive: true });
 }
-function git(cwd, args) {
+// git in the plans folder (sync, null on failure). Clones of pull requests use git from workspace.js
+function planGit(cwd, args) {
   try {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
     return null;
   }
 }
-const inGit = (dir) => fs.existsSync(dir) && git(dir, ['rev-parse', '--is-inside-work-tree'])?.trim() === 'true';
+const inGit = (dir) => fs.existsSync(dir) && planGit(dir, ['rev-parse', '--is-inside-work-tree'])?.trim() === 'true';
 // Contents at the last commit (null if not committed)
-const committedText = (file) => git(path.dirname(file), ['show', `HEAD:./${path.basename(file)}`]);
+const committedText = (file) => planGit(path.dirname(file), ['show', `HEAD:./${path.basename(file)}`]);
 
 const PLAN_SYNC_FILE = path.join(DATA_DIR, 'plan-sync.json');
 // Contents last applied to GitHub (file -> issue key -> syncSnapshot). Used to spot issues changed after applying
@@ -1300,7 +1301,7 @@ function planDoc(url, file) {
     const left = Object.fromEntries(Object.entries(c).filter(([f, v]) => !same(local[f], v)));
     if (Object.keys(left).length) conflicts[syncKey(plan, node)] = left;
   }
-  const top = tracked && git(dir, ['rev-parse', '--show-toplevel'])?.trim();
+  const top = tracked && planGit(dir, ['rev-parse', '--show-toplevel'])?.trim();
   return { file, rel: top ? path.relative(top, full).split(path.sep).join('/') : full, plan, md, base, git: tracked, changed, conflicts };
 }
 
@@ -1751,7 +1752,7 @@ async function applyPlan(url, file, { addToProject = true, commit = false } = {}
   if (commit && doc.git) {
     const cwd = path.dirname(full);
     const name = path.basename(full);
-    committed = git(cwd, ['add', '--', name]) !== null && git(cwd, ['commit', '-q', '-m', `Apply plan "${plan.title || name}" to GitHub`, '--', name]) !== null;
+    committed = planGit(cwd, ['add', '--', name]) !== null && planGit(cwd, ['commit', '-q', '-m', `Apply plan "${plan.title || name}" to GitHub`, '--', name]) !== null;
   }
   // Drop the cache so stale values don't revert what was just applied
   dropCached(`plan-live:v2:${url}:`);
@@ -2259,7 +2260,7 @@ const resultView = ({ clone, ...r }) => r;
 async function collectApply(res, run, pr) {
   if (!res.ok) return res;
   try {
-    return { ...res, collected: { ...(await collectResult(res.structured, { pr, clone: run.clone, headSha: run.headSha, git: serverGit })), clone: run.clone } };
+    return { ...res, collected: { ...(await collectResult(res.structured, { pr, clone: run.clone, headSha: run.headSha, git })), clone: run.clone } };
   } catch (e) {
     return { ...res, ok: false, error: E('applyResultInvalid', { message: e.message }) };
   }
@@ -2283,7 +2284,7 @@ function enqueuePublish(key) {
       const result = JSON.parse(fs.readFileSync(resultFile(key), 'utf8'));
       const progress = await publish(entry.pr, result, { ...(state.mine[key].publishProgress || {}) }, {
         clone: result.clone,
-        git: (args) => serverGit(args),
+        git,
         rest: ghRest,
         read: (endpoint) => gh(['api', endpoint]).then(JSON.parse),
         findings: entry.findings,
@@ -2574,7 +2575,7 @@ async function handle(req, res) {
     const key = url.searchParams.get('key') || '';
     if (!own(state.mine, key) || !fs.existsSync(resultFile(key))) return send(res, 404, { error: 'not found' });
     const result = JSON.parse(fs.readFileSync(resultFile(key), 'utf8'));
-    const branches = await Promise.all(result.branches.map(async (b) => ({ key: b.key, name: b.name, patch: await branchPatch(result.clone, b, serverGit).catch(() => '') })));
+    const branches = await Promise.all(result.branches.map(async (b) => ({ key: b.key, name: b.name, patch: await branchPatch(result.clone, b, git).catch(() => '') })));
     return send(res, 200, { branches });
   }
 
